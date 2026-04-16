@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
 export async function GET(request: Request) {
@@ -10,7 +11,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?error=no_code", origin));
   }
 
-  const response = NextResponse.redirect(new URL(next, origin));
+  const cookieStore = await cookies();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,17 +19,11 @@ export async function GET(request: Request) {
     {
       cookies: {
         getAll() {
-          return request.headers
-            .get("cookie")
-            ?.split("; ")
-            .map((c) => {
-              const [name, ...rest] = c.split("=");
-              return { name, value: rest.join("=") };
-            }) ?? [];
+          return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
           for (const { name, value, options } of cookiesToSet) {
-            response.cookies.set(name, value, options);
+            cookieStore.set(name, value, options);
           }
         },
       },
@@ -38,9 +33,19 @@ export async function GET(request: Request) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    console.error("Auth callback error:", error.message);
-    return NextResponse.redirect(new URL("/login?error=auth", origin));
+    console.error("[TRDR Auth] exchangeCodeForSession failed:", error.message);
+    console.error("[TRDR Auth] Code received:", code.substring(0, 8) + "...");
+    console.error(
+      "[TRDR Auth] Cookies present:",
+      cookieStore
+        .getAll()
+        .map((c) => c.name)
+        .join(", "),
+    );
+    return NextResponse.redirect(
+      new URL(`/login?error=auth&detail=${encodeURIComponent(error.message)}`, origin),
+    );
   }
 
-  return response;
+  return NextResponse.redirect(new URL(next, origin));
 }

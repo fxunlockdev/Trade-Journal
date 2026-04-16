@@ -78,8 +78,9 @@ function LoginContent() {
 
   // Show error from URL params (e.g., OAuth failure)
   const urlError = searchParams.get("error");
-  if (urlError === "auth") {
-    toast.error("Authentication failed. Please try again.");
+  const errorDetail = searchParams.get("detail");
+  if (urlError) {
+    toast.error(errorDetail ?? "Authentication failed. Please try again.");
   }
 
   async function handleGoogleLogin() {
