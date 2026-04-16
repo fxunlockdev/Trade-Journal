@@ -4,7 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Bot, User, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  Send,
+  Loader2,
+  Bot,
+  User,
+  TrendingUp,
+  TrendingDown,
+  Plus,
+  ChevronLeft,
+  MessageSquare,
+  AlertCircle,
+} from "lucide-react";
 import type { Trade, ChatMessage } from "@/types/database";
 
 interface TradeChatProps {
@@ -22,12 +33,64 @@ interface DisplayMessage {
   readonly createdAt: string;
 }
 
-interface TradeConfirmationCardProps {
-  readonly trade: Trade;
-  readonly tradeError?: string;
+interface SessionGroup {
+  readonly label: string;
+  readonly dateKey: string;
+  readonly messages: readonly DisplayMessage[];
 }
 
-function TradeConfirmationCard({ trade, tradeError }: TradeConfirmationCardProps) {
+/* ─── helpers ─────────────────────────────────────────────── */
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (msgDay.getTime() === today.getTime()) return "Today";
+  if (msgDay.getTime() === yesterday.getTime()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function dateKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function groupByDate(messages: readonly DisplayMessage[]): SessionGroup[] {
+  const map = new Map<string, DisplayMessage[]>();
+  for (const msg of messages) {
+    const key = dateKey(msg.createdAt);
+    const existing = map.get(key) ?? [];
+    map.set(key, [...existing, msg]);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => b.localeCompare(a)) // newest first in sidebar
+    .map(([key, msgs]) => ({
+      label: formatDateLabel(msgs[0].createdAt),
+      dateKey: key,
+      messages: msgs,
+    }));
+}
+
+function getSessionPreview(msgs: readonly DisplayMessage[]): string {
+  const first = msgs.find((m) => m.role === "user");
+  if (!first) return "No messages";
+  return first.content.length > 42
+    ? `${first.content.slice(0, 42)}…`
+    : first.content;
+}
+
+/* ─── sub-components ──────────────────────────────────────── */
+
+function TradeConfirmationCard({
+  trade,
+  tradeError,
+}: {
+  readonly trade: Trade;
+  readonly tradeError?: string;
+}) {
   const isProfit =
     trade.pnl_absolute !== null ? trade.pnl_absolute >= 0 : null;
 
@@ -88,12 +151,39 @@ function TradeConfirmationCard({ trade, tradeError }: TradeConfirmationCardProps
             <p className="mt-0.5 text-xs text-muted-foreground">{tradeError}</p>
           </div>
         ) : (
-          <p className="mt-2 text-xs text-emerald-400/80">
-            Trade logged successfully
-          </p>
+          <p className="mt-2 text-xs text-emerald-400/80">✓ Trade logged successfully</p>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function TradeErrorBanner({ error }: { readonly error: string }) {
+  return (
+    <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+      <div>
+        <p className="text-xs font-medium text-destructive">Trade save failed</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{error}</p>
+      </div>
+    </div>
+  );
+}
+
+function FormattedContent({ content }: { readonly content: string }) {
+  const cleaned = content.replace(/```json[\s\S]*?```/g, "").replace(/```[\s\S]*?```/g, "").trim();
+  return <>{cleaned || content}</>;
+}
+
+function DateDivider({ label }: { readonly label: string }) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className="h-px flex-1 bg-border" />
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
   );
 }
 
@@ -113,9 +203,7 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
           <Bot className="h-3.5 w-3.5 text-primary" />
         )}
       </div>
-      <div
-        className={`max-w-[80%] space-y-1 ${isUser ? "items-end" : "items-start"}`}
-      >
+      <div className={`max-w-[80%] space-y-1 ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
             isUser
@@ -126,21 +214,14 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
           <FormattedContent content={message.content} />
         </div>
         {message.trade && (
-          <TradeConfirmationCard
-            trade={message.trade}
-            tradeError={message.tradeError}
-          />
+          <TradeConfirmationCard trade={message.trade} tradeError={message.tradeError} />
+        )}
+        {!message.trade && message.tradeError && (
+          <TradeErrorBanner error={message.tradeError} />
         )}
       </div>
     </div>
   );
-}
-
-function FormattedContent({ content }: { readonly content: string }) {
-  // Strip JSON code blocks from display so user only sees the text part
-  const cleanedContent = content.replace(/```json[\s\S]*?```/g, "").trim();
-
-  return <>{cleanedContent || content}</>;
 }
 
 function TypingIndicator() {
@@ -160,11 +241,113 @@ function TypingIndicator() {
   );
 }
 
+/* ─── sessions sidebar ────────────────────────────────────── */
+
+function SessionSidebar({
+  sessions,
+  activeDateKey,
+  onSelect,
+  onNewChat,
+  isOpen,
+  onClose,
+}: {
+  readonly sessions: readonly SessionGroup[];
+  readonly activeDateKey: string | null;
+  readonly onSelect: (key: string) => void;
+  readonly onNewChat: () => void;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+}) {
+  return (
+    <>
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        className={`
+          absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-border bg-card transition-transform duration-200
+          lg:relative lg:translate-x-0
+          ${isOpen ? "translate-x-0" : "-translate-x-full"}
+        `}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            History
+          </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 lg:hidden"
+            onClick={onClose}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* New Chat */}
+        <div className="px-3 pb-2">
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2 border-border text-sm"
+            onClick={onNewChat}
+          >
+            <Plus className="h-4 w-4" />
+            New Chat
+          </Button>
+        </div>
+
+        {/* Session list */}
+        <div className="flex-1 overflow-y-auto px-2 py-1">
+          {sessions.length === 0 ? (
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+              No conversations yet
+            </p>
+          ) : (
+            sessions.map((session) => (
+              <button
+                key={session.dateKey}
+                onClick={() => onSelect(session.dateKey)}
+                className={`
+                  mb-0.5 w-full rounded-lg px-3 py-2.5 text-left transition-colors
+                  ${
+                    activeDateKey === session.dateKey
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }
+                `}
+              >
+                <p className="text-xs font-semibold">{session.label}</p>
+                <p className="mt-0.5 truncate text-[11px] opacity-70">
+                  {getSessionPreview(session.messages)}
+                </p>
+                <p className="mt-0.5 text-[10px] opacity-50">
+                  {session.messages.length} message
+                  {session.messages.length !== 1 ? "s" : ""}
+                </p>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ─── main component ──────────────────────────────────────── */
+
 export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
-  const [messages, setMessages] = useState<readonly DisplayMessage[]>([]);
+  const [allMessages, setAllMessages] = useState<readonly DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [activeDateKey, setActiveDateKey] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -174,7 +357,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
     }
   }, []);
 
-  // Load chat history
+  /* load history on mount */
   useEffect(() => {
     async function loadHistory() {
       try {
@@ -183,63 +366,80 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
           setIsLoadingHistory(false);
           return;
         }
-
-        const json = (await res.json()) as {
-          data: ReadonlyArray<ChatMessage>;
-        };
-
+        const json = (await res.json()) as { data: ReadonlyArray<ChatMessage> };
         const loaded: readonly DisplayMessage[] = json.data
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
-            trade: undefined,
             createdAt: m.created_at,
           }));
+        setAllMessages(loaded);
 
-        setMessages(loaded);
+        // Default to today's session if it exists, else most recent
+        const groups = groupByDate(loaded);
+        if (groups.length > 0) {
+          const todayKey = dateKey(new Date().toISOString());
+          const todayGroup = groups.find((g) => g.dateKey === todayKey);
+          setActiveDateKey(todayGroup ? todayKey : groups[0].dateKey);
+        }
       } catch {
-        // Silently handle - user will see empty chat
+        // silently ignore
       } finally {
         setIsLoadingHistory(false);
       }
     }
-
     loadHistory();
   }, []);
 
-  // Auto-scroll on new messages
+  /* auto-scroll */
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+  }, [allMessages, isLoading, activeDateKey, scrollToBottom]);
 
-  // Show welcome message for first-time users
+  /* welcome for first-time users */
   useEffect(() => {
-    if (!isFirstTime || messages.length > 0 || isLoadingHistory) return;
-
-    const welcomeMessage: DisplayMessage = {
+    if (!isFirstTime || allMessages.length > 0 || isLoadingHistory) return;
+    const welcome: DisplayMessage = {
       id: "welcome",
       role: "assistant",
-      content: `Welcome${userName ? `, ${userName}` : ""}! I'm your trade logging assistant. Tell me about a trade you'd like to log - for example: "I bought 1 lot of EURUSD at 1.0850 today at 9am with a stop loss at 1.0820."`,
+      content: `Welcome${userName ? `, ${userName}` : ""}! I'm your trade logging assistant. Just tell me about a trade — e.g. "Bought BTC at 77200, sold at 77431" and I'll log it instantly.`,
       createdAt: new Date().toISOString(),
     };
+    setAllMessages([welcome]);
+    setActiveDateKey(dateKey(welcome.createdAt));
+  }, [isFirstTime, userName, allMessages.length, isLoadingHistory]);
 
-    setMessages([welcomeMessage]);
-  }, [isFirstTime, userName, messages.length, isLoadingHistory]);
+  /* derive sessions + filtered messages */
+  const sessions = groupByDate(allMessages);
+  const todayKey = dateKey(new Date().toISOString());
+  const displayMessages =
+    activeDateKey === null
+      ? allMessages
+      : sessions.find((s) => s.dateKey === activeDateKey)?.messages ?? [];
+
+  /* handlers */
+  const handleNewChat = useCallback(() => {
+    setActiveDateKey(todayKey);
+    setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [todayKey]);
 
   const sendMessage = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
+    const now = new Date().toISOString();
     const userMessage: DisplayMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: trimmed,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setAllMessages((prev) => [...prev, userMessage]);
+    setActiveDateKey(dateKey(now));
     setInput("");
     setIsLoading(true);
 
@@ -251,9 +451,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       });
 
       if (!res.ok) {
-        const errJson = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
+        const errJson = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(errJson.error ?? "Failed to send message");
       }
 
@@ -272,24 +470,20 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
         createdAt: new Date().toISOString(),
       };
 
-      setMessages((prev) => [...prev, aiMessage]);
+      setAllMessages((prev) => [...prev, aiMessage]);
 
-      // Mark user as onboarded after first interaction
       if (isFirstTime) {
-        fetch("/api/chat/onboard", { method: "POST" }).catch(() => {
-          // Non-critical, silently handle
-        });
+        fetch("/api/chat/onboard", { method: "POST" }).catch(() => {});
       }
     } catch (err: unknown) {
-      const errorText =
-        err instanceof Error ? err.message : "Something went wrong";
+      const errorText = err instanceof Error ? err.message : "Something went wrong";
       const errMessage: DisplayMessage = {
         id: `err-${Date.now()}`,
         role: "assistant",
-        content: `Sorry, I encountered an error: ${errorText}. Please try again.`,
+        content: `Sorry, I ran into an error: ${errorText}. Please try again.`,
         createdAt: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, errMessage]);
+      setAllMessages((prev) => [...prev, errMessage]);
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -306,55 +500,139 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
     [sendMessage],
   );
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Messages area */}
-      <div
-        ref={scrollRef}
-        className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
-      >
-        {isLoadingHistory ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bot className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              Tell me about a trade you want to log.
-            </p>
-          </div>
-        ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
-        )}
-        {isLoading && <TypingIndicator />}
-      </div>
+  /* render date-grouped messages with separators */
+  function renderMessages() {
+    if (isLoadingHistory) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
 
-      {/* Input bar */}
-      <div className="shrink-0 border-t border-border bg-card px-4 py-3">
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe your trade..."
-            disabled={isLoading}
-            className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring/50 focus:outline-none focus:ring-1 focus:ring-ring/30 disabled:opacity-50"
-          />
+    if (displayMessages.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Bot className="mb-3 h-10 w-10 text-muted-foreground/20" />
+          <p className="text-sm font-medium text-muted-foreground">
+            {activeDateKey === todayKey || activeDateKey === null
+              ? "Start by telling me about a trade"
+              : "No messages on this day"}
+          </p>
+          {activeDateKey !== todayKey && activeDateKey !== null && (
+            <p className="mt-1 text-xs text-muted-foreground/60">
+              Switch to Today to chat
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    // Group by date within the visible messages to add separators
+    const groups = groupByDate(displayMessages).reverse(); // chronological
+
+    return groups.map((group) => (
+      <div key={group.dateKey}>
+        <DateDivider label={group.label} />
+        <div className="space-y-4">
+          {group.messages.map((msg) => (
+            <MessageBubble key={msg.id} message={msg} />
+          ))}
+        </div>
+      </div>
+    ));
+  }
+
+  return (
+    <div className="relative flex h-full overflow-hidden">
+      {/* Sessions sidebar */}
+      <SessionSidebar
+        sessions={sessions}
+        activeDateKey={activeDateKey}
+        onSelect={(key) => {
+          setActiveDateKey(key);
+          setSidebarOpen(false);
+        }}
+        onNewChat={handleNewChat}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      {/* Main chat panel */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Topbar */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
           <Button
-            onClick={sendMessage}
-            disabled={isLoading || !input.trim()}
-            className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50"
+            variant="ghost"
             size="icon"
+            className="h-7 w-7 lg:hidden"
+            onClick={() => setSidebarOpen(true)}
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+            <MessageSquare className="h-4 w-4" />
           </Button>
+          {/* Desktop: toggle sidebar */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden h-7 w-7 lg:flex"
+            onClick={() => setSidebarOpen((o) => !o)}
+            title="Toggle history"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium text-foreground">
+            {activeDateKey
+              ? sessions.find((s) => s.dateKey === activeDateKey)?.label ?? "Chat"
+              : "Chat"}
+          </span>
+          <div className="ml-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs text-muted-foreground"
+              onClick={handleNewChat}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New
+            </Button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div
+          ref={scrollRef}
+          className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
+        >
+          {renderMessages()}
+          {isLoading && <TypingIndicator />}
+        </div>
+
+        {/* Input bar */}
+        <div className="shrink-0 border-t border-border bg-card px-4 py-3">
+          <div className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe your trade… e.g. Bought BTC at 77200, sold at 77431"
+              disabled={isLoading}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring/50 focus:outline-none focus:ring-1 focus:ring-ring/30 disabled:opacity-50"
+            />
+            <Button
+              onClick={sendMessage}
+              disabled={isLoading || !input.trim()}
+              className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50"
+              size="icon"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

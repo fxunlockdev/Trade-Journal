@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { buildSystemPrompt } from "@/lib/chat/system-prompt";
@@ -17,11 +18,13 @@ function isValidChatRequest(body: unknown): body is ChatRequestBody {
   return typeof obj.message === "string" && obj.message.trim().length > 0;
 }
 
+type AdminDB = ReturnType<typeof createAdminClient>;
+
 async function loadChatHistory(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  adminDB: AdminDB,
   userId: string,
 ): Promise<ReadonlyArray<{ role: "user" | "assistant"; content: string }>> {
-  const { data, error } = await supabase
+  const { data, error } = await adminDB
     .from("chat_messages")
     .select("role, content")
     .eq("user_id", userId)
@@ -44,13 +47,13 @@ async function loadChatHistory(
 }
 
 async function saveChatMessage(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  adminDB: AdminDB,
   userId: string,
   role: ChatMessage["role"],
   content: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
-  const { error } = await supabase.from("chat_messages").insert({
+  const { error } = await adminDB.from("chat_messages").insert({
     user_id: userId,
     role,
     content,
@@ -67,7 +70,7 @@ interface TradeCreateResult {
 }
 
 async function createTradeFromAction(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  adminDB: AdminDB,
   userId: string,
   actionData: Record<string, unknown>,
 ): Promise<TradeCreateResult> {
@@ -109,14 +112,14 @@ async function createTradeFromAction(
 
   const computed = computeTradeFields(tradeData);
 
-  const { data, error } = await supabase
+  const { data, error } = await adminDB
     .from("trades")
     .insert(computed)
     .select()
     .single();
 
   if (error) {
-    console.error("[chat] trade insert error:", error.message);
+    console.error("[chat] trade insert error:", error.message, error.details, error.hint);
     return { trade: null, error: `DB error: ${error.message}` };
   }
 
@@ -125,6 +128,7 @@ async function createTradeFromAction(
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    // Auth check via SSR client (respects user session)
     const supabase = await createClient();
     const {
       data: { user },
@@ -146,11 +150,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
     }
 
+    // All DB operations use admin client to bypass RLS
+    const adminDB = createAdminClient();
     const client = new OpenAI({ apiKey });
     const currentDatetime = new Date().toISOString();
 
     // Load memory (previous messages)
-    const previousMessages = await loadChatHistory(supabase, user.id);
+    const previousMessages = await loadChatHistory(adminDB, user.id);
 
     // Build conversation input for Responses API
     const inputMessages = [
@@ -162,18 +168,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ];
 
     // Save user message to memory BEFORE AI call
-    await saveChatMessage(supabase, user.id, "user", body.message);
+    await saveChatMessage(adminDB, user.id, "user", body.message);
 
     // Call OpenAI Responses API — gpt-5.4
-    const response = await client.responses.create({
-      model: "gpt-5.4",
-      instructions: buildSystemPrompt(currentDatetime),
-      input: inputMessages,
-      temperature: 0.2,
-      max_output_tokens: 2048,
-    });
-
-    const aiContent = response.output_text ?? "";
+    let aiContent = "";
+    try {
+      const response = await client.responses.create({
+        model: "gpt-5.4",
+        instructions: buildSystemPrompt(currentDatetime),
+        input: inputMessages,
+        temperature: 0.2,
+        max_output_tokens: 2048,
+      });
+      aiContent = response.output_text ?? "";
+    } catch (openaiErr: unknown) {
+      const msg = openaiErr instanceof Error ? openaiErr.message : "OpenAI error";
+      console.error("[chat] OpenAI call failed:", msg);
+      return NextResponse.json({ error: `AI error: ${msg}` }, { status: 500 });
+    }
 
     if (!aiContent) {
       return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
@@ -186,14 +198,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (tradeAction) {
       const result = await createTradeFromAction(
-        supabase,
+        adminDB,
         user.id,
         tradeAction.data as unknown as Record<string, unknown>,
       );
       createdTrade = result.trade;
       tradeError = result.error;
 
-      await saveChatMessage(supabase, user.id, "assistant", aiContent, {
+      await saveChatMessage(adminDB, user.id, "assistant", aiContent, {
         trade_id: createdTrade?.id ?? null,
         trade_error: tradeError,
         action: "create_trade",
@@ -203,10 +215,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const parseErrors = getTradeParseErrors(aiContent);
       if (parseErrors) {
         console.error("[chat] AI produced invalid trade JSON:", parseErrors);
-        tradeError = parseErrors;
+        tradeError = `Trade JSON malformed: ${parseErrors}`;
       }
 
-      await saveChatMessage(supabase, user.id, "assistant", aiContent);
+      await saveChatMessage(adminDB, user.id, "assistant", aiContent);
     }
 
     return NextResponse.json({

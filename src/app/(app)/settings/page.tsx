@@ -82,40 +82,24 @@ export default function SettingsPage() {
 
     const fetchUsers = async () => {
       setLoadingUsers(true);
-
-      const { data: usersData } = await supabase
-        .from("users")
-        .select("id, email, full_name, role")
-        .order("created_at", { ascending: true });
-
-      if (!usersData) {
-        setLoadingUsers(false);
-        return;
-      }
-
-      const { data: tradeCounts } = await supabase.from("trades").select("user_id");
-
-      const countMap = new Map<string, number>();
-      if (tradeCounts) {
-        for (const row of tradeCounts) {
-          const uid = (row as { user_id: string }).user_id;
-          countMap.set(uid, (countMap.get(uid) ?? 0) + 1);
+      try {
+        const res = await fetch("/api/admin/users");
+        if (!res.ok) {
+          const err = await res.json() as { error?: string };
+          toast.error(err.error ?? "Failed to load members");
+          return;
         }
+        const json = await res.json() as { data: ManagedUser[] };
+        setUsers(json.data ?? []);
+      } catch {
+        toast.error("Failed to load members");
+      } finally {
+        setLoadingUsers(false);
       }
-
-      const enriched: ManagedUser[] = usersData.map(
-        (u: { id: string; email: string; full_name: string | null; role: UserRole }) => ({
-          ...u,
-          trade_count: countMap.get(u.id) ?? 0,
-        }),
-      );
-
-      setUsers(enriched);
-      setLoadingUsers(false);
     };
 
     fetchUsers();
-  }, [isUserAdmin, supabase]);
+  }, [isUserAdmin]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!user) return;
@@ -138,22 +122,28 @@ export default function SettingsPage() {
   const handleRoleChange = useCallback(
     async (userId: string, newRole: UserRole) => {
       setUpdatingUserId(userId);
-      const { error } = await supabase
-        .from("users")
-        .update({ role: newRole })
-        .eq("id", userId);
-
-      if (error) {
-        toast.error("Failed to update role");
-      } else {
+      try {
+        const res = await fetch("/api/admin/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, role: newRole }),
+        });
+        if (!res.ok) {
+          const err = await res.json() as { error?: string };
+          toast.error(err.error ?? "Failed to update role");
+          return;
+        }
         setUsers((prev) =>
           prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
         );
         toast.success("Role updated");
+      } catch {
+        toast.error("Failed to update role");
+      } finally {
+        setUpdatingUserId(null);
       }
-      setUpdatingUserId(null);
     },
-    [supabase],
+    [],
   );
 
   const toggleSort = useCallback((field: SortField) => {

@@ -15,7 +15,6 @@ export default async function AiChatPage() {
     return null;
   }
 
-  // Fetch user profile to check onboarding status
   const { data: profile } = await supabase
     .from("users")
     .select("id, full_name, has_onboarded")
@@ -26,13 +25,16 @@ export default async function AiChatPage() {
   const userName = profile?.full_name ?? undefined;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Page header */}
       <div className="shrink-0 border-b border-border bg-card px-4 py-3">
-        <h1 className="text-lg font-semibold text-foreground">AI Trade Chat</h1>
+        <h1 className="text-base font-semibold text-foreground">AI Trade Chat</h1>
         <p className="text-xs text-muted-foreground">
-          Describe your trades in natural language and I will log them for you
+          Describe your trades in plain English — I'll log them instantly
         </p>
       </div>
+
+      {/* Chat fills remaining height */}
       <div className="flex-1 overflow-hidden">
         <TradeChat
           userId={user.id}
