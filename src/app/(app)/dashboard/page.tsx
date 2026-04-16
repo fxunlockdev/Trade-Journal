@@ -7,13 +7,15 @@ export const metadata = {
   title: "Dashboard | TRDR",
 };
 
-async function getTrades(): Promise<readonly Trade[]> {
+export default async function DashboardPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return [];
+  if (!user) {
+    return <EmptyState />;
+  }
 
   const { data, error } = await supabase
     .from("trades")
@@ -22,10 +24,24 @@ async function getTrades(): Promise<readonly Trade[]> {
     .order("entry_time", { ascending: true });
 
   if (error) {
-    throw new Error(`Failed to fetch trades: ${error.message}`);
+    console.error("[TRDR] Dashboard trades error:", error.message);
   }
 
-  return (data ?? []) as readonly Trade[];
+  const trades = (data ?? []) as Trade[];
+
+  if (trades.length === 0) {
+    return (
+      <div className="p-6">
+        <EmptyState />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <DashboardCharts trades={trades} />
+    </div>
+  );
 }
 
 function EmptyState() {
@@ -52,29 +68,11 @@ function EmptyState() {
         and detailed statistics.
       </p>
       <Link
-        href="/journal"
+        href="/journal/new"
         className="mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
       >
         Log your first trade
       </Link>
-    </div>
-  );
-}
-
-export default async function DashboardPage() {
-  const trades = await getTrades();
-
-  if (trades.length === 0) {
-    return (
-      <div className="p-6">
-        <EmptyState />
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6">
-      <DashboardCharts trades={trades as Trade[]} />
     </div>
   );
 }

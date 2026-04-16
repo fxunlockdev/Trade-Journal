@@ -47,7 +47,10 @@ export default async function JournalPage({ searchParams }: JournalPageProps) {
     query = query.lt("pnl_absolute", 0);
   }
   if (params.tags) {
-    const tagList = params.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    const tagList = params.tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
     if (tagList.length > 0) {
       query = query.overlaps("tags", tagList);
     }
@@ -61,14 +64,18 @@ export default async function JournalPage({ searchParams }: JournalPageProps) {
     .order("entry_time", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  const { data: trades, count } = await query;
+  const { data: trades, count, error } = await query;
+
+  if (error) {
+    console.error("[TRDR] Journal trades error:", error.message);
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Trade Journal</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="mt-1 text-sm text-muted-foreground">
             {count ?? 0} {(count ?? 0) === 1 ? "trade" : "trades"} total
           </p>
         </div>

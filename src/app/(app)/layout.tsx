@@ -7,7 +7,13 @@ export default async function AppLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createClient();
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch {
+    redirect("/login");
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -16,17 +22,23 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  // Try to get profile, gracefully handle if users table doesn't exist yet
+  const { data: profile, error: profileError } = await supabase
     .from("users")
     .select("id, email, full_name, avatar_url, role")
     .eq("id", user.id)
     .single();
 
+  if (profileError) {
+    console.error("[TRDR] Profile fetch error:", profileError.message);
+  }
+
   const userProfile = profile ?? {
     id: user.id,
     email: user.email ?? "",
-    full_name: user.user_metadata?.full_name ?? null,
-    avatar_url: user.user_metadata?.avatar_url ?? null,
+    full_name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
+    avatar_url:
+      user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null,
     role: "user" as const,
   };
 
