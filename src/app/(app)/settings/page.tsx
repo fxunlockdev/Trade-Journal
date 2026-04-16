@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -23,13 +24,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useUser } from "@/hooks/use-user";
-import { isAdmin } from "@/lib/constants/roles";
 import { createClient } from "@/lib/supabase/client";
 import type { UserRole } from "@/types/database";
-import { User as UserIcon, Shield, Loader2, ArrowUpDown } from "lucide-react";
+import { toast } from "sonner";
+import {
+  User as UserIcon,
+  Shield,
+  Loader2,
+  ArrowUpDown,
+  Save,
+} from "lucide-react";
 
 type SortField = "full_name" | "email" | "role" | "trade_count";
-type SortDirection = "asc" | "desc";
+type SortDir = "asc" | "desc";
 
 interface ManagedUser {
   readonly id: string;
@@ -37,27 +44,35 @@ interface ManagedUser {
   readonly full_name: string | null;
   readonly role: UserRole;
   readonly trade_count: number;
-  readonly last_sign_in_at: string | null;
 }
 
 export default function SettingsPage() {
-  const { profile, loading } = useUser();
+  const { user, profile, loading, refetch } = useUser();
+  const [fullName, setFullName] = useState("");
+  const [saving, setSaving] = useState(false);
+
   const [users, setUsers] = useState<readonly ManagedUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("full_name");
-  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const supabase = createClient();
-  const isUserAdmin = profile ? isAdmin(profile.role) : false;
+  const isUserAdmin = profile?.role === "admin";
 
+  // Set form values when profile loads
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name ?? "");
+    }
+  }, [profile]);
+
+  // Load users for admin
   useEffect(() => {
     if (!isUserAdmin) return;
 
     const fetchUsers = async () => {
       setLoadingUsers(true);
-
-      // Fetch users
       const { data: usersData } = await supabase
         .from("users")
         .select("id, email, full_name, role")
@@ -68,7 +83,6 @@ export default function SettingsPage() {
         return;
       }
 
-      // Fetch trade counts per user
       const { data: tradeCounts } = await supabase
         .from("trades")
         .select("user_id");
@@ -76,16 +90,20 @@ export default function SettingsPage() {
       const countMap = new Map<string, number>();
       if (tradeCounts) {
         for (const row of tradeCounts) {
-          const userId = (row as { user_id: string }).user_id;
-          countMap.set(userId, (countMap.get(userId) ?? 0) + 1);
+          const uid = (row as { user_id: string }).user_id;
+          countMap.set(uid, (countMap.get(uid) ?? 0) + 1);
         }
       }
 
-      const enriched: readonly ManagedUser[] = usersData.map(
-        (u: { id: string; email: string; full_name: string | null; role: UserRole }) => ({
+      const enriched: ManagedUser[] = usersData.map(
+        (u: {
+          id: string;
+          email: string;
+          full_name: string | null;
+          role: UserRole;
+        }) => ({
           ...u,
           trade_count: countMap.get(u.id) ?? 0,
-          last_sign_in_at: null,
         }),
       );
 
@@ -96,21 +114,40 @@ export default function SettingsPage() {
     fetchUsers();
   }, [isUserAdmin, supabase]);
 
+  const handleSaveProfile = useCallback(async () => {
+    if (!user) return;
+    setSaving(true);
+
+    const { error } = await supabase
+      .from("users")
+      .update({ full_name: fullName.trim() || null })
+      .eq("id", user.id);
+
+    if (error) {
+      toast.error("Failed to update profile");
+    } else {
+      toast.success("Profile updated");
+      await refetch();
+    }
+    setSaving(false);
+  }, [user, fullName, supabase, refetch]);
+
   const handleRoleChange = useCallback(
     async (userId: string, newRole: UserRole) => {
       setUpdatingUserId(userId);
-
       const { error } = await supabase
         .from("users")
         .update({ role: newRole })
         .eq("id", userId);
 
-      if (!error) {
+      if (error) {
+        toast.error("Failed to update role");
+      } else {
         setUsers((prev) =>
           prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
         );
+        toast.success("Role updated");
       }
-
       setUpdatingUserId(null);
     },
     [supabase],
@@ -151,6 +188,10 @@ export default function SettingsPage() {
     );
   }
 
+  const displayEmail = profile?.email || user?.email || "";
+  const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || "User";
+  const displayAvatar = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "";
+
   return (
     <div className="space-y-6 p-4 md:p-6 lg:p-8">
       <div>
@@ -172,26 +213,22 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage src={profile?.avatar_url ?? undefined} />
+            <Avatar className="h-16 w-16 border border-slate-200">
+              <AvatarImage src={displayAvatar} />
               <AvatarFallback className="bg-indigo-100 text-lg text-indigo-600">
-                {profile?.full_name
-                  ?.split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase() ?? "U"}
+                {displayName.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div>
               <h3 className="text-lg font-semibold text-slate-900">
-                {profile?.full_name ?? "Unnamed User"}
+                {displayName}
               </h3>
-              <p className="text-sm text-slate-500">{profile?.email}</p>
+              <p className="text-sm text-slate-500">{displayEmail}</p>
               <Badge
                 variant="outline"
-                className="mt-1 border-slate-200 text-slate-700 capitalize"
+                className="mt-1 border-indigo-200 bg-indigo-50 capitalize text-indigo-700"
               >
-                {profile?.role}
+                {profile?.role ?? "user"}
               </Badge>
             </div>
           </div>
@@ -200,21 +237,37 @@ export default function SettingsPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-sm text-slate-500">Full Name</Label>
+              <Label className="text-sm text-slate-600">Full Name</Label>
               <Input
-                value={profile?.full_name ?? ""}
-                readOnly
-                className="border-slate-200 bg-slate-50 text-slate-900"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Enter your name"
+                className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-slate-500">Email</Label>
+              <Label className="text-sm text-slate-600">Email</Label>
               <Input
-                value={profile?.email ?? ""}
+                value={displayEmail}
                 readOnly
                 className="border-slate-200 bg-slate-50 text-slate-500"
               />
             </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveProfile}
+              disabled={saving}
+              className="gap-2 bg-indigo-600 text-white hover:bg-indigo-500"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save Changes
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -228,6 +281,9 @@ export default function SettingsPage() {
               <CardTitle className="text-base font-semibold text-slate-900">
                 User Management
               </CardTitle>
+              <Badge variant="outline" className="ml-2 border-red-200 bg-red-50 text-red-700">
+                Admin
+              </Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -235,99 +291,66 @@ export default function SettingsPage() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
               </div>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-slate-500">No users found.</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-slate-200">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-slate-200 hover:bg-transparent">
-                      <TableHead>
-                        <button
-                          onClick={() => toggleSort("full_name")}
-                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
-                        >
-                          User
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          onClick={() => toggleSort("email")}
-                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
-                        >
-                          Email
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          onClick={() => toggleSort("trade_count")}
-                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
-                        >
-                          Trades
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          onClick={() => toggleSort("role")}
-                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
-                        >
-                          Role
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
+                    <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
+                      {(
+                        [
+                          ["full_name", "User"],
+                          ["email", "Email"],
+                          ["trade_count", "Trades"],
+                          ["role", "Role"],
+                        ] as [SortField, string][]
+                      ).map(([field, label]) => (
+                        <TableHead key={field}>
+                          <button
+                            onClick={() => toggleSort(field)}
+                            className="flex items-center gap-1 text-slate-600 hover:text-slate-900"
+                          >
+                            {label}
+                            <ArrowUpDown className="h-3 w-3" />
+                          </button>
+                        </TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedUsers.map((user) => (
+                    {sortedUsers.map((u) => (
                       <TableRow
-                        key={user.id}
-                        className="border-slate-100 hover:bg-slate-50/50"
+                        key={u.id}
+                        className="border-slate-100 hover:bg-slate-50"
                       >
                         <TableCell className="font-medium text-slate-900">
-                          {user.full_name ?? "Unnamed"}
+                          {u.full_name ?? "Unnamed"}
                         </TableCell>
                         <TableCell className="text-sm text-slate-500">
-                          {user.email}
+                          {u.email}
                         </TableCell>
-                        <TableCell className="text-sm text-slate-700">
-                          {user.trade_count}
+                        <TableCell className="text-sm font-medium text-slate-700">
+                          {u.trade_count}
                         </TableCell>
                         <TableCell>
                           <Select
-                            value={user.role}
-                            onValueChange={(value) => {
-                              if (value !== null) {
-                                handleRoleChange(user.id, value as UserRole);
-                              }
+                            value={u.role}
+                            onValueChange={(v) => {
+                              if (v) handleRoleChange(u.id, v as UserRole);
                             }}
                             disabled={
-                              user.id === profile?.id ||
-                              updatingUserId === user.id
+                              u.id === profile?.id ||
+                              updatingUserId === u.id
                             }
                           >
                             <SelectTrigger className="w-28 border-slate-200 bg-white text-slate-700">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="border-slate-200 bg-white">
-                              <SelectItem
-                                value="user"
-                                className="text-slate-700"
-                              >
-                                User
-                              </SelectItem>
-                              <SelectItem
-                                value="trader"
-                                className="text-slate-700"
-                              >
-                                Trader
-                              </SelectItem>
-                              <SelectItem
-                                value="admin"
-                                className="text-slate-700"
-                              >
-                                Admin
-                              </SelectItem>
+                              <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="trader">Trader</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>

@@ -1,23 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import type { Role } from "@/lib/constants/roles";
 
-interface UserProfile {
-  id: string;
-  email: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  role: Role;
+export interface UserProfile {
+  readonly id: string;
+  readonly email: string;
+  readonly full_name: string | null;
+  readonly avatar_url: string | null;
+  readonly role: string;
+  readonly has_onboarded: boolean;
 }
 
 interface UseUserReturn {
-  user: User | null;
-  profile: UserProfile | null;
-  loading: boolean;
-  error: string | null;
+  readonly user: User | null;
+  readonly profile: UserProfile | null;
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly refetch: () => Promise<void>;
 }
 
 export function useUser(): UseUserReturn {
@@ -25,65 +26,89 @@ export function useUser(): UseUserReturn {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const supabaseRef = useRef(createClient());
 
-  const supabase = createClient();
+  async function fetchProfile(authUser: User) {
+    const supabase = supabaseRef.current;
 
-  const fetchProfile = useCallback(
-    async (userId: string) => {
-      const { data, error: profileError } = await supabase
-        .from("users")
-        .select("id, email, full_name, avatar_url, role")
-        .eq("id", userId)
-        .single();
+    const { data, error: profileError } = await supabase
+      .from("users")
+      .select("id, email, full_name, avatar_url, role, has_onboarded")
+      .eq("id", authUser.id)
+      .single();
 
-      if (profileError) {
-        setError(profileError.message);
+    if (profileError || !data) {
+      // Fallback to auth user metadata if profile table fails
+      setProfile({
+        id: authUser.id,
+        email: authUser.email ?? "",
+        full_name:
+          authUser.user_metadata?.full_name ??
+          authUser.user_metadata?.name ??
+          null,
+        avatar_url:
+          authUser.user_metadata?.avatar_url ??
+          authUser.user_metadata?.picture ??
+          null,
+        role: "user",
+        has_onboarded: false,
+      });
+      return;
+    }
+
+    // Merge: prefer DB data but fill gaps from auth metadata
+    setProfile({
+      id: data.id,
+      email: data.email || authUser.email || "",
+      full_name:
+        data.full_name ||
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        null,
+      avatar_url:
+        data.avatar_url ||
+        authUser.user_metadata?.avatar_url ||
+        authUser.user_metadata?.picture ||
+        null,
+      role: data.role ?? "user",
+      has_onboarded: data.has_onboarded ?? false,
+    });
+  }
+
+  async function loadUser() {
+    const supabase = supabaseRef.current;
+    try {
+      const {
+        data: { user: authUser },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !authUser) {
+        setError(authError?.message ?? null);
+        setLoading(false);
         return;
       }
 
-      setProfile(data as UserProfile);
-    },
-    [supabase],
-  );
+      setUser(authUser);
+      await fetchProfile(authUser);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load user");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user: authUser },
-          error: authError,
-        } = await supabase.auth.getUser();
+    loadUser();
 
-        if (authError) {
-          setError(authError.message);
-          setLoading(false);
-          return;
-        }
-
-        setUser(authUser);
-
-        if (authUser) {
-          await fetchProfile(authUser.id);
-        }
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Failed to load user";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getUser();
-
+    const supabase = supabaseRef.current;
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const authUser = session?.user ?? null;
       setUser(authUser);
-
       if (authUser) {
-        await fetchProfile(authUser.id);
+        await fetchProfile(authUser);
       } else {
         setProfile(null);
       }
@@ -92,7 +117,8 @@ export function useUser(): UseUserReturn {
     return () => {
       subscription.unsubscribe();
     };
-  }, [supabase, fetchProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return { user, profile, loading, error };
+  return { user, profile, loading, error, refetch: loadUser };
 }
