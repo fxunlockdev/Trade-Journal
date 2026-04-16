@@ -26,10 +26,10 @@ export default async function AiChatPage() {
   const userName = profile?.full_name ?? undefined;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col md:h-[calc(100vh-3rem)]">
-      <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
-        <h1 className="text-lg font-semibold text-zinc-100">AI Trade Chat</h1>
-        <p className="text-xs text-zinc-500">
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
+        <h1 className="text-lg font-semibold text-slate-900">AI Trade Chat</h1>
+        <p className="text-xs text-slate-500">
           Describe your trades in natural language and I will log them for you
         </p>
       </div>

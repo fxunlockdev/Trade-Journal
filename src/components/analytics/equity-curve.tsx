@@ -32,8 +32,8 @@ function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
 
   const value = payload[0].value;
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 shadow-xl">
-      <p className="text-xs text-zinc-400">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+      <p className="text-xs text-slate-500">
         {label
           ? new Date(label).toLocaleDateString("en-US", {
               month: "short",
@@ -61,7 +61,7 @@ export function EquityCurve({ trades }: EquityCurveProps) {
 
   if (data.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
+      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
         No closed trades yet
       </div>
     );

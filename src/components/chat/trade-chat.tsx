@@ -26,7 +26,7 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
     trade.pnl_absolute !== null ? trade.pnl_absolute >= 0 : null;
 
   return (
-    <Card className="mt-2 border-zinc-700 bg-zinc-900/50">
+    <Card className="mt-2 border-slate-200 bg-slate-50">
       <CardContent className="p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -35,7 +35,7 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
             ) : (
               <TrendingDown className="h-4 w-4 text-red-400" />
             )}
-            <span className="text-sm font-semibold text-zinc-100">
+            <span className="text-sm font-semibold text-slate-900">
               {trade.instrument}
             </span>
             <Badge
@@ -58,21 +58,21 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
             </span>
           )}
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-400">
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>
-            Entry: <span className="text-zinc-200">{trade.entry_price}</span>
+            Entry: <span className="text-slate-900">{trade.entry_price}</span>
           </span>
           <span>
-            Qty: <span className="text-zinc-200">{trade.quantity}</span>
+            Qty: <span className="text-slate-900">{trade.quantity}</span>
           </span>
           {trade.exit_price !== null && (
             <span>
-              Exit: <span className="text-zinc-200">{trade.exit_price}</span>
+              Exit: <span className="text-slate-900">{trade.exit_price}</span>
             </span>
           )}
           {trade.stop_loss !== null && (
             <span>
-              SL: <span className="text-zinc-200">{trade.stop_loss}</span>
+              SL: <span className="text-slate-900">{trade.stop_loss}</span>
             </span>
           )}
         </div>
@@ -91,13 +91,13 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-          isUser ? "bg-emerald-600" : "bg-zinc-700"
+          isUser ? "bg-indigo-600" : "bg-indigo-100"
         }`}
       >
         {isUser ? (
           <User className="h-3.5 w-3.5 text-white" />
         ) : (
-          <Bot className="h-3.5 w-3.5 text-zinc-300" />
+          <Bot className="h-3.5 w-3.5 text-indigo-600" />
         )}
       </div>
       <div
@@ -106,8 +106,8 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
             isUser
-              ? "rounded-tr-md bg-emerald-600 text-white"
-              : "rounded-tl-md bg-zinc-800 text-zinc-200"
+              ? "rounded-tr-md bg-indigo-600 text-white"
+              : "rounded-tl-md bg-slate-100 text-slate-900"
           }`}
         >
           <FormattedContent content={message.content} />
@@ -128,14 +128,14 @@ function FormattedContent({ content }: { readonly content: string }) {
 function TypingIndicator() {
   return (
     <div className="flex gap-2.5">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-700">
-        <Bot className="h-3.5 w-3.5 text-zinc-300" />
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+        <Bot className="h-3.5 w-3.5 text-indigo-600" />
       </div>
-      <div className="rounded-2xl rounded-tl-md bg-zinc-800 px-4 py-3">
+      <div className="rounded-2xl rounded-tl-md bg-slate-100 px-4 py-3">
         <div className="flex gap-1">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:0ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:150ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:300ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
         </div>
       </div>
     </div>
@@ -295,12 +295,12 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       >
         {isLoadingHistory ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bot className="mb-3 h-10 w-10 text-zinc-600" />
-            <p className="text-sm text-zinc-500">
+            <Bot className="mb-3 h-10 w-10 text-slate-300" />
+            <p className="text-sm text-slate-500">
               Tell me about a trade you want to log.
             </p>
           </div>
@@ -311,7 +311,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       </div>
 
       {/* Input bar */}
-      <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-4 py-3">
+      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -321,12 +321,12 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
             onKeyDown={handleKeyDown}
             placeholder="Describe your trade..."
             disabled={isLoading}
-            className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-500 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 disabled:opacity-50"
           />
           <Button
             onClick={sendMessage}
             disabled={isLoading || !input.trim()}
-            className="h-10 w-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
+            className="h-10 w-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
             size="icon"
           >
             {isLoading ? (

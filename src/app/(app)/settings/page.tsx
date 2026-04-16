@@ -146,26 +146,26 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-6 lg:p-8">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Manage your profile and application settings
         </p>
       </div>
 
       {/* Profile Section */}
-      <Card className="border-zinc-800 bg-zinc-950">
+      <Card className="border-slate-200 bg-white">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <UserIcon className="h-5 w-5 text-zinc-400" />
-            <CardTitle className="text-base font-semibold text-zinc-100">
+            <UserIcon className="h-5 w-5 text-slate-400" />
+            <CardTitle className="text-base font-semibold text-slate-900">
               Profile
             </CardTitle>
           </div>
@@ -174,7 +174,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
               <AvatarImage src={profile?.avatar_url ?? undefined} />
-              <AvatarFallback className="bg-zinc-800 text-lg text-zinc-300">
+              <AvatarFallback className="bg-indigo-100 text-lg text-indigo-600">
                 {profile?.full_name
                   ?.split(" ")
                   .map((n) => n[0])
@@ -183,36 +183,36 @@ export default function SettingsPage() {
               </AvatarFallback>
             </Avatar>
             <div>
-              <h3 className="text-lg font-semibold text-zinc-100">
+              <h3 className="text-lg font-semibold text-slate-900">
                 {profile?.full_name ?? "Unnamed User"}
               </h3>
-              <p className="text-sm text-zinc-500">{profile?.email}</p>
+              <p className="text-sm text-slate-500">{profile?.email}</p>
               <Badge
                 variant="outline"
-                className="mt-1 border-zinc-700 text-zinc-300 capitalize"
+                className="mt-1 border-slate-200 text-slate-700 capitalize"
               >
                 {profile?.role}
               </Badge>
             </div>
           </div>
 
-          <Separator className="bg-zinc-800" />
+          <Separator className="bg-slate-200" />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-sm text-zinc-400">Full Name</Label>
+              <Label className="text-sm text-slate-500">Full Name</Label>
               <Input
                 value={profile?.full_name ?? ""}
                 readOnly
-                className="border-zinc-800 bg-zinc-900 text-zinc-200"
+                className="border-slate-200 bg-slate-50 text-slate-900"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-zinc-400">Email</Label>
+              <Label className="text-sm text-slate-500">Email</Label>
               <Input
                 value={profile?.email ?? ""}
                 readOnly
-                className="border-zinc-800 bg-zinc-900 text-zinc-400"
+                className="border-slate-200 bg-slate-50 text-slate-500"
               />
             </div>
           </div>
@@ -221,11 +221,11 @@ export default function SettingsPage() {
 
       {/* User Management (Admin only) */}
       {isUserAdmin && (
-        <Card className="border-zinc-800 bg-zinc-950">
+        <Card className="border-slate-200 bg-white">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-zinc-400" />
-              <CardTitle className="text-base font-semibold text-zinc-100">
+              <Shield className="h-5 w-5 text-slate-400" />
+              <CardTitle className="text-base font-semibold text-slate-900">
                 User Management
               </CardTitle>
             </div>
@@ -233,17 +233,17 @@ export default function SettingsPage() {
           <CardContent>
             {loadingUsers ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-zinc-800">
+              <div className="overflow-hidden rounded-lg border border-slate-200">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-zinc-800 hover:bg-transparent">
+                    <TableRow className="border-slate-200 hover:bg-transparent">
                       <TableHead>
                         <button
                           onClick={() => toggleSort("full_name")}
-                          className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200"
+                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
                         >
                           User
                           <ArrowUpDown className="h-3 w-3" />
@@ -252,7 +252,7 @@ export default function SettingsPage() {
                       <TableHead>
                         <button
                           onClick={() => toggleSort("email")}
-                          className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200"
+                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
                         >
                           Email
                           <ArrowUpDown className="h-3 w-3" />
@@ -261,7 +261,7 @@ export default function SettingsPage() {
                       <TableHead>
                         <button
                           onClick={() => toggleSort("trade_count")}
-                          className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200"
+                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
                         >
                           Trades
                           <ArrowUpDown className="h-3 w-3" />
@@ -270,7 +270,7 @@ export default function SettingsPage() {
                       <TableHead>
                         <button
                           onClick={() => toggleSort("role")}
-                          className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200"
+                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
                         >
                           Role
                           <ArrowUpDown className="h-3 w-3" />
@@ -282,15 +282,15 @@ export default function SettingsPage() {
                     {sortedUsers.map((user) => (
                       <TableRow
                         key={user.id}
-                        className="border-zinc-800/50 hover:bg-zinc-900/30"
+                        className="border-slate-100 hover:bg-slate-50/50"
                       >
-                        <TableCell className="font-medium text-zinc-200">
+                        <TableCell className="font-medium text-slate-900">
                           {user.full_name ?? "Unnamed"}
                         </TableCell>
-                        <TableCell className="text-sm text-zinc-400">
+                        <TableCell className="text-sm text-slate-500">
                           {user.email}
                         </TableCell>
-                        <TableCell className="text-sm text-zinc-300">
+                        <TableCell className="text-sm text-slate-700">
                           {user.trade_count}
                         </TableCell>
                         <TableCell>
@@ -306,25 +306,25 @@ export default function SettingsPage() {
                               updatingUserId === user.id
                             }
                           >
-                            <SelectTrigger className="w-28 border-zinc-700 bg-zinc-900 text-zinc-200">
+                            <SelectTrigger className="w-28 border-slate-200 bg-white text-slate-700">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="border-zinc-700 bg-zinc-900">
+                            <SelectContent className="border-slate-200 bg-white">
                               <SelectItem
                                 value="user"
-                                className="text-zinc-200"
+                                className="text-slate-700"
                               >
                                 User
                               </SelectItem>
                               <SelectItem
                                 value="trader"
-                                className="text-zinc-200"
+                                className="text-slate-700"
                               >
                                 Trader
                               </SelectItem>
                               <SelectItem
                                 value="admin"
-                                className="text-zinc-200"
+                                className="text-slate-700"
                               >
                                 Admin
                               </SelectItem>

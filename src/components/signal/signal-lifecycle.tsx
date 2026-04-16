@@ -51,7 +51,7 @@ const STATUS_BUTTON_CONFIG: Readonly<
   },
   CLOSED: {
     icon: <XCircle className="size-3.5" />,
-    color: "bg-zinc-600 text-white hover:bg-zinc-500",
+    color: "bg-slate-300 text-white hover:bg-slate-200",
     label: "Close Signal",
   },
 };
@@ -113,16 +113,16 @@ export function SignalLifecycle({ signal, onStatusChange }: SignalLifecycleProps
   }, [selectedTp, handleStatusChange]);
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900">
+    <Card className="border-slate-200 bg-white">
       <CardHeader>
-        <CardTitle className="text-sm font-medium uppercase tracking-wider text-zinc-400">
+        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">
           Signal Lifecycle
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Current status */}
         <div className="flex items-center gap-3">
-          <span className="text-xs uppercase text-zinc-500">Current</span>
+          <span className="text-xs uppercase text-slate-500">Current</span>
           <Badge
             variant="outline"
             className={cn(
@@ -137,7 +137,7 @@ export function SignalLifecycle({ signal, onStatusChange }: SignalLifecycleProps
         {/* Available transitions */}
         {availableTransitions.length > 0 ? (
           <div className="space-y-3">
-            <p className="text-xs uppercase text-zinc-500">
+            <p className="text-xs uppercase text-slate-500">
               Available Actions
             </p>
 
@@ -145,15 +145,15 @@ export function SignalLifecycle({ signal, onStatusChange }: SignalLifecycleProps
             {hasTPHitTransition && availableTps.length > 0 && (
               <div className="flex items-center gap-2">
                 <Select value={selectedTp} onValueChange={(v) => { if (v) setSelectedTp(v); }}>
-                  <SelectTrigger className="w-[120px] border-zinc-700 bg-zinc-800 text-zinc-300">
+                  <SelectTrigger className="w-[120px] border-slate-200 bg-slate-200 text-slate-700">
                     <SelectValue placeholder="TP Level" />
                   </SelectTrigger>
-                  <SelectContent className="border-zinc-700 bg-zinc-800">
+                  <SelectContent className="border-slate-200 bg-slate-200">
                     {availableTps.map((tp) => (
                       <SelectItem
                         key={tp}
                         value={tp}
-                        className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100"
+                        className="text-slate-700 focus:bg-slate-200 focus:text-slate-900"
                       >
                         {tp}
                       </SelectItem>
@@ -164,7 +164,7 @@ export function SignalLifecycle({ signal, onStatusChange }: SignalLifecycleProps
                   size="sm"
                   disabled={updating || !selectedTp}
                   onClick={handleTPHit}
-                  className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-500"
+                  className="gap-1.5 bg-indigo-600 text-white hover:bg-indigo-500"
                 >
                   {updating ? (
                     <Loader2 className="size-3.5 animate-spin" />
@@ -202,7 +202,7 @@ export function SignalLifecycle({ signal, onStatusChange }: SignalLifecycleProps
             </div>
           </div>
         ) : (
-          <p className="text-sm text-zinc-500 italic">
+          <p className="text-sm text-slate-500 italic">
             This signal has reached its final state.
           </p>
         )}

@@ -29,12 +29,14 @@ async function loadChatHistory(
     .from("chat_messages")
     .select("role, content")
     .eq("user_id", userId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(20);
 
   if (!data) return [];
 
+  // Reverse to get chronological order (oldest first) after fetching most recent 20
   return data
+    .reverse()
     .filter(
       (msg: { role: string; content: string }) =>
         msg.role === "user" || msg.role === "assistant",

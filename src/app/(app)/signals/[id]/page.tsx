@@ -54,8 +54,8 @@ export default async function SignalDetailPage({ params }: PageProps) {
   if (!isAdmin && !isOwner) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
-        <h2 className="text-lg font-semibold text-zinc-200">Access Denied</h2>
-        <p className="mt-2 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-slate-800">Access Denied</h2>
+        <p className="mt-2 text-sm text-slate-500">
           You do not have permission to view this signal.
         </p>
       </div>
@@ -79,18 +79,18 @@ export default async function SignalDetailPage({ params }: PageProps) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-6 lg:p-8">
       {/* Header */}
       <div>
         <Link
           href="/signals"
-          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
         >
           <ArrowLeft className="size-3.5" />
           Back to Signals
         </Link>
         <div className="mt-3 flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             {typedSignal.instrument}
           </h1>
           <Badge
@@ -121,17 +121,17 @@ export default async function SignalDetailPage({ params }: PageProps) {
         {/* Left column */}
         <div className="space-y-6">
           {/* Signal info card */}
-          <Card className="border-zinc-800 bg-zinc-900">
+          <Card className="border-slate-200 bg-white">
             <CardHeader>
-              <CardTitle className="text-sm font-medium uppercase tracking-wider text-zinc-400">
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
                 Signal Details
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-lg bg-zinc-950 px-3 py-2">
-                  <span className="text-sm text-zinc-500">Entry Price</span>
-                  <span className="font-mono text-sm font-semibold text-zinc-200">
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <span className="text-sm text-slate-500">Entry Price</span>
+                  <span className="font-mono text-sm font-semibold text-slate-800">
                     {typedSignal.entry_price}
                   </span>
                 </div>
@@ -185,19 +185,19 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     ),
                 )}
 
-                <div className="flex items-center justify-between rounded-lg bg-zinc-950 px-3 py-2">
-                  <span className="text-sm text-zinc-500">Created</span>
-                  <span className="text-sm text-zinc-400">
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <span className="text-sm text-slate-500">Created</span>
+                  <span className="text-sm text-slate-500">
                     {formatDateTime(typedSignal.created_at)}
                   </span>
                 </div>
 
                 {typedSignal.notes && (
-                  <div className="rounded-lg bg-zinc-950 px-3 py-2">
-                    <span className="text-xs uppercase text-zinc-500">
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <span className="text-xs uppercase text-slate-500">
                       Notes
                     </span>
-                    <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
                       {typedSignal.notes}
                     </p>
                   </div>
@@ -217,9 +217,9 @@ export default async function SignalDetailPage({ params }: PageProps) {
 
           {/* Event timeline */}
           {typedEvents.length > 0 && (
-            <Card className="border-zinc-800 bg-zinc-900">
+            <Card className="border-slate-200 bg-white">
               <CardHeader>
-                <CardTitle className="text-sm font-medium uppercase tracking-wider text-zinc-400">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
                   Event Timeline
                 </CardTitle>
               </CardHeader>
@@ -229,10 +229,10 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     <div key={event.id} className="relative flex gap-3 pb-4">
                       {/* Timeline connector */}
                       {idx < typedEvents.length - 1 && (
-                        <div className="absolute left-[7px] top-5 h-full w-px bg-zinc-800" />
+                        <div className="absolute left-[7px] top-5 h-full w-px bg-slate-200" />
                       )}
                       {/* Dot */}
-                      <div className="relative mt-1.5 size-[15px] shrink-0 rounded-full border-2 border-zinc-700 bg-zinc-900" />
+                      <div className="relative mt-1.5 size-[15px] shrink-0 rounded-full border-2 border-slate-200 bg-white" />
                       {/* Content */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -246,7 +246,7 @@ export default async function SignalDetailPage({ params }: PageProps) {
                             {event.event_type.replace("_", " ")}
                           </Badge>
                         </div>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
                           <Clock className="size-3" />
                           {formatDateTime(event.created_at)}
                         </div>

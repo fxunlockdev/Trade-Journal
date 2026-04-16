@@ -59,9 +59,9 @@ export default async function DashboardPage() {
 function EmptyState() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-      <div className="rounded-full bg-zinc-800 p-6">
+      <div className="rounded-full bg-slate-100 p-6">
         <svg
-          className="h-10 w-10 text-zinc-500"
+          className="h-10 w-10 text-slate-400"
           fill="none"
           viewBox="0 0 24 24"
           strokeWidth={1.5}
@@ -74,14 +74,14 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <h2 className="text-lg font-semibold text-zinc-200">No trades yet</h2>
-      <p className="max-w-sm text-center text-sm text-zinc-500">
+      <h2 className="text-lg font-semibold text-slate-800">No trades yet</h2>
+      <p className="max-w-sm text-center text-sm text-slate-500">
         Start logging your trades to see performance analytics, equity curves,
         and detailed statistics.
       </p>
       <Link
         href="/journal/new"
-        className="mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
+        className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
       >
         Log your first trade
       </Link>

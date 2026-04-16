@@ -52,13 +52,13 @@ export default function LoginPage() {
 
 function LoginSkeleton() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50">
       <div className="w-full max-w-md animate-pulse px-4">
         <div className="mb-8 text-center">
-          <div className="mx-auto h-10 w-24 rounded bg-zinc-800" />
-          <div className="mx-auto mt-3 h-4 w-48 rounded bg-zinc-800" />
+          <div className="mx-auto h-10 w-24 rounded bg-slate-200" />
+          <div className="mx-auto mt-3 h-4 w-48 rounded bg-slate-200" />
         </div>
-        <div className="h-96 rounded-lg border border-zinc-800 bg-zinc-900" />
+        <div className="h-96 rounded-lg border border-slate-200 bg-white" />
       </div>
     </div>
   );
@@ -173,19 +173,19 @@ function LoginContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 to-indigo-50">
       {/* Subtle gradient background */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-1/2 left-1/2 h-[800px] w-[800px] -translate-x-1/2 rounded-full bg-emerald-500/[0.03] blur-3xl" />
-        <div className="absolute -bottom-1/2 left-1/4 h-[600px] w-[600px] rounded-full bg-emerald-600/[0.02] blur-3xl" />
+        <div className="absolute -top-1/2 left-1/2 h-[800px] w-[800px] -translate-x-1/2 rounded-full bg-indigo-500/[0.06] blur-3xl" />
+        <div className="absolute -bottom-1/2 left-1/4 h-[600px] w-[600px] rounded-full bg-indigo-400/[0.04] blur-3xl" />
       </div>
 
       {/* Grid pattern overlay */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.015]"
+        className="pointer-events-none absolute inset-0 opacity-[0.02]"
         style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px)`,
           backgroundSize: "64px 64px",
         }}
       />
@@ -193,20 +193,20 @@ function LoginContent() {
       <div className="relative z-10 w-full max-w-md px-4">
         {/* Brand */}
         <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-white">
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">
             FX Unlock
           </h1>
-          <p className="mt-2 text-sm font-medium tracking-widest uppercase text-zinc-500">
+          <p className="mt-2 text-sm font-medium tracking-widest uppercase text-slate-400">
             Trade Journal
           </p>
         </div>
 
-        <Card className="border-zinc-800/50 bg-zinc-900/80 shadow-2xl shadow-black/20 backdrop-blur-xl">
+        <Card className="border-slate-200 bg-white shadow-xl shadow-slate-200/50 backdrop-blur-xl">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl text-white">
+            <CardTitle className="text-xl text-slate-900">
               {mode === "login" ? "Welcome back" : "Create account"}
             </CardTitle>
-            <CardDescription className="text-zinc-400">
+            <CardDescription className="text-slate-500">
               {mode === "login"
                 ? "Sign in to access your trading dashboard"
                 : "Get started with your trading journey"}
@@ -217,7 +217,7 @@ function LoginContent() {
             {/* Google OAuth */}
             <Button
               variant="outline"
-              className="w-full border-zinc-700 bg-zinc-800/50 text-white hover:bg-zinc-800 hover:text-white"
+              className="w-full border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
               onClick={handleGoogleLogin}
               disabled={googleLoading || loading}
             >
@@ -231,17 +231,17 @@ function LoginContent() {
 
             {/* Divider */}
             <div className="relative flex items-center gap-4">
-              <Separator className="flex-1 bg-zinc-800" />
-              <span className="text-xs font-medium uppercase text-zinc-500">
+              <Separator className="flex-1 bg-slate-200" />
+              <span className="text-xs font-medium uppercase text-slate-400">
                 or
               </span>
-              <Separator className="flex-1 bg-zinc-800" />
+              <Separator className="flex-1 bg-slate-200" />
             </div>
 
             {/* Email form */}
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-zinc-300">
+                <Label htmlFor="email" className="text-slate-700">
                   Email
                 </Label>
                 <Input
@@ -250,14 +250,14 @@ function LoginContent() {
                   placeholder="trader@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-500 focus-visible:ring-emerald-500/30"
+                  className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500/30"
                   disabled={loading}
                   autoComplete="email"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-zinc-300">
+                <Label htmlFor="password" className="text-slate-700">
                   Password
                 </Label>
                 <Input
@@ -266,7 +266,7 @@ function LoginContent() {
                   placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-500 focus-visible:ring-emerald-500/30"
+                  className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500/30"
                   disabled={loading}
                   autoComplete={
                     mode === "login" ? "current-password" : "new-password"
@@ -276,7 +276,7 @@ function LoginContent() {
 
               {mode === "signup" && (
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-password" className="text-zinc-300">
+                  <Label htmlFor="confirm-password" className="text-slate-700">
                     Confirm Password
                   </Label>
                   <Input
@@ -285,7 +285,7 @@ function LoginContent() {
                     placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-500 focus-visible:ring-emerald-500/30"
+                    className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500/30"
                     disabled={loading}
                     autoComplete="new-password"
                   />
@@ -294,7 +294,7 @@ function LoginContent() {
 
               <Button
                 type="submit"
-                className="w-full bg-emerald-600 text-white hover:bg-emerald-500"
+                className="w-full bg-indigo-600 text-white hover:bg-indigo-500"
                 disabled={loading || googleLoading}
               >
                 {loading ? (
@@ -308,14 +308,14 @@ function LoginContent() {
             </form>
 
             {/* Toggle mode */}
-            <p className="text-center text-sm text-zinc-400">
+            <p className="text-center text-sm text-slate-500">
               {mode === "login"
                 ? "Don't have an account?"
                 : "Already have an account?"}{" "}
               <button
                 type="button"
                 onClick={toggleMode}
-                className="font-medium text-emerald-400 underline-offset-4 transition-colors hover:text-emerald-300 hover:underline"
+                className="font-medium text-indigo-600 underline-offset-4 transition-colors hover:text-indigo-500 hover:underline"
               >
                 {mode === "login" ? "Sign Up" : "Sign In"}
               </button>
@@ -324,7 +324,7 @@ function LoginContent() {
         </Card>
 
         {/* Footer */}
-        <p className="mt-6 text-center text-xs text-zinc-600">
+        <p className="mt-6 text-center text-xs text-slate-400">
           Secure, encrypted, and private by design.
         </p>
       </div>

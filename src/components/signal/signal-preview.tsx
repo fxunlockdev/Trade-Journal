@@ -122,9 +122,9 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
     typeof window !== "undefined" || true; // server can't check env, shown as info
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900">
+    <Card className="border-slate-200 bg-white">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-medium uppercase tracking-wider text-zinc-400">
+        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">
           Signal Preview
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -133,7 +133,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
               variant="ghost"
               size="sm"
               onClick={startEditing}
-              className="h-7 gap-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+              className="h-7 gap-1.5 text-xs text-slate-500 hover:text-slate-800"
             >
               <Pencil className="size-3" />
               Edit
@@ -143,13 +143,13 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Telegram-style message card */}
-        <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-4 shadow-inner">
+        <div className="rounded-xl bg-white border border-slate-200 p-4 shadow-inner">
           {editing ? (
             <div className="space-y-3">
               <Textarea
                 value={editDraft}
                 onChange={(e) => setEditDraft(e.target.value)}
-                className="min-h-[120px] border-zinc-700 bg-zinc-900 font-mono text-sm text-zinc-200 placeholder:text-zinc-600"
+                className="min-h-[120px] border-slate-200 bg-white font-mono text-sm text-slate-800 placeholder:text-slate-400"
                 placeholder="Edit your signal message..."
               />
               <div className="flex justify-end gap-2">
@@ -157,7 +157,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
                   variant="ghost"
                   size="sm"
                   onClick={cancelEdit}
-                  className="h-7 gap-1 text-xs text-zinc-400"
+                  className="h-7 gap-1 text-xs text-slate-500"
                 >
                   <X className="size-3" />
                   Cancel
@@ -173,9 +173,9 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
               </div>
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-zinc-200">
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800">
               {message || (
-                <span className="text-zinc-600 italic">
+                <span className="text-slate-400 italic">
                   No message generated yet. Click &quot;Format with AI&quot; to generate.
                 </span>
               )}
@@ -190,7 +190,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
             size="sm"
             onClick={handleFormat}
             disabled={formatting}
-            className="gap-1.5 border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            className="gap-1.5 border-slate-200 bg-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
           >
             {formatting ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -217,18 +217,18 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
                 </Button>
               }
             />
-            <AlertDialogContent className="border-zinc-800 bg-zinc-900">
+            <AlertDialogContent className="border-slate-200 bg-white">
               <AlertDialogHeader>
-                <AlertDialogTitle className="text-zinc-100">
+                <AlertDialogTitle className="text-slate-900">
                   Send this signal to Telegram?
                 </AlertDialogTitle>
-                <AlertDialogDescription className="text-zinc-400">
+                <AlertDialogDescription className="text-slate-500">
                   This will broadcast the signal message to your configured
                   Telegram channel. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700">
+                <AlertDialogCancel className="border-slate-200 bg-slate-200 text-slate-700 hover:bg-slate-100">
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction
@@ -243,15 +243,15 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
         </div>
 
         {/* Telegram config info */}
-        <div className="flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white/50 p-3">
           <Info className="mt-0.5 size-3.5 shrink-0 text-blue-400" />
-          <p className="text-xs leading-relaxed text-zinc-500">
+          <p className="text-xs leading-relaxed text-slate-500">
             Telegram integration requires{" "}
-            <code className="rounded bg-zinc-800 px-1 py-0.5 text-zinc-400">
+            <code className="rounded bg-slate-200 px-1 py-0.5 text-slate-500">
               TELEGRAM_BOT_TOKEN
             </code>{" "}
             and{" "}
-            <code className="rounded bg-zinc-800 px-1 py-0.5 text-zinc-400">
+            <code className="rounded bg-slate-200 px-1 py-0.5 text-slate-500">
               TELEGRAM_CHAT_ID
             </code>{" "}
             environment variables.
@@ -267,7 +267,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
             >
               Sent
             </Badge>
-            <span className="font-mono text-xs text-zinc-500">
+            <span className="font-mono text-xs text-slate-500">
               Message ID: {signal.telegram_message_id}
             </span>
           </div>

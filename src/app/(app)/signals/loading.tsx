@@ -6,18 +6,18 @@ export default function SignalsLoading() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="space-y-2">
-          <Skeleton className="h-8 w-32 bg-zinc-800" />
-          <Skeleton className="h-4 w-56 bg-zinc-800" />
+          <Skeleton className="h-8 w-32 bg-slate-200" />
+          <Skeleton className="h-4 w-56 bg-slate-200" />
         </div>
-        <Skeleton className="h-10 w-32 bg-zinc-800" />
+        <Skeleton className="h-10 w-32 bg-slate-200" />
       </div>
 
       {/* Table skeleton */}
-      <div className="overflow-hidden rounded-lg border border-zinc-800">
+      <div className="overflow-hidden rounded-lg border border-slate-200">
         {/* Header row */}
-        <div className="flex gap-4 border-b border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div className="flex gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3">
           {Array.from({ length: 7 }).map((_, i) => (
-            <Skeleton key={i} className="h-4 w-20 bg-zinc-800" />
+            <Skeleton key={i} className="h-4 w-20 bg-slate-200" />
           ))}
         </div>
 
@@ -25,15 +25,15 @@ export default function SignalsLoading() {
         {Array.from({ length: 5 }).map((_, rowIdx) => (
           <div
             key={rowIdx}
-            className="flex gap-4 border-b border-zinc-800/50 px-4 py-3"
+            className="flex gap-4 border-b border-slate-200 px-4 py-3"
           >
-            <Skeleton className="h-4 w-28 bg-zinc-800" />
-            <Skeleton className="h-4 w-16 bg-zinc-800" />
-            <Skeleton className="h-5 w-12 rounded-full bg-zinc-800" />
-            <Skeleton className="h-4 w-20 bg-zinc-800" />
-            <Skeleton className="h-4 w-20 bg-zinc-800" />
-            <Skeleton className="h-5 w-16 rounded-full bg-zinc-800" />
-            <Skeleton className="h-4 w-10 bg-zinc-800" />
+            <Skeleton className="h-4 w-28 bg-slate-200" />
+            <Skeleton className="h-4 w-16 bg-slate-200" />
+            <Skeleton className="h-5 w-12 rounded-full bg-slate-200" />
+            <Skeleton className="h-4 w-20 bg-slate-200" />
+            <Skeleton className="h-4 w-20 bg-slate-200" />
+            <Skeleton className="h-5 w-16 rounded-full bg-slate-200" />
+            <Skeleton className="h-4 w-10 bg-slate-200" />
           </div>
         ))}
       </div>

@@ -18,15 +18,18 @@ export async function GET(): Promise<NextResponse> {
       .from("chat_messages")
       .select("id, user_id, role, content, metadata, created_at")
       .eq("user_id", user.id)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(50);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Reverse to chronological order after fetching most recent 50
+    const reversed = [...(data ?? [])].reverse();
+
     return NextResponse.json({
-      data: (data ?? []) as ChatMessage[],
+      data: reversed as ChatMessage[],
     });
   } catch (err: unknown) {
     const message =

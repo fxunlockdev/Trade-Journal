@@ -16,7 +16,7 @@ const OPTIONS: readonly { readonly label: string; readonly value: Period }[] = [
 
 export function TimeFilter({ value, onChange }: TimeFilterProps) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1">
+    <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
       {OPTIONS.map((option) => (
         <button
           key={option.value}
@@ -25,8 +25,8 @@ export function TimeFilter({ value, onChange }: TimeFilterProps) {
           className={cn(
             "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
             value === option.value
-              ? "bg-zinc-700 text-zinc-100 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-300",
+              ? "bg-slate-200 text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700",
           )}
         >
           {option.label}

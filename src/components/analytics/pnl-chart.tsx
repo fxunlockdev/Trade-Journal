@@ -40,14 +40,14 @@ function ChartTooltip({ active, payload }: CustomTooltipProps) {
 
   const data = payload[0].payload;
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 shadow-xl">
-      <p className="text-xs font-medium text-zinc-300">{data.period}</p>
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+      <p className="text-xs font-medium text-slate-700">{data.period}</p>
       <p
         className={`text-sm font-semibold ${data.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
       >
         {formatCurrency(data.pnl)}
       </p>
-      <div className="mt-1 space-y-0.5 text-xs text-zinc-500">
+      <div className="mt-1 space-y-0.5 text-xs text-slate-500">
         <p>{data.tradeCount} trades</p>
         <p>Win rate: {formatPercentage(data.winRate)}</p>
       </div>
@@ -60,7 +60,7 @@ export function PnlChart({ trades, period }: PnlChartProps) {
 
   if (data.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
+      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
         No closed trades yet
       </div>
     );

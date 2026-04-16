@@ -26,14 +26,14 @@ export function SignalTable({ signals }: SignalTableProps) {
 
   if (signals.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-16 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full bg-zinc-800/50 text-zinc-400">
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
           <SignalIcon className="size-6" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-zinc-200">
+        <h3 className="mt-4 text-base font-semibold text-slate-900">
           No signals yet
         </h3>
-        <p className="mt-1.5 max-w-sm text-sm text-zinc-500">
+        <p className="mt-1.5 max-w-sm text-sm text-slate-500">
           Create your first signal to start broadcasting trade ideas.
         </p>
       </div>
@@ -41,30 +41,30 @@ export function SignalTable({ signals }: SignalTableProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-800">
+    <div className="overflow-hidden rounded-lg border border-slate-200">
       <Table>
         <TableHeader>
-          <TableRow className="border-zinc-800 hover:bg-transparent">
-            <TableHead className="text-zinc-500">Date</TableHead>
-            <TableHead className="text-zinc-500">Instrument</TableHead>
-            <TableHead className="text-zinc-500">Direction</TableHead>
-            <TableHead className="text-zinc-500">Entry</TableHead>
-            <TableHead className="text-zinc-500">SL</TableHead>
-            <TableHead className="text-zinc-500">Status</TableHead>
-            <TableHead className="text-right text-zinc-500">Actions</TableHead>
+          <TableRow className="border-slate-200 hover:bg-transparent">
+            <TableHead className="text-slate-500">Date</TableHead>
+            <TableHead className="text-slate-500">Instrument</TableHead>
+            <TableHead className="text-slate-500">Direction</TableHead>
+            <TableHead className="text-slate-500">Entry</TableHead>
+            <TableHead className="text-slate-500">SL</TableHead>
+            <TableHead className="text-slate-500">Status</TableHead>
+            <TableHead className="text-right text-slate-500">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {signals.map((signal) => (
             <TableRow
               key={signal.id}
-              className="cursor-pointer border-zinc-800 transition-colors hover:bg-zinc-800/50"
+              className="cursor-pointer border-slate-200 transition-colors hover:bg-slate-50"
               onClick={() => router.push(`/signals/${signal.id}`)}
             >
-              <TableCell className="text-sm tabular-nums text-zinc-400">
+              <TableCell className="text-sm tabular-nums text-slate-500">
                 {formatDateTime(signal.created_at)}
               </TableCell>
-              <TableCell className="font-medium text-zinc-200">
+              <TableCell className="font-medium text-slate-900">
                 {signal.instrument}
               </TableCell>
               <TableCell>
@@ -80,10 +80,10 @@ export function SignalTable({ signals }: SignalTableProps) {
                   {signal.direction}
                 </Badge>
               </TableCell>
-              <TableCell className="font-mono text-sm tabular-nums text-zinc-300">
+              <TableCell className="font-mono text-sm tabular-nums text-slate-700">
                 {signal.entry_price}
               </TableCell>
-              <TableCell className="font-mono text-sm tabular-nums text-zinc-400">
+              <TableCell className="font-mono text-sm tabular-nums text-slate-500">
                 {signal.stop_loss}
               </TableCell>
               <TableCell>
@@ -98,7 +98,7 @@ export function SignalTable({ signals }: SignalTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <span className="text-xs text-zinc-500 group-hover:text-zinc-300">
+                <span className="text-xs text-slate-500 group-hover:text-slate-700">
                   View
                 </span>
               </TableCell>
