@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { isTrader } from "@/lib/constants/roles";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +12,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   LayoutDashboard,
   BookOpen,
-  Radio,
-  Upload,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -44,8 +41,6 @@ interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Journal", href: "/journal", icon: BookOpen },
-  { label: "Signals", href: "/signals", icon: Radio, requiredRole: "trader" },
-  { label: "Import", href: "/import", icon: Upload },
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
 
@@ -79,7 +74,7 @@ function SidebarContent({ profile }: { profile: UserProfile }) {
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!item.requiredRole) return true;
-    return isTrader(profile.role);
+    return profile.role === item.requiredRole || profile.role === "admin";
   });
 
   async function handleLogout() {
