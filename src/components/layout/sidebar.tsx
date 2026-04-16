@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   LayoutDashboard,
   BookOpen,
+  Radio,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -41,6 +42,7 @@ interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Journal", href: "/journal", icon: BookOpen },
+  { label: "Signals", href: "/signals", icon: Radio, requiredRole: "trader" },
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
 
