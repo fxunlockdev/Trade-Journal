@@ -17,8 +17,18 @@ export interface User {
   readonly full_name: string | null;
   readonly avatar_url: string | null;
   readonly role: UserRole;
+  readonly has_onboarded: boolean;
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+export interface ChatMessage {
+  readonly id: string;
+  readonly user_id: string;
+  readonly role: "user" | "assistant" | "system";
+  readonly content: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly created_at: string;
 }
 
 export interface Trade {

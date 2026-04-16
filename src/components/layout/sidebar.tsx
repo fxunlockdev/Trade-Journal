@@ -1,22 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   LayoutDashboard,
   BookOpen,
   Radio,
   Settings,
-  LogOut,
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { toast } from "sonner";
 
 interface UserProfile {
   id: string;
@@ -30,6 +27,8 @@ interface SidebarProps {
   profile: UserProfile;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
 }
 
 interface NavItem {
@@ -37,160 +36,198 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   requiredRole?: "trader" | "admin";
+  section: "main" | "personal";
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Journal", href: "/journal", icon: BookOpen },
-  { label: "Signals", href: "/signals", icon: Radio, requiredRole: "trader" },
-  { label: "Settings", href: "/settings", icon: Settings },
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    section: "main",
+  },
+  { label: "Journal", href: "/journal", icon: BookOpen, section: "main" },
+  {
+    label: "Signals",
+    href: "/signals",
+    icon: Radio,
+    requiredRole: "trader",
+    section: "main",
+  },
+  {
+    label: "AI Chat",
+    href: "/ai-chat",
+    icon: MessageSquare,
+    section: "personal",
+  },
+  { label: "Settings", href: "/settings", icon: Settings, section: "personal" },
 ] as const;
 
-function getInitials(name: string | null, email: string): string {
-  if (name) {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }
-  return email[0]?.toUpperCase() ?? "U";
-}
-
-function getRoleBadgeColor(role: string): string {
-  switch (role) {
-    case "admin":
-      return "bg-red-500/10 text-red-400 border-red-500/20";
-    case "trader":
-      return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-    default:
-      return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
-  }
-}
-
-function SidebarContent({ profile }: { profile: UserProfile }) {
+function SidebarContent({
+  profile,
+  collapsed,
+  onCollapsedChange,
+}: {
+  profile: UserProfile;
+  collapsed: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
+}) {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!item.requiredRole) return true;
     return profile.role === item.requiredRole || profile.role === "admin";
   });
 
-  async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error("Failed to sign out.");
-      return;
-    }
-    router.push("/login");
-  }
+  const mainItems = visibleItems.filter((item) => item.section === "main");
+  const personalItems = visibleItems.filter(
+    (item) => item.section === "personal",
+  );
 
   return (
     <div className="flex h-full flex-col">
-      {/* Brand */}
-      <div className="flex h-16 shrink-0 items-center px-6">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <span className="text-xl font-bold tracking-tight text-white">
-            TRDR
-          </span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">
-            beta
-          </span>
-        </Link>
-      </div>
-
-      <Separator className="bg-zinc-800" />
-
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {visibleItems.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-emerald-500/10 text-emerald-400"
-                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200",
-              )}
-            >
-              <Icon
-                className={cn(
-                  "size-4 shrink-0",
-                  isActive ? "text-emerald-400" : "text-zinc-500",
-                )}
-              />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <Separator className="bg-zinc-800" />
-
-      {/* User info */}
-      <div className="shrink-0 p-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="size-9 border border-zinc-700">
-            <AvatarImage src={profile.avatar_url ?? undefined} />
-            <AvatarFallback className="bg-zinc-800 text-xs text-zinc-300">
-              {getInitials(profile.full_name, profile.email)}
-            </AvatarFallback>
-          </Avatar>
-
-          <div className="flex-1 truncate">
-            <p className="truncate text-sm font-medium text-zinc-200">
-              {profile.full_name ?? profile.email}
-            </p>
-            <Badge
-              variant="outline"
-              className={cn(
-                "mt-0.5 border px-1.5 py-0 text-[10px] font-semibold uppercase",
-                getRoleBadgeColor(profile.role),
-              )}
-            >
-              {profile.role}
-            </Badge>
-          </div>
-
+      {/* Brand + Collapse toggle */}
+      <div className="flex h-16 shrink-0 items-center justify-between px-4">
+        {!collapsed && (
+          <Link href="/dashboard" className="flex flex-col">
+            <span className="text-lg font-bold tracking-tight text-white">
+              FX Unlock
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">
+              Trade Journal
+            </span>
+          </Link>
+        )}
+        {onCollapsedChange && (
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleLogout}
-            className="shrink-0 text-zinc-500 hover:text-zinc-300"
-            aria-label="Sign out"
+            onClick={() => onCollapsedChange(!collapsed)}
+            className={cn(
+              "size-7 text-zinc-500 hover:text-zinc-300",
+              collapsed && "mx-auto",
+            )}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <LogOut className="size-4" />
+            {collapsed ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronLeft className="size-4" />
+            )}
           </Button>
-        </div>
+        )}
       </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-6 px-3 py-4">
+        {/* MAIN section */}
+        <div className="space-y-1">
+          {!collapsed && (
+            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Main
+            </p>
+          )}
+          {mainItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-zinc-800/50 text-white"
+                    : "text-zinc-400 hover:bg-zinc-800/30 hover:text-zinc-200",
+                  collapsed && "justify-center px-2",
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "size-4 shrink-0",
+                    isActive ? "text-emerald-400" : "text-zinc-500",
+                  )}
+                />
+                {!collapsed && item.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* PERSONAL section */}
+        <div className="space-y-1">
+          {!collapsed && (
+            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Personal
+            </p>
+          )}
+          {personalItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-zinc-800/50 text-white"
+                    : "text-zinc-400 hover:bg-zinc-800/30 hover:text-zinc-200",
+                  collapsed && "justify-center px-2",
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "size-4 shrink-0",
+                    isActive ? "text-emerald-400" : "text-zinc-500",
+                  )}
+                />
+                {!collapsed && item.label}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }
 
-export function Sidebar({ profile, open, onOpenChange }: SidebarProps) {
+export function Sidebar({
+  profile,
+  open,
+  onOpenChange,
+  collapsed,
+  onCollapsedChange,
+}: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-r border-zinc-800 bg-zinc-950 md:block">
-        <SidebarContent profile={profile} />
+      <aside
+        className={cn(
+          "hidden shrink-0 border-r border-zinc-800/60 bg-zinc-950 transition-all duration-200 ease-in-out md:block",
+          collapsed ? "w-16" : "w-60",
+        )}
+      >
+        <SidebarContent
+          profile={profile}
+          collapsed={collapsed}
+          onCollapsedChange={onCollapsedChange}
+        />
       </aside>
 
       {/* Mobile sidebar (Sheet) */}
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="left"
-          className="w-64 border-zinc-800 bg-zinc-950 p-0"
+          className="w-60 border-zinc-800 bg-zinc-950 p-0"
         >
-          <SidebarContent profile={profile} />
+          <SidebarContent profile={profile} collapsed={false} />
         </SheetContent>
       </Sheet>
     </>

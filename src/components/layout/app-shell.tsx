@@ -19,6 +19,7 @@ interface AppShellProps {
 
 export function AppShell({ profile, children }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -26,6 +27,8 @@ export function AppShell({ profile, children }: AppShellProps) {
         profile={profile}
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">

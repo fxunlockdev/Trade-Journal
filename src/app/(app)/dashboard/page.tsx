@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
+import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
 import type { Trade } from "@/types/database";
 
 export const metadata = {
@@ -17,21 +18,32 @@ export default async function DashboardPage() {
     return <EmptyState />;
   }
 
-  const { data, error } = await supabase
-    .from("trades")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("entry_time", { ascending: true });
+  // Fetch trades and profile in parallel
+  const [tradesResult, profileResult] = await Promise.all([
+    supabase
+      .from("trades")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("entry_time", { ascending: true }),
+    supabase
+      .from("users")
+      .select("has_onboarded")
+      .eq("id", user.id)
+      .single(),
+  ]);
 
-  if (error) {
-    console.error("[TRDR] Dashboard trades error:", error.message);
+  if (tradesResult.error) {
+    console.error("[TRDR] Dashboard trades error:", tradesResult.error.message);
   }
 
-  const trades = (data ?? []) as Trade[];
+  const trades = (tradesResult.data ?? []) as Trade[];
+  const hasOnboarded = profileResult.data?.has_onboarded ?? true;
+  const showOnboarding = !hasOnboarded && trades.length === 0;
 
   if (trades.length === 0) {
     return (
-      <div className="p-6">
+      <div className="space-y-6 p-6">
+        {showOnboarding && <OnboardingPrompt userId={user.id} />}
         <EmptyState />
       </div>
     );

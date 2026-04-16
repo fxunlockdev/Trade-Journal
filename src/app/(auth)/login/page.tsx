@@ -194,10 +194,10 @@ function LoginContent() {
         {/* Brand */}
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-white">
-            TRDR
+            FX Unlock
           </h1>
           <p className="mt-2 text-sm font-medium tracking-widest uppercase text-zinc-500">
-            Trading Command Center
+            Trade Journal
           </p>
         </div>
 

@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "TRDR \u2014 Trading Command Center",
+  title: "FX Unlock Trade Journal",
   description:
-    "Professional trading journal, analytics, and signal management platform.",
+    "Professional forex trading journal, analytics, and signal management platform.",
 };
 
 export default function RootLayout({
