@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +17,7 @@ import {
   ChevronLeft,
   MessageSquare,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import type { Trade, ChatMessage } from "@/types/database";
 
@@ -151,7 +154,16 @@ function TradeConfirmationCard({
             <p className="mt-0.5 text-xs text-muted-foreground">{tradeError}</p>
           </div>
         ) : (
-          <p className="mt-2 text-xs text-emerald-400/80">✓ Trade logged successfully</p>
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-xs text-emerald-400/80">✓ Trade logged</p>
+            <Link
+              href={`/journal/${trade.id}`}
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              View in Journal
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -342,6 +354,7 @@ function SessionSidebar({
 /* ─── main component ──────────────────────────────────────── */
 
 export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
+  const router = useRouter();
   const [allMessages, setAllMessages] = useState<readonly DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -471,6 +484,12 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       };
 
       setAllMessages((prev) => [...prev, aiMessage]);
+
+      // If a trade was saved, invalidate the server cache so dashboard +
+      // journal reflect the new trade immediately on next navigation
+      if (json.trade && !json.tradeError) {
+        router.refresh();
+      }
 
       if (isFirstTime) {
         fetch("/api/chat/onboard", { method: "POST" }).catch(() => {});
