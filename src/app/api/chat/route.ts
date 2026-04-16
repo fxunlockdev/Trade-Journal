@@ -9,10 +9,6 @@ import type { Trade, ChatMessage } from "@/types/database";
 
 interface ChatRequestBody {
   readonly message: string;
-  readonly history?: ReadonlyArray<{
-    readonly role: string;
-    readonly content: string;
-  }>;
 }
 
 function isValidChatRequest(body: unknown): body is ChatRequestBody {
@@ -34,7 +30,6 @@ async function loadChatHistory(
 
   if (!data) return [];
 
-  // Reverse to get chronological order (oldest first) after fetching most recent 20
   return data
     .reverse()
     .filter(
@@ -143,35 +138,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const openai = new OpenAI({ apiKey });
-
+    const client = new OpenAI({ apiKey });
     const currentDatetime = new Date().toISOString();
 
     // Load previous chat history for context
     const previousMessages = await loadChatHistory(supabase, user.id);
 
-    // Build messages array for OpenAI
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: "system", content: buildSystemPrompt(currentDatetime) },
+    // Build conversation input for Responses API
+    const inputMessages = [
       ...previousMessages.map((msg) => ({
-        role: msg.role as "user" | "assistant",
+        role: msg.role,
         content: msg.content,
       })),
-      { role: "user", content: body.message },
+      { role: "user" as const, content: body.message },
     ];
 
-    // Save user message
+    // Save user message before calling AI
     await saveChatMessage(supabase, user.id, "user", body.message);
 
-    // Call OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
+    // Call OpenAI Responses API with gpt-5.4
+    const response = await client.responses.create({
+      model: "gpt-5.4",
+      instructions: buildSystemPrompt(currentDatetime),
+      input: inputMessages,
       temperature: 0.3,
-      max_tokens: 2048,
+      max_output_tokens: 2048,
     });
 
-    const aiContent = completion.choices[0]?.message?.content ?? "";
+    const aiContent = response.output_text ?? "";
 
     // Check if AI response contains a trade action
     const tradeAction = parseTradeAction(aiContent);
@@ -184,13 +178,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tradeAction.data as unknown as Record<string, unknown>,
       );
 
-      // Save AI message with trade metadata
       await saveChatMessage(supabase, user.id, "assistant", aiContent, {
         trade_id: createdTrade?.id ?? null,
         action: "create_trade",
       });
     } else {
-      // Save AI message
       await saveChatMessage(supabase, user.id, "assistant", aiContent);
     }
 
