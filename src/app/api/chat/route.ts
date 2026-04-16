@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
-import { TRADE_CHAT_SYSTEM_PROMPT } from "@/lib/chat/system-prompt";
+import { buildSystemPrompt } from "@/lib/chat/system-prompt";
 import { parseTradeAction } from "@/lib/chat/parse-action";
 import type { Trade, ChatMessage } from "@/types/database";
 
@@ -145,12 +145,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const openai = new OpenAI({ apiKey });
 
+    const currentDatetime = new Date().toISOString();
+
     // Load previous chat history for context
     const previousMessages = await loadChatHistory(supabase, user.id);
 
     // Build messages array for OpenAI
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: "system", content: TRADE_CHAT_SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt(currentDatetime) },
       ...previousMessages.map((msg) => ({
         role: msg.role as "user" | "assistant",
         content: msg.content,
@@ -163,10 +165,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages,
       temperature: 0.3,
-      max_tokens: 1024,
+      max_tokens: 2048,
     });
 
     const aiContent = completion.choices[0]?.message?.content ?? "";
