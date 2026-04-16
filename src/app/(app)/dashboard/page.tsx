@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { Trade } from "@/types/database";
 
 export const metadata = {
@@ -27,7 +29,7 @@ export default async function DashboardPage() {
       .order("entry_time", { ascending: true }),
     supabase
       .from("users")
-      .select("has_onboarded")
+      .select("has_onboarded, role, full_name")
       .eq("id", user.id)
       .single(),
   ]);
@@ -38,11 +40,14 @@ export default async function DashboardPage() {
 
   const trades = (tradesResult.data ?? []) as Trade[];
   const hasOnboarded = profileResult.data?.has_onboarded ?? true;
+  const role = profileResult.data?.role ?? "user";
+  const fullName = profileResult.data?.full_name ?? null;
   const showOnboarding = !hasOnboarded && trades.length === 0;
 
   if (trades.length === 0) {
     return (
       <div className="space-y-6 p-6">
+        <WelcomeCard name={fullName} role={role} tradeCount={0} />
         {showOnboarding && <OnboardingPrompt userId={user.id} />}
         <EmptyState />
       </div>
@@ -50,8 +55,80 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="space-y-6 p-6">
+      <WelcomeCard name={fullName} role={role} tradeCount={trades.length} />
       <DashboardCharts trades={trades} />
+    </div>
+  );
+}
+
+function WelcomeCard({
+  name,
+  role,
+  tradeCount,
+}: {
+  name: string | null;
+  role: string;
+  tradeCount: number;
+}) {
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">{greeting}</p>
+          <h2 className="mt-0.5 text-2xl font-bold text-foreground">
+            {name ?? "Trader"} 👋
+          </h2>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "capitalize text-xs",
+                role === "admin" &&
+                  "border-destructive/30 bg-destructive/10 text-destructive",
+                role === "trader" &&
+                  "border-primary/30 bg-primary/10 text-primary",
+                role === "user" &&
+                  "border-border bg-muted text-muted-foreground"
+              )}
+            >
+              {role}
+            </Badge>
+            <span className="text-sm text-muted-foreground">
+              {tradeCount} {tradeCount === 1 ? "trade" : "trades"} logged
+            </span>
+          </div>
+        </div>
+        <div className="text-3xl">📈</div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          href="/journal/new"
+          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          + Log Trade
+        </Link>
+        <Link
+          href="/ai-chat"
+          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          💬 AI Chat
+        </Link>
+        {(role === "trader" || role === "admin") && (
+          <Link
+            href="/signals/new"
+            className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            📡 New Signal
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
@@ -59,9 +136,9 @@ export default async function DashboardPage() {
 function EmptyState() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-      <div className="rounded-full bg-slate-100 p-6">
+      <div className="rounded-full bg-muted p-6">
         <svg
-          className="h-10 w-10 text-slate-400"
+          className="h-10 w-10 text-muted-foreground"
           fill="none"
           viewBox="0 0 24 24"
           strokeWidth={1.5}
@@ -74,14 +151,14 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <h2 className="text-lg font-semibold text-slate-800">No trades yet</h2>
-      <p className="max-w-sm text-center text-sm text-slate-500">
+      <h2 className="text-lg font-semibold text-foreground">No trades yet</h2>
+      <p className="max-w-sm text-center text-sm text-muted-foreground">
         Start logging your trades to see performance analytics, equity curves,
         and detailed statistics.
       </p>
       <Link
         href="/journal/new"
-        className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+        className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
       >
         Log your first trade
       </Link>

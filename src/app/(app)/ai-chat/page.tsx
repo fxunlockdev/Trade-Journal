@@ -27,9 +27,9 @@ export default async function AiChatPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
-        <h1 className="text-lg font-semibold text-slate-900">AI Trade Chat</h1>
-        <p className="text-xs text-slate-500">
+      <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+        <h1 className="text-lg font-semibold text-foreground">AI Trade Chat</h1>
+        <p className="text-xs text-muted-foreground">
           Describe your trades in natural language and I will log them for you
         </p>
       </div>

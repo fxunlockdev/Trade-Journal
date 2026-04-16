@@ -57,7 +57,7 @@ function PipsBadge({
   return (
     <Badge
       variant="outline"
-      className="ml-2 border-slate-200 bg-slate-100 text-xs font-mono tabular-nums text-slate-700"
+      className="ml-2 border-border bg-muted text-xs font-mono tabular-nums text-foreground"
     >
       {pips} pips
     </Badge>
@@ -167,22 +167,22 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Section 1: Instrument & Direction */}
-      <Card className="border-slate-200 bg-white">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+          <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Instrument & Direction
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="instrument" className="text-slate-700">
+            <Label htmlFor="instrument" className="text-foreground">
               Instrument
             </Label>
             <Input
               id="instrument"
               list="instruments-list"
               placeholder="e.g. EURUSD, XAUUSD"
-              className="mt-1.5 border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500/20"
+              className="mt-1.5 border-border bg-muted text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/20"
               {...register("instrument")}
             />
             <datalist id="instruments-list">
@@ -196,7 +196,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
           </div>
 
           <div>
-            <Label className="text-slate-700">Direction</Label>
+            <Label className="text-foreground">Direction</Label>
             <div className="mt-1.5 grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -205,7 +205,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                   "flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-bold uppercase transition-all",
                   watchedDirection === "buy"
                     ? "border-emerald-500 bg-emerald-500/15 text-emerald-400 shadow-lg shadow-emerald-500/10"
-                    : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-700",
+                    : "border-border bg-muted text-muted-foreground hover:border-border hover:text-foreground",
                 )}
               >
                 <TrendingUp className="size-5" />
@@ -218,7 +218,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                   "flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-bold uppercase transition-all",
                   watchedDirection === "sell"
                     ? "border-red-500 bg-red-500/15 text-red-400 shadow-lg shadow-red-500/10"
-                    : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-700",
+                    : "border-border bg-muted text-muted-foreground hover:border-border hover:text-foreground",
                 )}
               >
                 <TrendingDown className="size-5" />
@@ -233,16 +233,16 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
       </Card>
 
       {/* Section 2: Price Levels */}
-      <Card className="border-slate-200 bg-white">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+          <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Price Levels
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="entry_price" className="text-slate-700">
+              <Label htmlFor="entry_price" className="text-foreground">
                 Entry Price
               </Label>
               <Input
@@ -250,7 +250,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 type="number"
                 step="any"
                 placeholder="0.00000"
-                className="mt-1.5 border-slate-200 bg-slate-50 font-mono text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500/20"
+                className="mt-1.5 border-border bg-muted font-mono text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/20"
                 {...register("entry_price")}
               />
               {errors.entry_price && (
@@ -258,7 +258,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
               )}
             </div>
             <div>
-              <Label htmlFor="stop_loss" className="text-slate-700">
+              <Label htmlFor="stop_loss" className="text-foreground">
                 <span className="flex items-center gap-1.5">
                   <ShieldAlert className="size-3.5 text-red-400" />
                   Stop Loss
@@ -269,7 +269,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 type="number"
                 step="any"
                 placeholder="0.00000"
-                className="mt-1.5 border-slate-200 bg-slate-50 font-mono text-slate-900 placeholder:text-slate-400 focus:border-red-600 focus:ring-red-600/20"
+                className="mt-1.5 border-border bg-muted font-mono text-foreground placeholder:text-muted-foreground focus:border-red-600 focus:ring-red-600/20"
                 {...register("stop_loss")}
               />
               {errors.stop_loss && (
@@ -278,7 +278,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
             </div>
           </div>
 
-          <Separator className="bg-slate-200" />
+          <Separator className="bg-muted" />
 
           <div className="space-y-3">
             {([
@@ -289,12 +289,12 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
             ]).map((tp) => (
               <div key={tp.name}>
                 <div className="flex items-center">
-                  <Label htmlFor={tp.name} className="text-slate-700">
+                  <Label htmlFor={tp.name} className="text-foreground">
                     <span className="flex items-center gap-1.5">
                       <Target className="size-3.5 text-emerald-400" />
                       {tp.label}
                       {!tp.required && (
-                        <span className="text-xs text-slate-400">(optional)</span>
+                        <span className="text-xs text-muted-foreground">(optional)</span>
                       )}
                     </span>
                   </Label>
@@ -309,7 +309,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                   type="number"
                   step="any"
                   placeholder="0.00000"
-                  className="mt-1.5 border-slate-200 bg-slate-50 font-mono text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500/20"
+                  className="mt-1.5 border-border bg-muted font-mono text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/20"
                   {...register(tp.name)}
                 />
                 {errors[tp.name] && (
@@ -325,36 +325,36 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
 
       {/* Section 3: Risk Summary */}
       {riskSummary && (
-        <Card className="border-slate-200 bg-white">
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
               Risk Summary
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-center">
-                <p className="text-xs uppercase text-slate-500">Risk</p>
+                <p className="text-xs uppercase text-muted-foreground">Risk</p>
                 <p className="mt-1 font-mono text-lg font-bold text-red-400">
                   {riskSummary.riskPips}
                 </p>
-                <p className="text-xs text-slate-400">pips</p>
+                <p className="text-xs text-muted-foreground">pips</p>
               </div>
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
-                <p className="text-xs uppercase text-slate-500">Reward TP1</p>
+                <p className="text-xs uppercase text-muted-foreground">Reward TP1</p>
                 <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
                   {riskSummary.rewardPips ?? "---"}
                 </p>
-                <p className="text-xs text-slate-400">pips</p>
+                <p className="text-xs text-muted-foreground">pips</p>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-100 p-3 text-center">
-                <p className="text-xs uppercase text-slate-500">R:R</p>
-                <p className="mt-1 font-mono text-lg font-bold text-slate-800">
+              <div className="rounded-lg border border-border bg-muted p-3 text-center">
+                <p className="text-xs uppercase text-muted-foreground">R:R</p>
+                <p className="mt-1 font-mono text-lg font-bold text-foreground">
                   {riskSummary.rrRatio
                     ? `1:${riskSummary.rrRatio.toFixed(1)}`
                     : "---"}
                 </p>
-                <p className="text-xs text-slate-400">ratio</p>
+                <p className="text-xs text-muted-foreground">ratio</p>
               </div>
             </div>
           </CardContent>
@@ -362,16 +362,16 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
       )}
 
       {/* Section 4: Notes */}
-      <Card className="border-slate-200 bg-white">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+          <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Notes
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Textarea
             placeholder="Trade rationale, confluence factors, market context..."
-            className="min-h-[80px] border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500/20"
+            className="min-h-[80px] border-border bg-muted text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/20"
             {...register("notes")}
           />
         </CardContent>
@@ -381,7 +381,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
       <Button
         type="submit"
         disabled={submitting}
-        className="w-full bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+        className="w-full bg-primary py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {submitting ? (
           <>

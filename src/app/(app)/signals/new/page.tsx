@@ -45,15 +45,15 @@ export default function NewSignalPage() {
       <div>
         <Link
           href="/signals"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
           Back to Signals
         </Link>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">
           New Signal
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           Set up your trade signal with entry, targets, and stop loss.
         </p>
       </div>
@@ -71,8 +71,8 @@ export default function NewSignalPage() {
               />
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-24 text-center lg:sticky lg:top-6">
-              <p className="text-sm text-slate-400">
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted px-6 py-24 text-center lg:sticky lg:top-6">
+              <p className="text-sm text-muted-foreground">
                 Signal preview will appear here after creation.
               </p>
             </div>

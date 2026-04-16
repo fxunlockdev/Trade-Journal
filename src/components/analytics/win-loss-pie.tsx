@@ -31,8 +31,8 @@ function ChartTooltip({ active, payload }: CustomTooltipProps) {
 
   const item = payload[0];
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
-      <p className="text-xs text-slate-500">{item.name}</p>
+    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-xl">
+      <p className="text-xs text-muted-foreground">{item.name}</p>
       <p
         className="text-sm font-semibold"
         style={{ color: item.payload.color }}
@@ -53,7 +53,7 @@ export function WinLossPie({ trades }: WinLossPieProps) {
 
   if (closed.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
         No closed trades yet
       </div>
     );
@@ -86,10 +86,10 @@ export function WinLossPie({ trades }: WinLossPieProps) {
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-2xl font-bold text-slate-900">
+        <p className="text-2xl font-bold text-foreground">
           {formatPercentage(winRate)}
         </p>
-        <p className="text-xs text-slate-500">Win Rate</p>
+        <p className="text-xs text-muted-foreground">Win Rate</p>
       </div>
     </div>
   );

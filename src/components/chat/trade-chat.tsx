@@ -26,7 +26,7 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
     trade.pnl_absolute !== null ? trade.pnl_absolute >= 0 : null;
 
   return (
-    <Card className="mt-2 border-slate-200 bg-slate-50">
+    <Card className="mt-2 border-border bg-muted">
       <CardContent className="p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -35,7 +35,7 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
             ) : (
               <TrendingDown className="h-4 w-4 text-red-400" />
             )}
-            <span className="text-sm font-semibold text-slate-900">
+            <span className="text-sm font-semibold text-foreground">
               {trade.instrument}
             </span>
             <Badge
@@ -58,21 +58,21 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
             </span>
           )}
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>
-            Entry: <span className="text-slate-900">{trade.entry_price}</span>
+            Entry: <span className="text-foreground">{trade.entry_price}</span>
           </span>
           <span>
-            Qty: <span className="text-slate-900">{trade.quantity}</span>
+            Qty: <span className="text-foreground">{trade.quantity}</span>
           </span>
           {trade.exit_price !== null && (
             <span>
-              Exit: <span className="text-slate-900">{trade.exit_price}</span>
+              Exit: <span className="text-foreground">{trade.exit_price}</span>
             </span>
           )}
           {trade.stop_loss !== null && (
             <span>
-              SL: <span className="text-slate-900">{trade.stop_loss}</span>
+              SL: <span className="text-foreground">{trade.stop_loss}</span>
             </span>
           )}
         </div>
@@ -91,13 +91,13 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-          isUser ? "bg-indigo-600" : "bg-indigo-100"
+          isUser ? "bg-primary" : "bg-primary/10"
         }`}
       >
         {isUser ? (
           <User className="h-3.5 w-3.5 text-white" />
         ) : (
-          <Bot className="h-3.5 w-3.5 text-indigo-600" />
+          <Bot className="h-3.5 w-3.5 text-primary" />
         )}
       </div>
       <div
@@ -106,8 +106,8 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
             isUser
-              ? "rounded-tr-md bg-indigo-600 text-white"
-              : "rounded-tl-md bg-slate-100 text-slate-900"
+              ? "rounded-tr-md bg-primary text-white"
+              : "rounded-tl-md bg-muted text-foreground"
           }`}
         >
           <FormattedContent content={message.content} />
@@ -128,10 +128,10 @@ function FormattedContent({ content }: { readonly content: string }) {
 function TypingIndicator() {
   return (
     <div className="flex gap-2.5">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100">
-        <Bot className="h-3.5 w-3.5 text-indigo-600" />
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
+        <Bot className="h-3.5 w-3.5 text-primary" />
       </div>
-      <div className="rounded-2xl rounded-tl-md bg-slate-100 px-4 py-3">
+      <div className="rounded-2xl rounded-tl-md bg-muted px-4 py-3">
         <div className="flex gap-1">
           <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
           <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
@@ -295,12 +295,12 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       >
         {isLoadingHistory ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Bot className="mb-3 h-10 w-10 text-slate-300" />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Tell me about a trade you want to log.
             </p>
           </div>
@@ -311,7 +311,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       </div>
 
       {/* Input bar */}
-      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+      <div className="shrink-0 border-t border-border bg-card px-4 py-3">
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -321,12 +321,12 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
             onKeyDown={handleKeyDown}
             placeholder="Describe your trade..."
             disabled={isLoading}
-            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring/50 focus:outline-none focus:ring-1 focus:ring-ring/30 disabled:opacity-50"
           />
           <Button
             onClick={sendMessage}
             disabled={isLoading || !input.trim()}
-            className="h-10 w-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+            className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50"
             size="icon"
           >
             {isLoading ? (

@@ -103,14 +103,14 @@ export function StatsCards({ trades }: StatsCardsProps) {
           <Card
             key={card.label}
             className={cn(
-              "relative overflow-hidden border-slate-200 bg-white",
+              "relative overflow-hidden border-border bg-card",
               "bg-gradient-to-br",
               card.bgGradient,
             )}
           >
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {card.label}
                 </p>
                 <div className={cn("rounded-lg p-2", card.iconBg)}>
@@ -120,7 +120,7 @@ export function StatsCards({ trades }: StatsCardsProps) {
               <p className={cn("mt-3 text-2xl font-bold tracking-tight", card.colorClass)}>
                 {card.value}
               </p>
-              <p className="mt-1 text-xs text-slate-500">{card.subtitle}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{card.subtitle}</p>
             </CardContent>
           </Card>
         );

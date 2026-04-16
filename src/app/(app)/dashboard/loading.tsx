@@ -2,22 +2,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-center justify-between">
-        <Skeleton className="h-3 w-20 bg-slate-200" />
-        <Skeleton className="h-8 w-8 rounded-lg bg-slate-200" />
+        <Skeleton className="h-3 w-20 bg-muted" />
+        <Skeleton className="h-8 w-8 rounded-lg bg-muted" />
       </div>
-      <Skeleton className="mt-4 h-7 w-28 bg-slate-200" />
-      <Skeleton className="mt-2 h-3 w-24 bg-slate-200" />
+      <Skeleton className="mt-4 h-7 w-28 bg-muted" />
+      <Skeleton className="mt-2 h-3 w-24 bg-muted" />
     </div>
   );
 }
 
 function ChartSkeleton({ height = "h-[350px]" }: { readonly height?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <Skeleton className="mb-4 h-5 w-36 bg-slate-200" />
-      <Skeleton className={`w-full rounded-lg bg-slate-100 ${height}`} />
+    <div className="rounded-xl border border-border bg-card p-5">
+      <Skeleton className="mb-4 h-5 w-36 bg-muted" />
+      <Skeleton className={`w-full rounded-lg bg-muted ${height}`} />
     </div>
   );
 }
@@ -26,8 +26,8 @@ export default function DashboardLoading() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <Skeleton className="h-8 w-40 bg-slate-200" />
-        <Skeleton className="h-9 w-56 rounded-lg bg-slate-200" />
+        <Skeleton className="h-8 w-40 bg-muted" />
+        <Skeleton className="h-9 w-56 rounded-lg bg-muted" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

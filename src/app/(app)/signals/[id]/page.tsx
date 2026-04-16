@@ -54,8 +54,8 @@ export default async function SignalDetailPage({ params }: PageProps) {
   if (!isAdmin && !isOwner) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
-        <h2 className="text-lg font-semibold text-slate-800">Access Denied</h2>
-        <p className="mt-2 text-sm text-slate-500">
+        <h2 className="text-lg font-semibold text-foreground">Access Denied</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
           You do not have permission to view this signal.
         </p>
       </div>
@@ -84,13 +84,13 @@ export default async function SignalDetailPage({ params }: PageProps) {
       <div>
         <Link
           href="/signals"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
           Back to Signals
         </Link>
         <div className="mt-3 flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             {typedSignal.instrument}
           </h1>
           <Badge
@@ -121,17 +121,17 @@ export default async function SignalDetailPage({ params }: PageProps) {
         {/* Left column */}
         <div className="space-y-6">
           {/* Signal info card */}
-          <Card className="border-slate-200 bg-white">
+          <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 Signal Details
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="text-sm text-slate-500">Entry Price</span>
-                  <span className="font-mono text-sm font-semibold text-slate-800">
+                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+                  <span className="text-sm text-muted-foreground">Entry Price</span>
+                  <span className="font-mono text-sm font-semibold text-foreground">
                     {typedSignal.entry_price}
                   </span>
                 </div>
@@ -185,19 +185,19 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     ),
                 )}
 
-                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="text-sm text-slate-500">Created</span>
-                  <span className="text-sm text-slate-500">
+                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+                  <span className="text-sm text-muted-foreground">Created</span>
+                  <span className="text-sm text-muted-foreground">
                     {formatDateTime(typedSignal.created_at)}
                   </span>
                 </div>
 
                 {typedSignal.notes && (
-                  <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    <span className="text-xs uppercase text-slate-500">
+                  <div className="rounded-lg bg-muted px-3 py-2">
+                    <span className="text-xs uppercase text-muted-foreground">
                       Notes
                     </span>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                    <p className="mt-1 text-sm leading-relaxed text-foreground">
                       {typedSignal.notes}
                     </p>
                   </div>
@@ -217,9 +217,9 @@ export default async function SignalDetailPage({ params }: PageProps) {
 
           {/* Event timeline */}
           {typedEvents.length > 0 && (
-            <Card className="border-slate-200 bg-white">
+            <Card className="border-border bg-card">
               <CardHeader>
-                <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-400">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                   Event Timeline
                 </CardTitle>
               </CardHeader>
@@ -229,10 +229,10 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     <div key={event.id} className="relative flex gap-3 pb-4">
                       {/* Timeline connector */}
                       {idx < typedEvents.length - 1 && (
-                        <div className="absolute left-[7px] top-5 h-full w-px bg-slate-200" />
+                        <div className="absolute left-[7px] top-5 h-full w-px bg-muted" />
                       )}
                       {/* Dot */}
-                      <div className="relative mt-1.5 size-[15px] shrink-0 rounded-full border-2 border-slate-200 bg-white" />
+                      <div className="relative mt-1.5 size-[15px] shrink-0 rounded-full border-2 border-border bg-card" />
                       {/* Content */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -246,7 +246,7 @@ export default async function SignalDetailPage({ params }: PageProps) {
                             {event.event_type.replace("_", " ")}
                           </Badge>
                         </div>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Clock className="size-3" />
                           {formatDateTime(event.created_at)}
                         </div>

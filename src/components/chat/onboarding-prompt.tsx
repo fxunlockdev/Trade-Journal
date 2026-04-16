@@ -28,24 +28,24 @@ export function OnboardingPrompt({ userId }: OnboardingPromptProps) {
   }
 
   return (
-    <Card className="relative border-indigo-200 bg-gradient-to-r from-indigo-50 to-white">
+    <Card className="relative border-primary/20 bg-gradient-to-r from-primary/10 to-card">
       <button
         onClick={handleDismiss}
-        className="absolute right-3 top-3 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+        className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-muted-foreground"
         aria-label="Dismiss"
       >
         <X className="h-4 w-4" />
       </button>
       <CardContent className="p-6">
-        <h3 className="text-lg font-semibold text-slate-900">
+        <h3 className="text-lg font-semibold text-foreground">
           Welcome to TRDR!
         </h3>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           Ready to log your first trade? Choose how you want to get started.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href="/ai-chat">
-            <Button className="gap-2 bg-indigo-600 text-white hover:bg-indigo-500">
+            <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
               <MessageSquare className="h-4 w-4" />
               Log with AI Chat
             </Button>
@@ -53,7 +53,7 @@ export function OnboardingPrompt({ userId }: OnboardingPromptProps) {
           <Link href="/journal/new">
             <Button
               variant="outline"
-              className="gap-2 border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="gap-2 border-border text-foreground hover:bg-muted"
             >
               <PenLine className="h-4 w-4" />
               Manual Entry

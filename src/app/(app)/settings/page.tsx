@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -23,17 +23,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
 import type { UserRole } from "@/types/database";
 import { toast } from "sonner";
-import {
-  User as UserIcon,
-  Shield,
-  Loader2,
-  ArrowUpDown,
-  Save,
-} from "lucide-react";
+import { User as UserIcon, Shield, Loader2, ArrowUpDown, Save } from "lucide-react";
 
 type SortField = "full_name" | "email" | "role" | "trade_count";
 type SortDir = "asc" | "desc";
@@ -46,6 +41,24 @@ interface ManagedUser {
   readonly trade_count: number;
 }
 
+function roleBadgeClass(role: UserRole): string {
+  switch (role) {
+    case "admin":
+      return "border-destructive/30 bg-destructive/10 text-destructive";
+    case "trader":
+      return "border-primary/30 bg-primary/10 text-primary";
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
+}
+
+const SORT_COLUMNS: [SortField, string][] = [
+  ["full_name", "User"],
+  ["email", "Email"],
+  ["trade_count", "Trades"],
+  ["role", "Role"],
+];
+
 export default function SettingsPage() {
   const { user, profile, loading, refetch } = useUser();
   const [fullName, setFullName] = useState("");
@@ -57,22 +70,19 @@ export default function SettingsPage() {
   const [sortField, setSortField] = useState<SortField>("full_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const isUserAdmin = profile?.role === "admin";
 
-  // Set form values when profile loads
   useEffect(() => {
-    if (profile) {
-      setFullName(profile.full_name ?? "");
-    }
+    if (profile) setFullName(profile.full_name ?? "");
   }, [profile]);
 
-  // Load users for admin
   useEffect(() => {
     if (!isUserAdmin) return;
 
     const fetchUsers = async () => {
       setLoadingUsers(true);
+
       const { data: usersData } = await supabase
         .from("users")
         .select("id, email, full_name, role")
@@ -83,9 +93,7 @@ export default function SettingsPage() {
         return;
       }
 
-      const { data: tradeCounts } = await supabase
-        .from("trades")
-        .select("user_id");
+      const { data: tradeCounts } = await supabase.from("trades").select("user_id");
 
       const countMap = new Map<string, number>();
       if (tradeCounts) {
@@ -96,12 +104,7 @@ export default function SettingsPage() {
       }
 
       const enriched: ManagedUser[] = usersData.map(
-        (u: {
-          id: string;
-          email: string;
-          full_name: string | null;
-          role: UserRole;
-        }) => ({
+        (u: { id: string; email: string; full_name: string | null; role: UserRole }) => ({
           ...u,
           trade_count: countMap.get(u.id) ?? 0,
         }),
@@ -183,186 +186,239 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  const displayEmail = profile?.email || user?.email || "";
-  const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || "User";
-  const displayAvatar = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "";
+  const displayEmail = profile?.email ?? user?.email ?? "";
+  const displayName =
+    profile?.full_name ??
+    user?.user_metadata?.full_name ??
+    user?.user_metadata?.name ??
+    "User";
+  const displayAvatar =
+    profile?.avatar_url ??
+    user?.user_metadata?.avatar_url ??
+    user?.user_metadata?.picture ??
+    "";
+  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="space-y-6 p-4 md:p-6 lg:p-8">
+      {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Manage your profile and application settings
         </p>
       </div>
 
-      {/* Profile Section */}
-      <Card className="border-slate-200 bg-white">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <UserIcon className="h-5 w-5 text-slate-400" />
-            <CardTitle className="text-base font-semibold text-slate-900">
-              Profile
-            </CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16 border border-slate-200">
-              <AvatarImage src={displayAvatar} />
-              <AvatarFallback className="bg-indigo-100 text-lg text-indigo-600">
-                {displayName.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                {displayName}
-              </h3>
-              <p className="text-sm text-slate-500">{displayEmail}</p>
-              <Badge
-                variant="outline"
-                className="mt-1 border-indigo-200 bg-indigo-50 capitalize text-indigo-700"
-              >
-                {profile?.role ?? "user"}
-              </Badge>
-            </div>
-          </div>
+      <Tabs defaultValue="profile">
+        <TabsList className="mb-4">
+          <TabsTrigger value="profile" className="flex items-center gap-1.5">
+            <UserIcon className="h-3.5 w-3.5" />
+            Profile
+          </TabsTrigger>
+          {isUserAdmin && (
+            <TabsTrigger value="members" className="flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              Members
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-          <Separator className="bg-slate-200" />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-sm text-slate-600">Full Name</Label>
-              <Input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Enter your name"
-                className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm text-slate-600">Email</Label>
-              <Input
-                value={displayEmail}
-                readOnly
-                className="border-slate-200 bg-slate-50 text-slate-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveProfile}
-              disabled={saving}
-              className="gap-2 bg-indigo-600 text-white hover:bg-indigo-500"
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save Changes
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* User Management (Admin only) */}
-      {isUserAdmin && (
-        <Card className="border-slate-200 bg-white">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-slate-400" />
-              <CardTitle className="text-base font-semibold text-slate-900">
-                User Management
-              </CardTitle>
-              <Badge variant="outline" className="ml-2 border-red-200 bg-red-50 text-red-700">
-                Admin
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loadingUsers ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        {/* ── Profile tab ── */}
+        <TabsContent value="profile">
+          <Card className="border-border bg-card">
+            <CardContent className="pt-6 space-y-6">
+              {/* Avatar + identity */}
+              <div className="flex items-center gap-5">
+                <Avatar className="h-20 w-20 border border-border shrink-0">
+                  <AvatarImage src={displayAvatar} />
+                  <AvatarFallback className="bg-primary/10 text-primary text-2xl font-semibold">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="space-y-1 min-w-0">
+                  <h3 className="text-lg font-semibold text-foreground truncate">
+                    {displayName}
+                  </h3>
+                  <p className="text-sm text-muted-foreground truncate">{displayEmail}</p>
+                  <Badge
+                    variant="outline"
+                    className={`mt-0.5 capitalize text-xs ${roleBadgeClass((profile?.role ?? "user") as UserRole)}`}
+                  >
+                    {profile?.role ?? "user"}
+                  </Badge>
+                </div>
               </div>
-            ) : users.length === 0 ? (
-              <p className="text-sm text-slate-500">No users found.</p>
-            ) : (
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
-                      {(
-                        [
-                          ["full_name", "User"],
-                          ["email", "Email"],
-                          ["trade_count", "Trades"],
-                          ["role", "Role"],
-                        ] as [SortField, string][]
-                      ).map(([field, label]) => (
-                        <TableHead key={field}>
-                          <button
-                            onClick={() => toggleSort(field)}
-                            className="flex items-center gap-1 text-slate-600 hover:text-slate-900"
-                          >
-                            {label}
-                            <ArrowUpDown className="h-3 w-3" />
-                          </button>
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedUsers.map((u) => (
-                      <TableRow
-                        key={u.id}
-                        className="border-slate-100 hover:bg-slate-50"
-                      >
-                        <TableCell className="font-medium text-slate-900">
-                          {u.full_name ?? "Unnamed"}
-                        </TableCell>
-                        <TableCell className="text-sm text-slate-500">
-                          {u.email}
-                        </TableCell>
-                        <TableCell className="text-sm font-medium text-slate-700">
-                          {u.trade_count}
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={u.role}
-                            onValueChange={(v) => {
-                              if (v) handleRoleChange(u.id, v as UserRole);
-                            }}
-                            disabled={
-                              u.id === profile?.id ||
-                              updatingUserId === u.id
-                            }
-                          >
-                            <SelectTrigger className="w-28 border-slate-200 bg-white text-slate-700">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="border-slate-200 bg-white">
-                              <SelectItem value="user">User</SelectItem>
-                              <SelectItem value="trader">Trader</SelectItem>
-                              <SelectItem value="admin">Admin</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+
+              <Separator className="bg-border" />
+
+              {/* Form fields */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-foreground">Full Name</Label>
+                  <Input
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-foreground">Email</Label>
+                  <Input
+                    value={displayEmail}
+                    readOnly
+                    className="bg-muted text-muted-foreground cursor-default"
+                  />
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+
+              {/* Save */}
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSaveProfile}
+                  disabled={saving}
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Save Changes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Members tab (admin only) ── */}
+        {isUserAdmin && (
+          <TabsContent value="members">
+            <Card className="border-border bg-card">
+              <CardContent className="pt-6 space-y-4">
+                {/* Header row */}
+                <div className="flex items-center gap-3">
+                  <h2 className="text-base font-semibold text-foreground">
+                    All Members
+                  </h2>
+                  <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
+                    {users.length}
+                  </Badge>
+                </div>
+
+                {loadingUsers ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : users.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No members found.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50 border-border">
+                          {SORT_COLUMNS.map(([field, label]) => (
+                            <TableHead key={field} className="text-muted-foreground">
+                              <button
+                                onClick={() => toggleSort(field)}
+                                className="flex items-center gap-1 hover:text-foreground transition-colors"
+                              >
+                                {label}
+                                <ArrowUpDown
+                                  className={`h-3 w-3 transition-opacity ${
+                                    sortField === field
+                                      ? "opacity-100 text-primary"
+                                      : "opacity-40"
+                                  }`}
+                                />
+                              </button>
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedUsers.map((u) => {
+                          const memberName = u.full_name ?? "Unnamed";
+                          const memberInitials = memberName.charAt(0).toUpperCase();
+                          const isSelf = u.id === profile?.id;
+
+                          return (
+                            <TableRow
+                              key={u.id}
+                              className="border-border hover:bg-accent/40 transition-colors"
+                            >
+                              {/* User + avatar */}
+                              <TableCell>
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar className="h-8 w-8 shrink-0 border border-border">
+                                    <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                                      {memberInitials}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="font-medium text-foreground">
+                                    {memberName}
+                                    {isSelf && (
+                                      <span className="ml-1.5 text-xs text-muted-foreground">
+                                        (you)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-sm text-muted-foreground">
+                                {u.email}
+                              </TableCell>
+
+                              <TableCell className="text-sm font-medium text-foreground">
+                                {u.trade_count}
+                              </TableCell>
+
+                              <TableCell>
+                                {isSelf ? (
+                                  <Badge
+                                    variant="outline"
+                                    className={`capitalize text-xs ${roleBadgeClass(u.role)}`}
+                                  >
+                                    {u.role}
+                                  </Badge>
+                                ) : (
+                                  <Select
+                                    value={u.role}
+                                    onValueChange={(v) => {
+                                      if (v) handleRoleChange(u.id, v as UserRole);
+                                    }}
+                                    disabled={updatingUserId === u.id}
+                                  >
+                                    <SelectTrigger className="w-28 border-border bg-card text-foreground">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="border-border bg-card">
+                                      <SelectItem value="user">User</SelectItem>
+                                      <SelectItem value="trader">Trader</SelectItem>
+                                      <SelectItem value="admin">Admin</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }

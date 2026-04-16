@@ -27,13 +27,13 @@ export default async function SignalsPage() {
   if (!profile || (profile.role !== "trader" && profile.role !== "admin")) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Signal className="size-6" />
         </div>
-        <h2 className="mt-4 text-lg font-semibold text-slate-800">
+        <h2 className="mt-4 text-lg font-semibold text-foreground">
           Access Denied
         </h2>
-        <p className="mt-2 max-w-sm text-sm text-slate-500">
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
           You need trader or admin privileges to access signals. Contact your
           administrator to upgrade your account.
         </p>
@@ -58,15 +58,15 @@ export default async function SignalsPage() {
     <div className="space-y-6 p-4 md:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Signals
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             Create and manage your trade signals.
           </p>
         </div>
         <Link href="/signals/new">
-          <Button className="gap-2 bg-indigo-600 text-white hover:bg-indigo-500">
+          <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="size-4" />
             New Signal
           </Button>

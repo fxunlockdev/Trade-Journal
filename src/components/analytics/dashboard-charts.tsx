@@ -17,7 +17,7 @@ interface DashboardChartsProps {
 }
 
 function ChartSkeleton({ height = "h-[350px]" }: { readonly height?: string }) {
-  return <Skeleton className={`w-full rounded-lg bg-slate-100 ${height}`} />;
+  return <Skeleton className={`w-full rounded-lg bg-muted ${height}`} />;
 }
 
 export function DashboardCharts({ trades }: DashboardChartsProps) {
@@ -26,7 +26,7 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
           Dashboard
         </h1>
         <TimeFilter value={period} onChange={setPeriod} />
@@ -34,9 +34,9 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
 
       <StatsCards trades={trades} />
 
-      <Card className="border-slate-200 bg-white">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-sm font-medium text-slate-500">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
             Equity Curve
           </CardTitle>
         </CardHeader>
@@ -48,9 +48,9 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="border-slate-200 bg-white lg:col-span-2">
+        <Card className="border-border bg-card lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-slate-500">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               P&L by Period
             </CardTitle>
           </CardHeader>
@@ -61,9 +61,9 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white">
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-slate-500">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               Win / Loss
             </CardTitle>
           </CardHeader>
@@ -75,9 +75,9 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
         </Card>
       </div>
 
-      <Card className="border-slate-200 bg-white">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-sm font-medium text-slate-500">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
             Drawdown
           </CardTitle>
         </CardHeader>
