@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { buildSystemPrompt } from "@/lib/chat/system-prompt";
-import { parseTradeAction } from "@/lib/chat/parse-action";
+import { parseTradeAction, getTradeParseErrors } from "@/lib/chat/parse-action";
 import type { Trade, ChatMessage } from "@/types/database";
 
 interface ChatRequestBody {
@@ -21,21 +21,22 @@ async function loadChatHistory(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ): Promise<ReadonlyArray<{ role: "user" | "assistant"; content: string }>> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("chat_messages")
     .select("role, content")
     .eq("user_id", userId)
+    .in("role", ["user", "assistant"])
     .order("created_at", { ascending: false })
     .limit(20);
 
+  if (error) {
+    console.error("[chat] loadChatHistory error:", error.message);
+    return [];
+  }
   if (!data) return [];
 
-  return data
+  return [...data]
     .reverse()
-    .filter(
-      (msg: { role: string; content: string }) =>
-        msg.role === "user" || msg.role === "assistant",
-    )
     .map((msg: { role: string; content: string }) => ({
       role: msg.role as "user" | "assistant",
       content: msg.content,
@@ -49,19 +50,27 @@ async function saveChatMessage(
   content: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
-  await supabase.from("chat_messages").insert({
+  const { error } = await supabase.from("chat_messages").insert({
     user_id: userId,
     role,
     content,
     metadata,
   });
+  if (error) {
+    console.error("[chat] saveChatMessage error:", error.message);
+  }
+}
+
+interface TradeCreateResult {
+  trade: Trade | null;
+  error: string | null;
 }
 
 async function createTradeFromAction(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   actionData: Record<string, unknown>,
-): Promise<Trade | null> {
+): Promise<TradeCreateResult> {
   const tags =
     typeof actionData.tags === "string"
       ? actionData.tags
@@ -84,7 +93,11 @@ async function createTradeFromAction(
   });
 
   if (!parsed.success) {
-    return null;
+    const fieldErrors = parsed.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join(", ");
+    console.error("[chat] trade schema validation failed:", fieldErrors);
+    return { trade: null, error: `Validation failed: ${fieldErrors}` };
   }
 
   const tradeData = {
@@ -103,10 +116,11 @@ async function createTradeFromAction(
     .single();
 
   if (error) {
-    return null;
+    console.error("[chat] trade insert error:", error.message);
+    return { trade: null, error: `DB error: ${error.message}` };
   }
 
-  return data as Trade;
+  return { trade: data as Trade, error: null };
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -124,75 +138,85 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body: unknown = await request.json();
 
     if (!isValidChatRequest(body)) {
-      return NextResponse.json(
-        { error: "Message is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { error: "OpenAI API key not configured" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
     }
 
     const client = new OpenAI({ apiKey });
     const currentDatetime = new Date().toISOString();
 
-    // Load previous chat history for context
+    // Load memory (previous messages)
     const previousMessages = await loadChatHistory(supabase, user.id);
 
     // Build conversation input for Responses API
     const inputMessages = [
       ...previousMessages.map((msg) => ({
-        role: msg.role,
+        role: msg.role as "user" | "assistant",
         content: msg.content,
       })),
       { role: "user" as const, content: body.message },
     ];
 
-    // Save user message before calling AI
+    // Save user message to memory BEFORE AI call
     await saveChatMessage(supabase, user.id, "user", body.message);
 
-    // Call OpenAI Responses API with gpt-5.4
+    // Call OpenAI Responses API — gpt-5.4
     const response = await client.responses.create({
       model: "gpt-5.4",
       instructions: buildSystemPrompt(currentDatetime),
       input: inputMessages,
-      temperature: 0.3,
+      temperature: 0.2,
       max_output_tokens: 2048,
     });
 
     const aiContent = response.output_text ?? "";
 
-    // Check if AI response contains a trade action
+    if (!aiContent) {
+      return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
+    }
+
+    // Try to detect and execute a trade action
     const tradeAction = parseTradeAction(aiContent);
     let createdTrade: Trade | null = null;
+    let tradeError: string | null = null;
 
     if (tradeAction) {
-      createdTrade = await createTradeFromAction(
+      const result = await createTradeFromAction(
         supabase,
         user.id,
         tradeAction.data as unknown as Record<string, unknown>,
       );
+      createdTrade = result.trade;
+      tradeError = result.error;
 
       await saveChatMessage(supabase, user.id, "assistant", aiContent, {
         trade_id: createdTrade?.id ?? null,
+        trade_error: tradeError,
         action: "create_trade",
       });
     } else {
+      // Check if AI tried to create a trade but JSON was malformed
+      const parseErrors = getTradeParseErrors(aiContent);
+      if (parseErrors) {
+        console.error("[chat] AI produced invalid trade JSON:", parseErrors);
+        tradeError = parseErrors;
+      }
+
       await saveChatMessage(supabase, user.id, "assistant", aiContent);
     }
 
     return NextResponse.json({
       message: aiContent,
       trade: createdTrade ?? undefined,
+      tradeError: tradeError ?? undefined,
     });
   } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Internal server error";
+    const message = err instanceof Error ? err.message : "Internal server error";
+    console.error("[chat] POST error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

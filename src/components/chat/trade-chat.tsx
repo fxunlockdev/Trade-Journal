@@ -18,10 +18,16 @@ interface DisplayMessage {
   readonly role: "user" | "assistant";
   readonly content: string;
   readonly trade?: Trade;
+  readonly tradeError?: string;
   readonly createdAt: string;
 }
 
-function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
+interface TradeConfirmationCardProps {
+  readonly trade: Trade;
+  readonly tradeError?: string;
+}
+
+function TradeConfirmationCard({ trade, tradeError }: TradeConfirmationCardProps) {
   const isProfit =
     trade.pnl_absolute !== null ? trade.pnl_absolute >= 0 : null;
 
@@ -76,9 +82,16 @@ function TradeConfirmationCard({ trade }: { readonly trade: Trade }) {
             </span>
           )}
         </div>
-        <p className="mt-2 text-xs text-emerald-400/80">
-          Trade logged successfully
-        </p>
+        {tradeError ? (
+          <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+            <p className="text-xs font-medium text-destructive">Trade save failed</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{tradeError}</p>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-emerald-400/80">
+            Trade logged successfully
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -112,7 +125,12 @@ function MessageBubble({ message }: { readonly message: DisplayMessage }) {
         >
           <FormattedContent content={message.content} />
         </div>
-        {message.trade && <TradeConfirmationCard trade={message.trade} />}
+        {message.trade && (
+          <TradeConfirmationCard
+            trade={message.trade}
+            tradeError={message.tradeError}
+          />
+        )}
       </div>
     </div>
   );
@@ -133,9 +151,9 @@ function TypingIndicator() {
       </div>
       <div className="rounded-2xl rounded-tl-md bg-muted px-4 py-3">
         <div className="flex gap-1">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
         </div>
       </div>
     </div>
@@ -242,6 +260,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
       const json = (await res.json()) as {
         message: string;
         trade?: Trade;
+        tradeError?: string;
       };
 
       const aiMessage: DisplayMessage = {
@@ -249,6 +268,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
         role: "assistant",
         content: json.message,
         trade: json.trade,
+        tradeError: json.tradeError,
         createdAt: new Date().toISOString(),
       };
 
@@ -299,7 +319,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bot className="mb-3 h-10 w-10 text-slate-300" />
+            <Bot className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">
               Tell me about a trade you want to log.
             </p>

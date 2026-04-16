@@ -8,7 +8,7 @@ const tradeActionSchema = z.object({
     direction: z.enum(["buy", "sell"]),
     entry_price: z.coerce.number().positive(),
     exit_price: z.coerce.number().positive().nullable().optional(),
-    quantity: z.coerce.number().positive(),
+    quantity: z.coerce.number().positive().default(1),
     lot_size: z.coerce.number().positive().nullable().optional(),
     stop_loss: z.coerce.number().positive().nullable().optional(),
     take_profit: z.coerce.number().positive().nullable().optional(),
@@ -22,28 +22,59 @@ const tradeActionSchema = z.object({
 
 export type TradeAction = z.infer<typeof tradeActionSchema>;
 
-/**
- * Extracts a JSON action block from the AI response text.
- * Returns the parsed action if found and valid, or null otherwise.
- */
-export function parseTradeAction(text: string): TradeAction | null {
-  const jsonBlockRegex = /```json\s*([\s\S]*?)```/;
-  const match = jsonBlockRegex.exec(text);
-
-  if (!match?.[1]) {
-    return null;
-  }
-
+function tryParseJSON(raw: string): TradeAction | null {
   try {
-    const parsed: unknown = JSON.parse(match[1].trim());
+    const parsed: unknown = JSON.parse(raw);
     const result = tradeActionSchema.safeParse(parsed);
-
-    if (result.success) {
-      return result.data;
-    }
-
-    return null;
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Robust extractor — tries multiple strategies:
+ * 1. ```json ... ``` or ``` ... ``` code fences
+ * 2. Bare JSON object containing "create_trade"
+ */
+export function parseTradeAction(text: string): TradeAction | null {
+  // Strategy 1: code fences (with or without json label)
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/g;
+  let m = fenceRe.exec(text);
+  while (m) {
+    const r = tryParseJSON(m[1].trim());
+    if (r) return r;
+    m = fenceRe.exec(text);
+  }
+
+  // Strategy 2: bare JSON object if it contains create_trade
+  if (text.includes("create_trade")) {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      const r = tryParseJSON(text.slice(start, end + 1));
+      if (r) return r;
+    }
+  }
+
+  return null;
+}
+
+/** Returns human-readable schema errors for debugging/logging */
+export function getTradeParseErrors(text: string): string | null {
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/g;
+  const m = fenceRe.exec(text);
+  if (!m) return null;
+  try {
+    const parsed: unknown = JSON.parse(m[1].trim());
+    const result = tradeActionSchema.safeParse(parsed);
+    if (!result.success) {
+      return result.error.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join(" | ");
+    }
+  } catch {
+    return "Invalid JSON in code block";
+  }
+  return null;
 }
