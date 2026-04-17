@@ -13,7 +13,6 @@ import { z } from "zod";
 const formSchema = createTradeFormSchema;
 type FormInput = z.infer<typeof formSchema>;
 import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
-import { useUser } from "@/hooks/use-user";
 import { cn, formatCurrency, formatPercentage } from "@/lib/utils";
 import type { Trade, AssetType, TradeDirection } from "@/types/database";
 
@@ -57,7 +56,6 @@ const ASSET_TYPES: readonly { readonly value: AssetType; readonly label: string 
 
 export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   const router = useRouter();
-  const { user } = useUser();
   const [instrumentOpen, setInstrumentOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -169,11 +167,11 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
   const onSubmit = useCallback(
     async (data: FormInput) => {
-      if (!user) {
-        toast.error("You must be logged in");
-        return;
-      }
-
+      // No client-side auth gate: the browser Supabase client can show
+      // `user === null` during a cookie-refresh blip even though the server
+      // session is perfectly valid. `/api/trades` already authenticates via
+      // server cookies and RLS enforces per-user isolation, so we rely on
+      // those two layers and surface a real 401 (if any) via response.ok.
       setSubmitting(true);
 
       try {
@@ -234,7 +232,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         setSubmitting(false);
       }
     },
-    [user, isEditMode, trade, onSuccess, router],
+    [isEditMode, trade, onSuccess, router],
   );
 
   return (
