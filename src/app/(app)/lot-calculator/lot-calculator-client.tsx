@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
+  Euro,
+  PoundSterling,
   RotateCcw,
   Scale,
   Shield,
@@ -13,6 +15,7 @@ import {
   TrendingDown,
   TrendingUp,
   Info,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,11 +54,21 @@ const ACCOUNT_CURRENCIES: ReadonlyArray<{
   readonly value: AccountCurrency;
   readonly label: string;
   readonly symbol: string;
+  readonly icon: LucideIcon;
 }> = [
-  { value: "USD", label: "USD ($)", symbol: "$" },
-  { value: "EUR", label: "EUR (€)", symbol: "€" },
-  { value: "GBP", label: "GBP (£)", symbol: "£" },
+  { value: "USD", label: "USD ($)", symbol: "$", icon: DollarSign },
+  { value: "EUR", label: "EUR (€)", symbol: "€", icon: Euro },
+  { value: "GBP", label: "GBP (£)", symbol: "£", icon: PoundSterling },
 ];
+
+/**
+ * Look up the currency-config row by value. Kept as a helper so the
+ * fallback (default to USD) is centralised — lucide's icon import names
+ * and our currency enum map 1:1, so a missing row would be a typo bug.
+ */
+function currencyOf(code: AccountCurrency) {
+  return ACCOUNT_CURRENCIES.find((c) => c.value === code) ?? ACCOUNT_CURRENCIES[0];
+}
 
 interface FormState {
   readonly accountBalance: string;
@@ -249,8 +262,9 @@ export function LotCalculatorClient() {
 
   const cross = needsCrossRate(form.instrument);
 
-  const accountSymbol =
-    ACCOUNT_CURRENCIES.find((c) => c.value === form.accountCurrency)?.symbol ?? "$";
+  const currency = currencyOf(form.accountCurrency);
+  const accountSymbol = currency.symbol;
+  const CurrencyIcon = currency.icon;
 
   return (
     <div className="space-y-6 p-6">
@@ -286,7 +300,14 @@ export function LotCalculatorClient() {
                   Account Balance
                 </Label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  {/* Icon tracks the selected account currency — swapping
+                      the currency dropdown rerenders this with the matching
+                      lucide glyph (DollarSign / Euro / PoundSterling) so the
+                      input affordance never lies. */}
+                  <CurrencyIcon
+                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   <Input
                     id="balance"
                     type="number"
@@ -313,15 +334,27 @@ export function LotCalculatorClient() {
                     }))
                   }
                 >
-                  <SelectTrigger className="w-[90px]">
-                    <SelectValue />
+                  <SelectTrigger className="w-[110px]">
+                    {/* Mirror the balance-input affordance: show the matching
+                        currency glyph alongside the code so the trigger
+                        doesn't look empty/inconsistent with the input. */}
+                    <span className="flex items-center gap-1.5">
+                      <CurrencyIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                      <span>{form.accountCurrency}</span>
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
-                    {ACCOUNT_CURRENCIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.value}
-                      </SelectItem>
-                    ))}
+                    {ACCOUNT_CURRENCIES.map((c) => {
+                      const Icon = c.icon;
+                      return (
+                        <SelectItem key={c.value} value={c.value}>
+                          <span className="flex items-center gap-2">
+                            <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            <span>{c.value}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
