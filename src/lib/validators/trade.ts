@@ -84,6 +84,14 @@ const createTradeObjectSchema = z.object({
 export const createTradeSchema =
   createTradeObjectSchema.superRefine(refineTradeGeometry);
 
+// Form-facing variant: client forms don't set `user_id` (it's attached server-
+// side from the session). We omit it BEFORE refining because Zod forbids
+// `.omit()` on a ZodEffects (refined) schema. Re-applying the geometry refine
+// keeps SL/TP direction invariants enforced in the form.
+export const createTradeFormSchema = createTradeObjectSchema
+  .omit({ user_id: true })
+  .superRefine(refineTradeGeometry);
+
 // updateTradeSchema: need partial + geometry check only when direction +
 // entry_price both present. superRefine handles the guard.
 export const updateTradeSchema = createTradeObjectSchema

@@ -6,11 +6,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
-import { createTradeSchema } from "@/lib/validators/trade";
+import { createTradeFormSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { z } from "zod";
 
-const formSchema = createTradeSchema.omit({ user_id: true });
+const formSchema = createTradeFormSchema;
 type FormInput = z.infer<typeof formSchema>;
 import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
 import { useUser } from "@/hooks/use-user";
