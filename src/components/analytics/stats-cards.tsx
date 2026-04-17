@@ -70,15 +70,29 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
     },
     {
       label: "Profit Factor",
-      value: profitFactor === Infinity ? "---" : profitFactor.toFixed(2),
-      subtitle: profitFactor > 1 ? "Profitable system" : "Needs improvement",
+      // null  → no data OR wins-only (unbounded). Render "—" when we genuinely
+      // have no losses to compare against, so the card doesn't falsely claim
+      // "Profitable system" with zero signal.
+      value: profitFactor === null ? "—" : profitFactor.toFixed(2),
+      subtitle:
+        profitFactor === null
+          ? "Not enough data"
+          : profitFactor > 1
+            ? "Profitable system"
+            : "Needs improvement",
       icon: TrendingUp,
-      colorClass: profitFactor > 1 ? "text-emerald-400" : "text-red-400",
+      colorClass:
+        profitFactor !== null && profitFactor > 1
+          ? "text-emerald-400"
+          : "text-red-400",
       bgGradient:
-        profitFactor > 1
+        profitFactor !== null && profitFactor > 1
           ? "from-emerald-500/10 to-transparent"
           : "from-red-500/10 to-transparent",
-      iconBg: profitFactor > 1 ? "bg-emerald-500/15" : "bg-red-500/15",
+      iconBg:
+        profitFactor !== null && profitFactor > 1
+          ? "bg-emerald-500/15"
+          : "bg-red-500/15",
     },
     {
       label: "Max Drawdown",

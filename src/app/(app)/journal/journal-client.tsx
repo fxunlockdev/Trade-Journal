@@ -25,7 +25,11 @@ export function JournalClient({ trades }: JournalClientProps) {
     }
 
     if (filters.to) {
+      // Normalise to end-of-day (local). A raw `new Date("2026-04-17")`
+      // resolves to 00:00 UTC, so `entry_time <= toDate` silently drops
+      // every trade on the selected "to" day.
       const toDate = new Date(filters.to);
+      toDate.setHours(23, 59, 59, 999);
       result = result.filter((t) => new Date(t.entry_time) <= toDate);
     }
 

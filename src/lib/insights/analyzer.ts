@@ -135,8 +135,14 @@ function computeDirectionStat(
   trades: readonly Trade[],
   direction: "buy" | "sell"
 ): DirectionStat {
+  // Only scored trades participate — otherwise the win_rate denominator
+  // includes trades whose pnl is unknown while the numerator excludes them,
+  // understating win rate.
   const subset = trades.filter(
-    (t) => t.direction === direction && t.exit_price !== null
+    (t) =>
+      t.direction === direction &&
+      t.pnl_absolute !== null &&
+      Number.isFinite(t.pnl_absolute),
   );
   const wins = subset.filter((t) => (t.pnl_absolute ?? 0) > 0);
   const totalPnl = subset.reduce((sum, t) => sum + (t.pnl_absolute ?? 0), 0);
@@ -366,15 +372,19 @@ export function computeTradingStats(
     });
   const avgHoldTimeHours = safeAverage(holdTimes);
 
-  const byInstrument = computeByInstrument(closedTrades);
+  // Slice helpers operate on scoredClosed (= closed AND pnl finite). Using
+  // the broader `closedTrades` slice caused per-slice win_rates to be
+  // systematically under-reported: trades with null pnl_absolute counted
+  // toward the denominator but never the numerator.
+  const byInstrument = computeByInstrument(scoredClosed);
 
   const byDirection = {
     buy: computeDirectionStat(trades, "buy"),
     sell: computeDirectionStat(trades, "sell"),
   };
 
-  const { best: bestHour, worst: worstHour } = computeHourStats(closedTrades);
-  const { best: bestDay, worst: worstDay } = computeDayStats(closedTrades);
+  const { best: bestHour, worst: worstHour } = computeHourStats(scoredClosed);
+  const { best: bestDay, worst: worstDay } = computeDayStats(scoredClosed);
 
   const recentTradesText = buildRecentTradesText(closedByTime);
 

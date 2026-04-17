@@ -420,6 +420,15 @@ export function InsightsPanel({
       })
     : null;
 
+  // Cache is stale when the user has logged more trades than were analyzed
+  // last time. Surface this so they know to regenerate rather than trusting
+  // insights from an earlier data set.
+  const isStale =
+    state.insights !== null &&
+    state.tradesAnalyzed > 0 &&
+    tradeCount > state.tradesAnalyzed;
+  const newTradesSince = Math.max(0, tradeCount - state.tradesAnalyzed);
+
   // Not enough trades
   if (tradeCount < 3) {
     return (
@@ -507,6 +516,13 @@ export function InsightsPanel({
                   <> · {state.tradesAnalyzed} trades</>
                 )}
               </p>
+              {isStale && (
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-500">
+                  <span className="size-1.5 rounded-full bg-amber-500" />
+                  Stale — {newTradesSince} new trade
+                  {newTradesSince === 1 ? "" : "s"} since last analysis
+                </p>
+              )}
             </div>
             <div className="flex flex-col items-end gap-2">
               <Button

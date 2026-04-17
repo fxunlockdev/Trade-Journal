@@ -18,7 +18,7 @@ const tradeActionSchema = z.object({
   action: z.literal("create_trade"),
   data: z.object({
     instrument: z.string().min(1),
-    asset_type: z.enum(["forex", "crypto", "metal"]),
+    asset_type: z.enum(["forex", "crypto", "metal", "commodity", "index"]),
     direction: z.enum(["buy", "sell"]),
     entry_price: z.coerce.number().positive(),
     exit_price: z.coerce.number().positive().nullable().optional(),

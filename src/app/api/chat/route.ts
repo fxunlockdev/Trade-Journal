@@ -184,10 +184,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (openaiErr: unknown) {
       const msg = openaiErr instanceof Error ? openaiErr.message : "OpenAI error";
       console.error("[chat] OpenAI call failed:", msg);
+      // Persist an assistant placeholder so the user's message isn't orphaned
+      // in the transcript on reload. Without this, a failed call leaves a
+      // dangling user bubble with no reply.
+      await saveChatMessage(
+        adminDB,
+        user.id,
+        "assistant",
+        "I couldn't reach the AI right now. Please try again.",
+        { error: msg, transient: true },
+      );
       return NextResponse.json({ error: `AI error: ${msg}` }, { status: 500 });
     }
 
     if (!aiContent) {
+      await saveChatMessage(
+        adminDB,
+        user.id,
+        "assistant",
+        "I received an empty response from the AI. Please try again.",
+        { error: "empty_response", transient: true },
+      );
       return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
     }
 

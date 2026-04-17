@@ -1,5 +1,10 @@
 export type UserRole = "user" | "trader" | "admin";
-export type AssetType = "forex" | "crypto" | "metal";
+export type AssetType =
+  | "forex"
+  | "crypto"
+  | "metal"
+  | "commodity"
+  | "index";
 export type TradeDirection = "buy" | "sell";
 export type TradeSource = "manual" | "csv" | "mt5_webhook";
 

@@ -61,8 +61,21 @@ export function computeMaxDrawdown(trades: readonly Trade[]): number {
   return maxDrawdown;
 }
 
-export function computeProfitFactor(trades: readonly Trade[]): number {
+/**
+ * Profit factor = gross profit / gross loss.
+ *   - `null` when there is no data or no losses (unbounded / undefined).
+ *   - A finite number otherwise.
+ *
+ * Returning `null` instead of `Infinity` prevents "Infinity" from leaking
+ * into JSON serialisation, chart axes, and toFixed() calls. Callers render
+ * `null` as "—" (no data) or "∞" (wins-only) based on their context.
+ */
+export function computeProfitFactor(
+  trades: readonly Trade[],
+): number | null {
   const closed = getClosedTrades(trades);
+  if (closed.length === 0) return null;
+
   const grossProfit = closed
     .filter((t) => t.pnl_absolute > 0)
     .reduce((sum, t) => sum + t.pnl_absolute, 0);
@@ -71,7 +84,7 @@ export function computeProfitFactor(trades: readonly Trade[]): number {
       .filter((t) => t.pnl_absolute < 0)
       .reduce((sum, t) => sum + t.pnl_absolute, 0),
   );
-  if (grossLoss === 0) return grossProfit > 0 ? Infinity : 0;
+  if (grossLoss === 0) return null;
   return grossProfit / grossLoss;
 }
 

@@ -30,7 +30,11 @@ export function DashboardCharts({ trades }: DashboardChartsProps) {
 
     if (dateRange !== "all") {
       const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : 90;
+      // Anchor cutoff to start-of-day so "7D" means the last 7 full days
+      // regardless of the current wall-clock time (3pm vs 9am). Otherwise
+      // the same trade oscillates in/out of the window across refreshes.
       const cutoff = new Date();
+      cutoff.setHours(0, 0, 0, 0);
       cutoff.setDate(cutoff.getDate() - days);
       result = result.filter(t => new Date(t.entry_time) >= cutoff);
     }

@@ -47,8 +47,11 @@ export function WinLossPie({ trades }: WinLossPieProps) {
   const closed = trades.filter(
     (t) => t.exit_price !== null && t.pnl_absolute !== null,
   );
+  // Strict classification — `losses = total - wins` previously absorbed
+  // break-even trades (pnl === 0) into the loss bucket, distorting the pie.
   const wins = closed.filter((t) => t.pnl_absolute! > 0).length;
-  const losses = closed.length - wins;
+  const losses = closed.filter((t) => t.pnl_absolute! < 0).length;
+  const breakeven = closed.filter((t) => t.pnl_absolute === 0).length;
   const winRate = computeWinRate(trades);
 
   if (closed.length === 0) {
@@ -62,6 +65,9 @@ export function WinLossPie({ trades }: WinLossPieProps) {
   const data: readonly PieSlice[] = [
     { name: "Wins", value: wins, color: "#10b981" },
     { name: "Losses", value: losses, color: "#ef4444" },
+    ...(breakeven > 0
+      ? [{ name: "Break-even", value: breakeven, color: "#71717a" }]
+      : []),
   ];
 
   return (

@@ -22,7 +22,7 @@ interface AnalyticsResult {
   readonly avgWin: number;
   readonly avgLoss: number;
   readonly maxDrawdown: number;
-  readonly profitFactor: number;
+  readonly profitFactor: number | null;
   readonly equityCurve: readonly EquityCurvePoint[];
   readonly periodStats: readonly PeriodStats[];
   readonly period: Period;
