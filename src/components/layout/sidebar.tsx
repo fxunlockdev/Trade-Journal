@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Brain,
   Calculator,
+  Scale,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -68,6 +69,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Risk Calc",
     href: "/risk-calculator",
     icon: Calculator,
+    section: "main",
+  },
+  {
+    label: "Lot Size Calc",
+    href: "/lot-calculator",
+    icon: Scale,
     section: "main",
   },
   {
