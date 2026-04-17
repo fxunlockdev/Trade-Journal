@@ -129,12 +129,19 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   const direction = watch("direction");
 
   const preview = useMemo(() => {
-    const entry = Number(watchedFields.entry_price) || 0;
-    const exit = Number(watchedFields.exit_price) || 0;
-    const qty = Number(watchedFields.quantity) || 0;
-    const fees = Number(watchedFields.fees) || 0;
-    const sl = Number(watchedFields.stop_loss) || 0;
-    const tp = Number(watchedFields.take_profit) || 0;
+    // `Number("1e400")` is Infinity and `Number("abc")` is NaN. Both slip
+    // past `|| 0` when chained after coercion: `Infinity || 0 === Infinity`.
+    // Narrow to finite numbers so the preview card never renders "∞" or "NaN".
+    const toFinite = (v: unknown): number => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const entry = toFinite(watchedFields.entry_price);
+    const exit = toFinite(watchedFields.exit_price);
+    const qty = toFinite(watchedFields.quantity);
+    const fees = toFinite(watchedFields.fees);
+    const sl = toFinite(watchedFields.stop_loss);
+    const tp = toFinite(watchedFields.take_profit);
     const dir = watchedFields.direction ?? "buy";
 
     if (entry <= 0 || qty <= 0) return null;

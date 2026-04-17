@@ -19,18 +19,36 @@ export function JournalClient({ trades }: JournalClientProps) {
   const filtered = useMemo(() => {
     let result = [...trades];
 
+    // Parse a YYYY-MM-DD string as LOCAL-zone midnight, not UTC midnight.
+    // `new Date("2026-04-17")` is UTC-anchored, so calling .setHours(23,...)
+    // on it afterwards drifts the cutoff by the user's UTC offset. In UTC+12
+    // the "to" date ends at 11:59 UTC (noon local), silently dropping
+    // afternoon/evening trades. Construct date parts explicitly instead.
+    const parseLocalDate = (
+      yyyyMmDd: string,
+      hh: number,
+      mm: number,
+      ss: number,
+      ms: number,
+    ): Date | null => {
+      const parts = yyyyMmDd.split("-").map((p) => Number(p));
+      if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+      const [y, m, d] = parts;
+      return new Date(y, m - 1, d, hh, mm, ss, ms);
+    };
+
     if (filters.from) {
-      const fromDate = new Date(filters.from);
-      result = result.filter((t) => new Date(t.entry_time) >= fromDate);
+      const fromDate = parseLocalDate(filters.from, 0, 0, 0, 0);
+      if (fromDate && !Number.isNaN(fromDate.getTime())) {
+        result = result.filter((t) => new Date(t.entry_time) >= fromDate);
+      }
     }
 
     if (filters.to) {
-      // Normalise to end-of-day (local). A raw `new Date("2026-04-17")`
-      // resolves to 00:00 UTC, so `entry_time <= toDate` silently drops
-      // every trade on the selected "to" day.
-      const toDate = new Date(filters.to);
-      toDate.setHours(23, 59, 59, 999);
-      result = result.filter((t) => new Date(t.entry_time) <= toDate);
+      const toDate = parseLocalDate(filters.to, 23, 59, 59, 999);
+      if (toDate && !Number.isNaN(toDate.getTime())) {
+        result = result.filter((t) => new Date(t.entry_time) <= toDate);
+      }
     }
 
     if (filters.instrument) {

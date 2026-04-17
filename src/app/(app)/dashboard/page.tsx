@@ -5,7 +5,7 @@ import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
 import { PerformanceCalendar } from "@/components/analytics/performance-calendar";
-import { Badge } from "@/components/ui/badge";
+import { WelcomeCard } from "@/components/dashboard/welcome-card";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/types/database";
 
@@ -65,89 +65,6 @@ export default async function DashboardPage() {
       <DashboardCharts trades={trades} />
       <PerformanceCalendar trades={trades} />
       <RecentTrades trades={trades} />
-    </div>
-  );
-}
-
-function WelcomeCard({
-  name,
-  role,
-  tradeCount,
-}: {
-  readonly name: string | null;
-  readonly role: string;
-  readonly tradeCount: number;
-}) {
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{greeting}</p>
-          <h2 className="mt-0.5 text-2xl font-bold text-foreground">
-            {name ?? "Trader"} 👋
-          </h2>
-          <div className="mt-2 flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={cn(
-                "capitalize text-xs",
-                role === "admin" &&
-                  "border-destructive/30 bg-destructive/10 text-destructive",
-                role === "trader" &&
-                  "border-primary/30 bg-primary/10 text-primary",
-                role === "user" &&
-                  "border-border bg-muted text-muted-foreground"
-              )}
-            >
-              {role}
-            </Badge>
-            <span className="text-sm text-muted-foreground">
-              {tradeCount} {tradeCount === 1 ? "trade" : "trades"} logged
-            </span>
-          </div>
-        </div>
-        <div className="text-3xl">📈</div>
-      </div>
-
-      {/* Quick actions */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Link
-          href="/journal/new"
-          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          + Log Trade
-        </Link>
-        <Link
-          href="/ai-chat"
-          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          💬 AI Chat
-        </Link>
-        <Link
-          href="/insights"
-          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          🧠 AI Insights
-        </Link>
-        <Link
-          href="/risk-calculator"
-          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          🧮 Risk Calc
-        </Link>
-        {(role === "trader" || role === "admin") && (
-          <Link
-            href="/signals/new"
-            className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-          >
-            📡 New Signal
-          </Link>
-        )}
-      </div>
     </div>
   );
 }
