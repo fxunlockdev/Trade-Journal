@@ -14,6 +14,7 @@ import {
   Search,
 } from "lucide-react";
 import {
+  Command,
   CommandDialog,
   CommandInput,
   CommandList,
@@ -164,8 +165,14 @@ export function CommandPalette({ role }: CommandPaletteProps) {
       title="Command Palette"
       description="Jump to any page or add a trade swiftly"
     >
-      <CommandInput placeholder="Type a command, page, or @trade…" />
-      <CommandList>
+      {/* cmdk primitives (Input/List/Item) require a <Command> ancestor to
+          register with. CommandDialog intentionally omits it so consumers
+          can pass their own <Command> with custom props — forgetting it
+          throws "no command menu found" on open, which bubbles up to the
+          Next.js error boundary as "This page couldn't load". */}
+      <Command>
+        <CommandInput placeholder="Type a command, page, or @trade…" />
+        <CommandList>
         <CommandEmpty>
           <div className="flex flex-col items-center gap-2 py-4 text-muted-foreground">
             <Search className="h-5 w-5 opacity-50" />
@@ -219,6 +226,7 @@ export function CommandPalette({ role }: CommandPaletteProps) {
           })}
         </CommandGroup>
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }
