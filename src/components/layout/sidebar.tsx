@@ -13,6 +13,8 @@ import {
   Radio,
   Settings,
   MessageSquare,
+  Brain,
+  Calculator,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -54,6 +56,18 @@ const NAV_ITEMS: readonly NavItem[] = [
     href: "/signals",
     icon: Radio,
     requiredRole: "trader",
+    section: "main",
+  },
+  {
+    label: "AI Insights",
+    href: "/insights",
+    icon: Brain,
+    section: "main",
+  },
+  {
+    label: "Risk Calc",
+    href: "/risk-calculator",
+    icon: Calculator,
     section: "main",
   },
   {

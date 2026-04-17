@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,18 @@ import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
 import type { UserRole } from "@/types/database";
 import { toast } from "sonner";
-import { User as UserIcon, Shield, Loader2, ArrowUpDown, Save } from "lucide-react";
+import {
+  User as UserIcon,
+  Shield,
+  Loader2,
+  ArrowUpDown,
+  Save,
+  Camera,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 type SortField = "full_name" | "email" | "role" | "trade_count";
 type SortDir = "asc" | "desc";
@@ -64,6 +75,23 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Avatar upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null);
+
+  // Email change
+  const [newEmail, setNewEmail] = useState("");
+  const [changingEmail, setChangingEmail] = useState(false);
+
+  // Password change
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  // Members tab
   const [users, setUsers] = useState<readonly ManagedUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
@@ -85,11 +113,11 @@ export default function SettingsPage() {
       try {
         const res = await fetch("/api/admin/users");
         if (!res.ok) {
-          const err = await res.json() as { error?: string };
+          const err = (await res.json()) as { error?: string };
           toast.error(err.error ?? "Failed to load members");
           return;
         }
-        const json = await res.json() as { data: ManagedUser[] };
+        const json = (await res.json()) as { data: ManagedUser[] };
         setUsers(json.data ?? []);
       } catch {
         toast.error("Failed to load members");
@@ -119,6 +147,103 @@ export default function SettingsPage() {
     setSaving(false);
   }, [user, fullName, supabase, refetch]);
 
+  const handleAvatarClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleAvatarFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
+
+      setUploadingAvatar(true);
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(`${user.id}/avatar`, file, {
+            upsert: true,
+            contentType: file.type,
+          });
+
+        if (uploadError) {
+          toast.error(uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(`${user.id}/avatar`);
+
+        const publicUrl = urlData.publicUrl;
+
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({ avatar_url: publicUrl })
+          .eq("id", user.id);
+
+        if (updateError) {
+          toast.error(updateError.message);
+          return;
+        }
+
+        setLocalAvatarUrl(publicUrl);
+        toast.success("Avatar updated");
+        await refetch();
+      } catch {
+        toast.error("Failed to upload avatar");
+      } finally {
+        setUploadingAvatar(false);
+        // Reset input so selecting the same file triggers onChange again
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      }
+    },
+    [user, supabase, refetch],
+  );
+
+  const handleEmailChange = useCallback(async () => {
+    const trimmed = newEmail.trim();
+    if (!trimmed) return;
+
+    setChangingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: trimmed });
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success("Check your new email for a confirmation link");
+        setNewEmail("");
+      }
+    } catch {
+      toast.error("Failed to update email");
+    } finally {
+      setChangingEmail(false);
+    }
+  }, [newEmail, supabase]);
+
+  const handlePasswordChange = useCallback(async () => {
+    if (newPassword !== confirmPassword || newPassword.length < 8) return;
+
+    setChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success("Password updated successfully");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch {
+      toast.error("Failed to update password");
+    } finally {
+      setChangingPassword(false);
+    }
+  }, [newPassword, confirmPassword, supabase]);
+
   const handleRoleChange = useCallback(
     async (userId: string, newRole: UserRole) => {
       setUpdatingUserId(userId);
@@ -129,7 +254,7 @@ export default function SettingsPage() {
           body: JSON.stringify({ userId, role: newRole }),
         });
         if (!res.ok) {
-          const err = await res.json() as { error?: string };
+          const err = (await res.json()) as { error?: string };
           toast.error(err.error ?? "Failed to update role");
           return;
         }
@@ -173,6 +298,14 @@ export default function SettingsPage() {
     }
   });
 
+  const passwordMismatch =
+    confirmPassword.length > 0 && newPassword !== confirmPassword;
+  const passwordUpdateDisabled =
+    changingPassword ||
+    newPassword.length < 8 ||
+    confirmPassword.length === 0 ||
+    newPassword !== confirmPassword;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -188,6 +321,7 @@ export default function SettingsPage() {
     user?.user_metadata?.name ??
     "User";
   const displayAvatar =
+    localAvatarUrl ??
     profile?.avatar_url ??
     user?.user_metadata?.avatar_url ??
     user?.user_metadata?.picture ??
@@ -222,19 +356,56 @@ export default function SettingsPage() {
         <TabsContent value="profile">
           <Card className="border-border bg-card">
             <CardContent className="pt-6 space-y-6">
-              {/* Avatar + identity */}
+              {/* Avatar upload + identity */}
               <div className="flex items-center gap-5">
-                <Avatar className="h-20 w-20 border border-border shrink-0">
-                  <AvatarImage src={displayAvatar} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-2xl font-semibold">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                {/* Clickable avatar with camera overlay */}
+                <button
+                  type="button"
+                  onClick={handleAvatarClick}
+                  disabled={uploadingAvatar}
+                  className="relative h-20 w-20 shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Upload profile photo"
+                >
+                  <Avatar className="h-20 w-20 border border-border">
+                    <AvatarImage src={displayAvatar} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl font-semibold">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {/* Overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 hover:opacity-100 transition-opacity">
+                    {uploadingAvatar ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-white" />
+                    )}
+                  </div>
+
+                  {/* Loading ring when uploading */}
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                      <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    </div>
+                  )}
+                </button>
+
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
+
                 <div className="space-y-1 min-w-0">
                   <h3 className="text-lg font-semibold text-foreground truncate">
                     {displayName}
                   </h3>
-                  <p className="text-sm text-muted-foreground truncate">{displayEmail}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {displayEmail}
+                  </p>
                   <Badge
                     variant="outline"
                     className={`mt-0.5 capitalize text-xs ${roleBadgeClass((profile?.role ?? "user") as UserRole)}`}
@@ -246,7 +417,7 @@ export default function SettingsPage() {
 
               <Separator className="bg-border" />
 
-              {/* Form fields */}
+              {/* Full Name field */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label className="text-sm text-foreground">Full Name</Label>
@@ -256,17 +427,9 @@ export default function SettingsPage() {
                     placeholder="Enter your name"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm text-foreground">Email</Label>
-                  <Input
-                    value={displayEmail}
-                    readOnly
-                    className="bg-muted text-muted-foreground cursor-default"
-                  />
-                </div>
               </div>
 
-              {/* Save */}
+              {/* Save name */}
               <div className="flex justify-end">
                 <Button
                   onClick={handleSaveProfile}
@@ -280,6 +443,142 @@ export default function SettingsPage() {
                   )}
                   Save Changes
                 </Button>
+              </div>
+
+              <Separator className="bg-border" />
+
+              {/* ── Change Email ── */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Change Email
+                  </h3>
+                </div>
+                <div className="space-y-1.5 max-w-sm">
+                  <Label className="text-sm text-foreground">New Email</Label>
+                  <Input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="Enter new email address"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A confirmation link will be sent to your new email address
+                  </p>
+                </div>
+                <div className="flex justify-start">
+                  <Button
+                    onClick={handleEmailChange}
+                    disabled={changingEmail || newEmail.trim().length === 0}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {changingEmail ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )}
+                    Update Email
+                  </Button>
+                </div>
+              </div>
+
+              <Separator className="bg-border" />
+
+              {/* ── Change Password ── */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Change Password
+                  </h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* New Password */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm text-foreground">
+                      New Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={
+                          showNewPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Minimum 8 characters
+                    </p>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm text-foreground">
+                      Confirm Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm new password"
+                        className={`pr-10 ${passwordMismatch ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={
+                          showConfirmPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    {passwordMismatch && (
+                      <p className="text-xs text-destructive">
+                        Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-start">
+                  <Button
+                    onClick={handlePasswordChange}
+                    disabled={passwordUpdateDisabled}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {changingPassword ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Lock className="h-4 w-4" />
+                    )}
+                    Update Password
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -295,7 +594,10 @@ export default function SettingsPage() {
                   <h2 className="text-base font-semibold text-foreground">
                     All Members
                   </h2>
-                  <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
+                  <Badge
+                    variant="outline"
+                    className="border-border bg-muted text-muted-foreground"
+                  >
                     {users.length}
                   </Badge>
                 </div>
@@ -314,7 +616,10 @@ export default function SettingsPage() {
                       <TableHeader>
                         <TableRow className="bg-muted/50 hover:bg-muted/50 border-border">
                           {SORT_COLUMNS.map(([field, label]) => (
-                            <TableHead key={field} className="text-muted-foreground">
+                            <TableHead
+                              key={field}
+                              className="text-muted-foreground"
+                            >
                               <button
                                 onClick={() => toggleSort(field)}
                                 className="flex items-center gap-1 hover:text-foreground transition-colors"
@@ -335,7 +640,8 @@ export default function SettingsPage() {
                       <TableBody>
                         {sortedUsers.map((u) => {
                           const memberName = u.full_name ?? "Unnamed";
-                          const memberInitials = memberName.charAt(0).toUpperCase();
+                          const memberInitials =
+                            memberName.charAt(0).toUpperCase();
                           const isSelf = u.id === profile?.id;
 
                           return (
@@ -382,7 +688,11 @@ export default function SettingsPage() {
                                   <Select
                                     value={u.role}
                                     onValueChange={(v) => {
-                                      if (v) handleRoleChange(u.id, v as UserRole);
+                                      if (v)
+                                        handleRoleChange(
+                                          u.id,
+                                          v as UserRole,
+                                        );
                                     }}
                                     disabled={updatingUserId === u.id}
                                   >
@@ -391,8 +701,12 @@ export default function SettingsPage() {
                                     </SelectTrigger>
                                     <SelectContent className="border-border bg-card">
                                       <SelectItem value="user">User</SelectItem>
-                                      <SelectItem value="trader">Trader</SelectItem>
-                                      <SelectItem value="admin">Admin</SelectItem>
+                                      <SelectItem value="trader">
+                                        Trader
+                                      </SelectItem>
+                                      <SelectItem value="admin">
+                                        Admin
+                                      </SelectItem>
                                     </SelectContent>
                                   </Select>
                                 )}

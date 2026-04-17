@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
+import { PerformanceCalendar } from "@/components/analytics/performance-calendar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/types/database";
@@ -62,6 +63,7 @@ export default async function DashboardPage() {
       <WelcomeCard name={fullName} role={role} tradeCount={trades.length} />
       {/* DashboardCharts already renders StatsCards with filter-aware trades */}
       <DashboardCharts trades={trades} />
+      <PerformanceCalendar trades={trades} />
       <RecentTrades trades={trades} />
     </div>
   );
@@ -124,6 +126,18 @@ function WelcomeCard({
           className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           💬 AI Chat
+        </Link>
+        <Link
+          href="/insights"
+          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          🧠 AI Insights
+        </Link>
+        <Link
+          href="/risk-calculator"
+          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          🧮 Risk Calc
         </Link>
         {(role === "trader" || role === "admin") && (
           <Link
