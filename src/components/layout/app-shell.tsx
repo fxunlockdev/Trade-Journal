@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { CommandPalette } from "@/components/layout/command-palette";
 
 interface UserProfile {
   id: string;
@@ -41,6 +42,9 @@ export function AppShell({ profile, children }: AppShellProps) {
           {children}
         </main>
       </div>
+
+      {/* Cmd+K palette — global keyboard shortcut, mounts once per shell */}
+      <CommandPalette role={profile.role} />
     </div>
   );
 }

@@ -19,8 +19,8 @@ import type { Trade, AssetType, TradeDirection } from "@/types/database";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FieldLabel } from "@/components/trade/field-label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -250,7 +250,13 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Instrument Combobox */}
             <div className="space-y-2">
-              <Label htmlFor="instrument">Instrument</Label>
+              <FieldLabel
+                htmlFor="instrument"
+                required
+                help="The asset you traded — e.g. EURUSD, BTCUSD, XAUUSD. Start typing to search the catalog."
+              >
+                Instrument
+              </FieldLabel>
               <Popover open={instrumentOpen} onOpenChange={setInstrumentOpen}>
                 <PopoverTrigger
                   render={
@@ -297,7 +303,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
             {/* Asset Type */}
             <div className="space-y-2">
-              <Label>Asset Type</Label>
+              <FieldLabel
+                required
+                help="Category of the instrument. Forex = currency pairs. Crypto = digital coins. Metal = gold/silver. Commodity = oil/gas/agri. Index = stock indices like SPX."
+              >
+                Asset Type
+              </FieldLabel>
               <Select
                 defaultValue={defaultValues.asset_type}
                 onValueChange={(value) =>
@@ -322,7 +333,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
             {/* Direction Toggle */}
             <div className="space-y-2">
-              <Label>Direction</Label>
+              <FieldLabel
+                required
+                help="BUY (Long) — you profit when price rises above entry. SELL (Short) — you profit when price drops below entry."
+              >
+                Direction
+              </FieldLabel>
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -369,7 +385,13 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="entry_price">Entry Price</Label>
+              <FieldLabel
+                htmlFor="entry_price"
+                required
+                help="The price at which you entered the trade. Use the exact fill price from your broker for accurate P&L."
+              >
+                Entry Price
+              </FieldLabel>
               <Input
                 id="entry_price"
                 type="number"
@@ -382,7 +404,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="exit_price">Exit Price</Label>
+              <FieldLabel
+                htmlFor="exit_price"
+                help="The price at which you closed the trade. Leave blank if the trade is still open — P&L will be computed once you set this."
+              >
+                Exit Price
+              </FieldLabel>
               <Input
                 id="exit_price"
                 type="number"
@@ -392,7 +419,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="stop_loss">Stop Loss</Label>
+              <FieldLabel
+                htmlFor="stop_loss"
+                help="Price that would auto-close the trade to cap your loss. Must be BELOW entry for BUY trades, ABOVE entry for SELL trades."
+              >
+                Stop Loss
+              </FieldLabel>
               <Input
                 id="stop_loss"
                 type="number"
@@ -400,9 +432,17 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                 placeholder="0.00"
                 {...register("stop_loss")}
               />
+              {errors.stop_loss && (
+                <p className="text-xs text-destructive">{errors.stop_loss.message}</p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="take_profit">Take Profit</Label>
+              <FieldLabel
+                htmlFor="take_profit"
+                help="Price that would auto-close the trade to lock in profit. Must be ABOVE entry for BUY trades, BELOW entry for SELL trades."
+              >
+                Take Profit
+              </FieldLabel>
               <Input
                 id="take_profit"
                 type="number"
@@ -410,6 +450,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                 placeholder="0.00"
                 {...register("take_profit")}
               />
+              {errors.take_profit && (
+                <p className="text-xs text-destructive">{errors.take_profit.message}</p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -425,7 +468,13 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity</Label>
+              <FieldLabel
+                htmlFor="quantity"
+                required
+                help="Number of units / contracts / shares traded. For forex, this is typically the lot size × contract size (e.g. 0.1 lots = 10,000 units on a standard pair)."
+              >
+                Quantity
+              </FieldLabel>
               <Input
                 id="quantity"
                 type="number"
@@ -438,7 +487,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lot_size">Lot Size</Label>
+              <FieldLabel
+                htmlFor="lot_size"
+                help="Broker-facing position size (e.g. 0.01 micro, 0.1 mini, 1.0 standard in forex). Optional — stored for reporting only; doesn't change P&L math."
+              >
+                Lot Size
+              </FieldLabel>
               <Input
                 id="lot_size"
                 type="number"
@@ -448,7 +502,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="fees">Fees</Label>
+              <FieldLabel
+                htmlFor="fees"
+                help="Total commissions, spread, and swap charges paid on this trade. Deducted from P&L so your numbers reflect real net performance."
+              >
+                Fees
+              </FieldLabel>
               <Input
                 id="fees"
                 type="number"
@@ -471,7 +530,13 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="entry_time">Entry Time</Label>
+              <FieldLabel
+                htmlFor="entry_time"
+                required
+                help="When you opened the trade, in your local time. Used to bucket trades on the calendar, equity curve, and by-hour stats."
+              >
+                Entry Time
+              </FieldLabel>
               <Input
                 id="entry_time"
                 type="datetime-local"
@@ -482,7 +547,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="exit_time">Exit Time</Label>
+              <FieldLabel
+                htmlFor="exit_time"
+                help="When you closed the trade. Leave blank if still open. Hold duration = exit time − entry time."
+              >
+                Exit Time
+              </FieldLabel>
               <Input
                 id="exit_time"
                 type="datetime-local"
@@ -502,7 +572,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
+            <FieldLabel
+              htmlFor="notes"
+              help="Your rationale, setup, emotions, or post-trade review. Optional — but the traders who keep notes improve fastest."
+            >
+              Notes
+            </FieldLabel>
             <Textarea
               id="notes"
               placeholder="Trade rationale, observations..."
@@ -511,7 +586,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tags">Tags</Label>
+            <FieldLabel
+              htmlFor="tags"
+              help="Comma-separated labels for grouping & filtering — e.g. 'breakout, trend, news'. Used by the Journal filters and AI Insights to compare tagged vs untagged performance."
+            >
+              Tags
+            </FieldLabel>
             <Input
               id="tags"
               placeholder="breakout, trend, scalp (comma-separated)"

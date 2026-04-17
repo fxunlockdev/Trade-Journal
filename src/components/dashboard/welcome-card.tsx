@@ -27,6 +27,11 @@ export function WelcomeCard({ name, role, tradeCount }: WelcomeCardProps) {
   const [greeting, setGreeting] = useState<string>("Welcome");
 
   useEffect(() => {
+    // Intentional setState-in-effect: we MUST read the hour after mount so
+    // the value comes from the viewer's clock, not the server's. Using a
+    // lazy initializer would re-introduce the hydration mismatch we just
+    // fixed. Disable the lint rule rather than silently break UX.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setGreeting(pickGreeting(new Date().getHours()));
   }, []);
 

@@ -94,17 +94,25 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
         <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>
       </div>
 
-      {/* Center: Search bar (placeholder) */}
+      {/* Center: Command-palette trigger. Clicking or Cmd+K opens the
+          palette (see CommandPalette in AppShell). We render it as a button
+          styled like a search bar so the affordance is obvious even to
+          non-keyboard users, while still communicating the shortcut. */}
       <div className="hidden max-w-md flex-1 px-8 md:block">
-        <div className="relative">
+        <button
+          type="button"
+          aria-label="Open command palette"
+          onClick={() =>
+            window.dispatchEvent(new Event("trdr:open-command-palette"))
+          }
+          className="group relative flex w-full items-center rounded-lg border border-border bg-muted py-1.5 pl-9 pr-4 text-left text-sm text-muted-foreground transition-colors hover:border-ring/40 hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/20"
+        >
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search..."
-            disabled
-            className="w-full rounded-lg border border-border bg-muted py-1.5 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </div>
+          <span>Search or type @trade…</span>
+          <kbd className="ml-auto hidden items-center gap-0.5 rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">
+            ⌘K
+          </kbd>
+        </button>
       </div>
 
       {/* Right side */}
