@@ -88,8 +88,35 @@ export const createTradeSchema =
 // side from the session). We omit it BEFORE refining because Zod forbids
 // `.omit()` on a ZodEffects (refined) schema. Re-applying the geometry refine
 // keeps SL/TP direction invariants enforced in the form.
+//
+// `tags` and `notes` are explicitly made form-friendly:
+//   - tags: the <input> is a comma-separated text field, so an empty input
+//     arrives as "" (string), not undefined. `z.array(...).default([])` only
+//     fills in defaults for `undefined`, so without preprocessing an empty
+//     tags field silently fails validation and blocks submit. Preprocess
+//     accepts array-passthrough OR splits a comma string; empty → [].
+//   - notes: a blank textarea yields "" which already satisfies `z.string()`,
+//     but we normalize to null so empty notes don't round-trip as empty
+//     strings into the DB. Keeps the field genuinely optional.
+const formTagsField = z.preprocess((v) => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") {
+    return v
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}, z.array(z.string().trim()).default([]));
+
+const formNotesField = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+  z.string().trim().max(5000).nullable().optional(),
+);
+
 export const createTradeFormSchema = createTradeObjectSchema
-  .omit({ user_id: true })
+  .omit({ user_id: true, tags: true, notes: true })
+  .extend({ tags: formTagsField, notes: formNotesField })
   .superRefine(refineTradeGeometry);
 
 // updateTradeSchema: need partial + geometry check only when direction +
