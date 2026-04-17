@@ -41,19 +41,21 @@ export function computeMaxDrawdown(trades: readonly Trade[]): number {
     (a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime(),
   );
 
-  let peak = 0;
+  if (sorted.length === 0) return 0;
+
+  // Peak MUST track the running max of the equity curve, including negative
+  // values. Initialising to 0 was wrong: for an account that starts with a
+  // loss, peak stayed at 0 while cumPnl was negative, so the "drawdown"
+  // reported the distance from 0 instead of from the actual peak.
+  let peak = -Infinity;
   let cumPnl = 0;
   let maxDrawdown = 0;
 
   for (const trade of sorted) {
     cumPnl += trade.pnl_absolute;
-    if (cumPnl > peak) {
-      peak = cumPnl;
-    }
+    if (cumPnl > peak) peak = cumPnl;
     const drawdown = peak - cumPnl;
-    if (drawdown > maxDrawdown) {
-      maxDrawdown = drawdown;
-    }
+    if (drawdown > maxDrawdown) maxDrawdown = drawdown;
   }
 
   return maxDrawdown;
@@ -131,20 +133,34 @@ export function groupTradesByPeriod(
   });
 }
 
+/**
+ * Period key — uses UTC accessors everywhere. Local TZ would bucket a
+ * 01:30-UTC trade into the previous calendar day for any user west of UTC,
+ * so charts disagreed with the trade's stored `entry_time` string.
+ *
+ * Week start: Monday (ISO-8601). This matches the Performance Calendar grid.
+ */
 function getPeriodKey(date: Date, period: Period): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
 
   switch (period) {
     case "day":
       return `${year}-${month}-${day}`;
     case "week": {
-      const startOfWeek = new Date(date);
-      startOfWeek.setDate(date.getDate() - date.getDay());
-      const wYear = startOfWeek.getFullYear();
-      const wMonth = String(startOfWeek.getMonth() + 1).padStart(2, "0");
-      const wDay = String(startOfWeek.getDate()).padStart(2, "0");
+      const utcDow = date.getUTCDay(); // 0=Sun, 1=Mon, …
+      const isoOffset = utcDow === 0 ? 6 : utcDow - 1; // days since Monday
+      const monday = new Date(
+        Date.UTC(
+          date.getUTCFullYear(),
+          date.getUTCMonth(),
+          date.getUTCDate() - isoOffset,
+        ),
+      );
+      const wYear = monday.getUTCFullYear();
+      const wMonth = String(monday.getUTCMonth() + 1).padStart(2, "0");
+      const wDay = String(monday.getUTCDate()).padStart(2, "0");
       return `${wYear}-${wMonth}-${wDay}`;
     }
     case "month":

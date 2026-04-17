@@ -4,6 +4,21 @@ import { createSignalSchema } from "@/lib/validators/signal";
 import { computeSignalFields } from "@/lib/signals/computations";
 import { isTrader } from "@/lib/constants/roles";
 
+/**
+ * Fetch the caller's role. Returns null if the user has no profile row.
+ */
+async function getCallerRole(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", userId)
+    .single();
+  return (data?.role as string | undefined) ?? null;
+}
+
 interface SignalListParams {
   readonly status?: string;
   readonly instrument?: string;
@@ -38,9 +53,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const params = parseSearchParams(request.nextUrl.searchParams);
     const offset = (params.page - 1) * params.limit;
 
+    // Scoping: admins see everything, traders see their own signals,
+    // regular users see nothing (forbidden).
+    const role = await getCallerRole(supabase, user.id);
+    const isAdmin = role === "admin";
+    const canSeeOwn = isTrader(role ?? "");
+
+    if (!isAdmin && !canSeeOwn) {
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     let query = supabase
       .from("signals")
       .select("*", { count: "exact" });
+
+    if (!isAdmin) {
+      query = query.eq("trader_id", user.id);
+    }
 
     if (params.status) {
       query = query.eq("status", params.status);
@@ -155,11 +187,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    await supabase.from("signal_events").insert({
-      signal_id: signal.id,
-      event_type: "CREATED",
-      metadata: {},
-    });
+    const { error: eventError } = await supabase
+      .from("signal_events")
+      .insert({
+        signal_id: signal.id,
+        event_type: "CREATED",
+        metadata: {},
+      });
+
+    if (eventError) {
+      console.error("[TRDR] signal_events insert failed:", eventError.message);
+    }
 
     return NextResponse.json({ data: signal }, { status: 201 });
   } catch (err: unknown) {

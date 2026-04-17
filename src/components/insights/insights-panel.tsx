@@ -362,6 +362,11 @@ export function InsightsPanel({
 
   useEffect(() => {
     if (cached) {
+      // This intentionally syncs panel state when the cached prop changes
+      // upstream (e.g. after /api/insights cache revalidation). Deriving
+      // this from `cached` every render would break the "stale but visible"
+      // behavior we want while a new generation is in-flight.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState((prev) => ({
         ...prev,
         insights: cached.insights,

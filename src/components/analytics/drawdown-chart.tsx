@@ -38,13 +38,15 @@ function computeDrawdownSeries(
   const equity = computeEquityCurve(trades);
   if (equity.length === 0) return [];
 
-  let peak = 0;
+  // Peak must track the running max regardless of sign. Initialising to 0
+  // meant accounts that started with losses reported zero drawdown until
+  // equity went positive, which is wrong — drawdown is always peak minus
+  // current, and peak is the highest point the equity has ever reached.
+  let peak = equity[0].cumPnl;
 
   return equity.map((point) => {
-    if (point.cumPnl > peak) {
-      peak = point.cumPnl;
-    }
-    const drawdown = peak > 0 ? peak - point.cumPnl : 0;
+    if (point.cumPnl > peak) peak = point.cumPnl;
+    const drawdown = peak - point.cumPnl;
     return { date: point.date, drawdown: -drawdown };
   });
 }

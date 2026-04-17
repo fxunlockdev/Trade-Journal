@@ -6,6 +6,50 @@ import type { SignalStatus } from "@/types/database";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+/**
+ * Ownership helper: a signal can be accessed by its trader_id owner
+ * or by any admin. Returns `{ allowed: true, isAdmin }` when permitted.
+ */
+async function checkSignalAccess(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  signalId: string,
+): Promise<
+  | { allowed: false; status: 404 | 403 }
+  | { allowed: true; isAdmin: boolean; signal: { trader_id: string; status: SignalStatus } }
+> {
+  const { data: profile } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", userId)
+    .single();
+  const isAdmin = profile?.role === "admin";
+
+  const { data: signal, error } = await supabase
+    .from("signals")
+    .select("trader_id, status")
+    .eq("id", signalId)
+    .single();
+
+  if (error || !signal) {
+    return { allowed: false, status: 404 };
+  }
+
+  if (!isAdmin && signal.trader_id !== userId) {
+    // Disguise existence: return 404 instead of 403 to avoid ID enumeration.
+    return { allowed: false, status: 404 };
+  }
+
+  return {
+    allowed: true,
+    isAdmin,
+    signal: {
+      trader_id: signal.trader_id as string,
+      status: signal.status as SignalStatus,
+    },
+  };
+}
+
 export async function GET(
   _request: NextRequest,
   context: RouteContext,
@@ -22,6 +66,15 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const access = await checkSignalAccess(supabase, user.id, id);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: "Signal not found" },
+        { status: access.status },
+      );
+    }
+
+    // Now fetch the full signal row — ownership already verified.
     const { data: signal, error: signalError } = await supabase
       .from("signals")
       .select("*")
@@ -90,20 +143,15 @@ export async function PATCH(
       );
     }
 
-    const { data: existing, error: fetchError } = await supabase
-      .from("signals")
-      .select("status")
-      .eq("id", id)
-      .single();
-
-    if (fetchError || !existing) {
+    const access = await checkSignalAccess(supabase, user.id, id);
+    if (!access.allowed) {
       return NextResponse.json(
         { error: "Signal not found" },
-        { status: 404 },
+        { status: access.status },
       );
     }
 
-    const currentStatus = existing.status as SignalStatus;
+    const currentStatus = access.signal.status;
     const newStatus = parsed.data.status;
 
     if (!isValidTransition(currentStatus, newStatus)) {
@@ -129,11 +177,15 @@ export async function PATCH(
       );
     }
 
-    await supabase.from("signal_events").insert({
+    const { error: eventError } = await supabase.from("signal_events").insert({
       signal_id: id,
       event_type: newStatus,
       metadata: { previous_status: currentStatus },
     });
+
+    if (eventError) {
+      console.error("[TRDR] signal_events insert failed:", eventError.message);
+    }
 
     return NextResponse.json({ data: updated });
   } catch (err: unknown) {

@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
+import { computePipValue } from "@/lib/signals/computations";
 
 type Direction = "buy" | "sell";
 type RewardRatio = 1 | 2 | 3 | 4 | 5;
@@ -22,6 +24,7 @@ type RewardRatio = 1 | 2 | 3 | 4 | 5;
 interface CalculatorInputs {
   readonly accountBalance: number;
   readonly riskPercent: number;
+  readonly instrument: string;
   readonly entryPrice: string;
   readonly stopLossPrice: string;
   readonly rewardRatio: RewardRatio;
@@ -33,7 +36,8 @@ interface CalculationResult {
   readonly dollarRisk: number;
   readonly rewardAmount: number;
   readonly targetPrice: number;
-  readonly pipsAtRisk: number;
+  readonly priceDistance: number;
+  readonly pipsAtRisk: number | null;
 }
 
 const REWARD_RATIOS: readonly RewardRatio[] = [1, 2, 3, 4, 5];
@@ -47,19 +51,42 @@ function calculatePosition(inputs: CalculatorInputs): CalculationResult | null {
 
   if (!isFinite(entry) || !isFinite(sl) || entry <= 0 || sl <= 0) return null;
 
-  const pipsAtRisk = Math.abs(entry - sl);
-  if (pipsAtRisk === 0) return null;
+  // For buy: SL must be below entry. For sell: SL must be above entry.
+  // Reject nonsensical SL placement instead of silently accepting it.
+  if (inputs.direction === "buy" && sl >= entry) return null;
+  if (inputs.direction === "sell" && sl <= entry) return null;
+
+  const priceDistance = Math.abs(entry - sl);
+  if (priceDistance === 0 || !Number.isFinite(priceDistance)) return null;
 
   const dollarRisk = inputs.accountBalance * (inputs.riskPercent / 100);
-  const positionSize = dollarRisk / pipsAtRisk;
+
+  // Position size = $ risk / price-distance. This is the number of "units"
+  // such that (units × price-distance) = $ risk. Mathematically correct for
+  // any instrument — it's the user's job to scale to their broker's lot size.
+  const positionSize = dollarRisk / priceDistance;
   const rewardAmount = dollarRisk * inputs.rewardRatio;
 
   const targetPrice =
     inputs.direction === "buy"
-      ? entry + (entry - sl) * inputs.rewardRatio
-      : entry - (sl - entry) * inputs.rewardRatio;
+      ? entry + priceDistance * inputs.rewardRatio
+      : entry - priceDistance * inputs.rewardRatio;
 
-  return { positionSize, dollarRisk, rewardAmount, targetPrice, pipsAtRisk };
+  // Convert price distance to actual pips when an instrument is known.
+  // Without an instrument, pip count is meaningless — we show price distance
+  // only in that case (was silently reporting price-distance as "pips" before).
+  const pipValue = inputs.instrument ? computePipValue(inputs.instrument) : 0;
+  const pipsAtRisk =
+    pipValue > 0 ? Math.round((priceDistance / pipValue) * 10) / 10 : null;
+
+  return {
+    positionSize,
+    dollarRisk,
+    rewardAmount,
+    targetPrice,
+    priceDistance,
+    pipsAtRisk,
+  };
 }
 
 function formatNumber(value: number, decimals = 2): string {
@@ -73,6 +100,7 @@ export function RiskCalculatorClient() {
   const [inputs, setInputs] = useState<CalculatorInputs>({
     accountBalance: 10000,
     riskPercent: 1,
+    instrument: "",
     entryPrice: "",
     stopLossPrice: "",
     rewardRatio: 2,
@@ -195,6 +223,38 @@ export function RiskCalculatorClient() {
                   trade
                 </p>
               )}
+            </div>
+
+            {/* Instrument */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="instrument"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Instrument{" "}
+                <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Input
+                id="instrument"
+                list="risk-calc-instruments"
+                placeholder="e.g. EURUSD, XAUUSD, BTCUSDT"
+                value={inputs.instrument}
+                onChange={(e) =>
+                  setInputs((prev) => ({
+                    ...prev,
+                    instrument: e.target.value.toUpperCase().trim(),
+                  }))
+                }
+              />
+              <datalist id="risk-calc-instruments">
+                {ALL_INSTRUMENTS.map((inst) => (
+                  <option key={inst} value={inst} />
+                ))}
+              </datalist>
+              <p className="text-[11px] text-muted-foreground/70">
+                Used to convert price distance → actual pips. Position size
+                math works without it.
+              </p>
             </div>
 
             {/* Direction Toggle */}
@@ -333,7 +393,11 @@ export function RiskCalculatorClient() {
                     {formatNumber(result.positionSize, 2)}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    units / contracts
+                    units (${formatNumber(result.dollarRisk)} risk ÷{" "}
+                    {formatNumber(result.priceDistance, 5)} price distance)
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground/70">
+                    Convert to lots using your broker&apos;s contract size.
                   </p>
                 </CardContent>
               </Card>
@@ -406,15 +470,21 @@ export function RiskCalculatorClient() {
                   <CardHeader className="pb-1 pt-4 px-4">
                     <CardTitle className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                       <Shield className="size-3.5" />
-                      Pips at Risk
+                      {result.pipsAtRisk !== null
+                        ? "Pips at Risk"
+                        : "Price Distance"}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
                     <p className="text-lg font-bold text-foreground">
-                      {formatNumber(result.pipsAtRisk, 5)}
+                      {result.pipsAtRisk !== null
+                        ? formatNumber(result.pipsAtRisk, 1)
+                        : formatNumber(result.priceDistance, 5)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      pips / points
+                      {result.pipsAtRisk !== null
+                        ? "pips"
+                        : "pick an instrument for pips"}
                     </p>
                   </CardContent>
                 </Card>

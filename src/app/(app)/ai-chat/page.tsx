@@ -30,7 +30,7 @@ export default async function AiChatPage() {
       <div className="shrink-0 border-b border-border bg-card px-4 py-3">
         <h1 className="text-base font-semibold text-foreground">AI Trade Chat</h1>
         <p className="text-xs text-muted-foreground">
-          Describe your trades in plain English — I'll log them instantly
+          Describe your trades in plain English — I&apos;ll log them instantly
         </p>
       </div>
 

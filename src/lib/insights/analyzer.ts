@@ -33,11 +33,17 @@ export interface TradingStats {
   readonly total_trades: number;
   readonly closed_trades: number;
   readonly open_trades: number;
+  readonly breakeven_trades: number;
   readonly win_rate: number;
   readonly total_pnl: number;
-  readonly avg_win: number;
-  readonly avg_loss: number;
-  readonly profit_factor: number;
+  readonly avg_win: number | null;
+  readonly avg_loss: number | null;
+  /**
+   * Profit factor = sumWins / |sumLosses|.
+   * `null` means "undefined" — either no closed trades or no losing trades.
+   * Consumers (prompt) should render this as "N/A" or "∞" accordingly.
+   */
+  readonly profit_factor: number | null;
   readonly avg_rr_ratio: number | null;
   readonly max_consecutive_losses: number;
   readonly pct_with_stop_loss: number;
@@ -72,6 +78,16 @@ function safeAverage(values: readonly number[]): number | null {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+type TradeOutcome = "win" | "loss" | "neutral";
+
+function classifyTrade(trade: Trade): TradeOutcome {
+  const pnl = trade.pnl_absolute;
+  if (pnl === null || !Number.isFinite(pnl)) return "neutral";
+  if (pnl > 0) return "win";
+  if (pnl < 0) return "loss";
+  return "neutral";
+}
+
 function computeConsecutiveRuns(
   closedByTime: readonly Trade[]
 ): { maxLosses: number; maxWins: number; recentLosingStreak: number } {
@@ -84,24 +100,28 @@ function computeConsecutiveRuns(
   let currentLosses = 0;
   let currentWins = 0;
 
+  // Breakeven trades (pnl === 0) and unscored trades end both streaks without
+  // extending either one, matching industry convention (e.g. TradingView, MT5).
   for (const trade of closedByTime) {
-    const isWin = (trade.pnl_absolute ?? 0) > 0;
-    if (isWin) {
+    const outcome = classifyTrade(trade);
+    if (outcome === "win") {
       currentWins += 1;
       currentLosses = 0;
-    } else {
+    } else if (outcome === "loss") {
       currentLosses += 1;
       currentWins = 0;
+    } else {
+      currentWins = 0;
+      currentLosses = 0;
     }
     if (currentLosses > maxLosses) maxLosses = currentLosses;
     if (currentWins > maxWins) maxWins = currentWins;
   }
 
-  // Recent losing streak: count backwards from the end
+  // Recent losing streak: count back from the end, stop on any non-loss.
   let recentLosingStreak = 0;
   for (let i = closedByTime.length - 1; i >= 0; i--) {
-    const isWin = (closedByTime[i].pnl_absolute ?? 0) > 0;
-    if (!isWin) {
+    if (classifyTrade(closedByTime[i]) === "loss") {
       recentLosingStreak += 1;
     } else {
       break;
@@ -271,27 +291,47 @@ export function computeTradingStats(
   const closedTrades = trades.filter((t) => t.exit_price !== null);
   const openTrades = trades.filter((t) => t.exit_price === null);
 
-  const wins = closedTrades.filter((t) => (t.pnl_absolute ?? 0) > 0);
-  const losses = closedTrades.filter((t) => (t.pnl_absolute ?? 0) <= 0);
+  // Separate buckets — zero-PnL trades are breakeven, NOT losses. Classing
+  // them as losses inflates sumLosses and drags profit factor unfairly.
+  // Also ignore closed trades where pnl_absolute is null/NaN (corrupt data).
+  type ScoredTrade = Trade & { pnl_absolute: number };
+  const isScored = (t: Trade): t is ScoredTrade =>
+    t.pnl_absolute !== null && Number.isFinite(t.pnl_absolute);
+
+  const scoredClosed: readonly ScoredTrade[] = closedTrades.filter(isScored);
+  const wins = scoredClosed.filter((t) => t.pnl_absolute > 0);
+  const losses = scoredClosed.filter((t) => t.pnl_absolute < 0);
+  const breakeven = scoredClosed.filter((t) => t.pnl_absolute === 0);
 
   const winRate =
-    closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
+    scoredClosed.length > 0
+      ? (wins.length / scoredClosed.length) * 100
+      : 0;
 
-  const totalPnl = closedTrades.reduce(
-    (sum, t) => sum + (t.pnl_absolute ?? 0),
-    0
-  );
+  const totalPnl = scoredClosed.reduce((sum, t) => sum + t.pnl_absolute, 0);
 
-  const avgWin =
-    safeAverage(wins.map((t) => t.pnl_absolute ?? 0)) ?? 0;
+  const winValues: readonly number[] = wins.map((t) => t.pnl_absolute);
+  const lossValues: readonly number[] = losses.map((t) => t.pnl_absolute);
+
+  const avgWin = safeAverage(winValues);
   const avgLoss =
-    Math.abs(safeAverage(losses.map((t) => t.pnl_absolute ?? 0)) ?? 0);
+    losses.length > 0
+      ? Math.abs(safeAverage(lossValues) ?? 0)
+      : null;
 
-  const sumWins = wins.reduce((sum, t) => sum + (t.pnl_absolute ?? 0), 0);
-  const sumLosses = Math.abs(
-    losses.reduce((sum, t) => sum + (t.pnl_absolute ?? 0), 0)
-  );
-  const profitFactor = sumLosses > 0 ? sumWins / sumLosses : 0;
+  const sumWins = winValues.reduce((sum, v) => sum + v, 0);
+  const sumLosses = Math.abs(lossValues.reduce((sum, v) => sum + v, 0));
+
+  // profit_factor is undefined when:
+  //  - no wins AND no losses → null (not enough data)
+  //  - wins exist, no losses → null (unbounded — caller renders as "∞")
+  //  - losses exist → sumWins / sumLosses
+  let profitFactor: number | null;
+  if (losses.length === 0) {
+    profitFactor = null;
+  } else {
+    profitFactor = sumWins / sumLosses;
+  }
 
   const rrValues = trades
     .map((t) => t.risk_reward_ratio)
@@ -342,6 +382,7 @@ export function computeTradingStats(
     total_trades: trades.length,
     closed_trades: closedTrades.length,
     open_trades: openTrades.length,
+    breakeven_trades: breakeven.length,
     win_rate: winRate,
     total_pnl: totalPnl,
     avg_win: avgWin,

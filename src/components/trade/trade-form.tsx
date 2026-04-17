@@ -63,6 +63,24 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
   const isEditMode = trade !== undefined;
 
+  /**
+   * `<input type="datetime-local">` interprets its value as **local** wall
+   * clock time. Using `toISOString().slice(0,16)` returns a UTC wall clock
+   * string, so rendering an edit form in any non-UTC timezone showed the
+   * wrong time AND (worse) silently shifted `entry_time` by the user's UTC
+   * offset every time they saved. Always build + parse these values in the
+   * user's local timezone.
+   */
+  const toLocalInputValue = useCallback((iso: string): string => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return (
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    );
+  }, []);
+
   const defaultValues: Partial<FormInput> = useMemo(() => {
     if (trade) {
       return {
@@ -78,11 +96,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         fees: trade.fees,
         notes: trade.notes ?? undefined,
         tags: [...trade.tags],
-        entry_time: trade.entry_time
-          ? new Date(trade.entry_time).toISOString().slice(0, 16)
-          : "",
+        entry_time: trade.entry_time ? toLocalInputValue(trade.entry_time) : "",
         exit_time: trade.exit_time
-          ? new Date(trade.exit_time).toISOString().slice(0, 16)
+          ? toLocalInputValue(trade.exit_time)
           : undefined,
         source: trade.source,
       };
@@ -93,9 +109,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
       fees: 0,
       tags: [],
       source: "manual",
-      entry_time: new Date().toISOString().slice(0, 16),
+      entry_time: toLocalInputValue(new Date().toISOString()),
     };
-  }, [trade]);
+  }, [trade, toLocalInputValue]);
 
   const {
     register,
@@ -103,8 +119,8 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     setValue,
     watch,
     formState: { errors },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } = useForm<FormInput>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(formSchema) as any,
     defaultValues,
   });
@@ -158,11 +174,27 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           ? (data.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean)
           : data.tags ?? [];
 
+        // `<input type="datetime-local">` emits "YYYY-MM-DDTHH:mm" with no
+        // timezone. `new Date(...)` parses those as LOCAL time, which is
+        // exactly what we want — then we serialize to UTC ISO for storage.
+        const toIsoOrNull = (v: string | null | undefined): string | null => {
+          if (!v) return null;
+          const d = new Date(v);
+          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+        };
+
+        const entryIso = toIsoOrNull(data.entry_time);
+        if (!entryIso) {
+          toast.error("Entry time is required");
+          return;
+        }
+
         const payload = {
           ...data,
           tags: tagsValue,
+          entry_time: entryIso,
+          exit_time: toIsoOrNull(data.exit_time),
           exit_price: data.exit_price || null,
-          exit_time: data.exit_time || null,
           lot_size: data.lot_size || null,
           stop_loss: data.stop_loss || null,
           take_profit: data.take_profit || null,

@@ -20,8 +20,16 @@ const WEEKS = 12;
 const DAYS_IN_GRID = WEEKS * 7; // 84 days
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
+/**
+ * Build a UTC YYYY-MM-DD key. Both the day-map (from trade.entry_time) and
+ * the grid cells must use UTC — mixing local and UTC silently shifts
+ * evening trades to the wrong cell for any user west of UTC.
+ */
 function toIsoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getPnlTier(absValue: number): PnlTier {
@@ -59,19 +67,22 @@ function buildDayMap(trades: readonly Trade[]): Map<string, DayData> {
 }
 
 function buildGrid(dayMap: Map<string, DayData>): readonly (DayData | null)[][] {
-  // Anchor: today. Go back to the Monday of the week 11 weeks ago.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Anchor: today at UTC midnight. Using UTC throughout keeps the grid
+  // perfectly aligned with `trade.entry_time.slice(0, 10)` (which is UTC).
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 
-  // Find Monday of the current week (ISO: Mon=1)
-  const todayDow = today.getDay(); // 0=Sun
+  // Find Monday of the current UTC week (ISO: Mon=1)
+  const todayDow = todayUtc.getUTCDay(); // 0=Sun
   const isoOffset = todayDow === 0 ? 6 : todayDow - 1; // days since Monday
-  const thisMonday = new Date(today);
-  thisMonday.setDate(today.getDate() - isoOffset);
+  const thisMonday = new Date(todayUtc);
+  thisMonday.setUTCDate(todayUtc.getUTCDate() - isoOffset);
 
   // Start of grid: 11 weeks before this Monday
   const startDate = new Date(thisMonday);
-  startDate.setDate(thisMonday.getDate() - (WEEKS - 1) * 7);
+  startDate.setUTCDate(thisMonday.getUTCDate() - (WEEKS - 1) * 7);
 
   // Build column-major grid: columns = weeks, rows = Mon-Sun
   const columns: (DayData | null)[][] = [];
@@ -80,8 +91,8 @@ function buildGrid(dayMap: Map<string, DayData>): readonly (DayData | null)[][] 
     const col: (DayData | null)[] = [];
     for (let d = 0; d < 7; d++) {
       const cell = new Date(startDate);
-      cell.setDate(startDate.getDate() + w * 7 + d);
-      if (cell > today) {
+      cell.setUTCDate(startDate.getUTCDate() + w * 7 + d);
+      if (cell.getTime() > todayUtc.getTime()) {
         col.push(null);
       } else {
         const iso = toIsoDate(cell);
@@ -103,9 +114,12 @@ function getMonthLabels(
   for (let w = 0; w < columns.length; w++) {
     const firstCell = columns[w].find((c) => c !== null);
     if (!firstCell) continue;
-    const month = new Date(firstCell.date).toLocaleString("default", {
-      month: "short",
-    });
+    // Parse the YYYY-MM-DD key back as UTC so the month label matches the
+    // bucket the cell was placed into (avoids Jan/Feb flicker at boundaries).
+    const month = new Date(`${firstCell.date}T00:00:00Z`).toLocaleString(
+      "default",
+      { month: "short", timeZone: "UTC" },
+    );
     if (month !== lastMonth) {
       labels.push({ label: month, colIndex: w });
       lastMonth = month;
@@ -262,9 +276,14 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
             style={{ left: tooltip.x, top: tooltip.y }}
           >
             <p className="font-medium text-foreground">
-              {new Date(tooltip.dayData.date + "T00:00:00").toLocaleDateString(
+              {new Date(tooltip.dayData.date + "T00:00:00Z").toLocaleDateString(
                 "en-US",
-                { weekday: "short", month: "short", day: "numeric" }
+                {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  timeZone: "UTC",
+                },
               )}
             </p>
             <p className="mt-0.5 text-muted-foreground">
@@ -297,9 +316,10 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           </p>
           {bestDay && (
             <p className="text-[10px] text-muted-foreground">
-              {new Date(bestDay.date + "T00:00:00").toLocaleDateString("en-US", {
+              {new Date(bestDay.date + "T00:00:00Z").toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
+                timeZone: "UTC",
               })}
             </p>
           )}
@@ -316,9 +336,10 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           </p>
           {worstDay && (
             <p className="text-[10px] text-muted-foreground">
-              {new Date(worstDay.date + "T00:00:00").toLocaleDateString("en-US", {
+              {new Date(worstDay.date + "T00:00:00Z").toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
+                timeZone: "UTC",
               })}
             </p>
           )}

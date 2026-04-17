@@ -40,29 +40,47 @@ export function buildInsightsSystemPrompt(): string {
 }
 
 function formatPct(value: number): string {
+  if (!Number.isFinite(value)) return "N/A";
   return `${value.toFixed(1)}%`;
 }
 
-function formatUsd(value: number): string {
+function formatUsd(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "N/A";
   const abs = Math.abs(value).toFixed(2);
   return value >= 0 ? `+$${abs}` : `-$${abs}`;
 }
 
 function formatHours(hours: number | null): string {
-  if (hours === null) return "N/A";
+  if (hours === null || !Number.isFinite(hours)) return "N/A";
   return `${hours.toFixed(1)}h`;
 }
 
 function formatRr(value: number | null): string {
-  if (value === null) return "N/A";
+  if (value === null || !Number.isFinite(value)) return "N/A";
   return `${value.toFixed(2)}`;
 }
 
+/**
+ * Profit factor is null when there are no losing trades. That is actually
+ * a *good* outcome ("∞" / undefined in finance), so we render it as "∞"
+ * when the trader has wins but no losses, and "N/A" when there is no
+ * scored data at all.
+ */
+function formatProfitFactor(
+  value: number | null,
+  hasScoredTrades: boolean,
+): string {
+  if (value === null) return hasScoredTrades ? "∞ (no losing trades)" : "N/A";
+  if (!Number.isFinite(value)) return "∞";
+  return value.toFixed(2);
+}
+
 function buildStatsBlock(stats: TradingStats): string {
+  const hasScored = stats.closed_trades > 0;
   const lines: string[] = [
     "=== OVERALL PERFORMANCE ===",
-    `Total Trades: ${stats.total_trades} | Closed: ${stats.closed_trades} | Open: ${stats.open_trades}`,
-    `Win Rate: ${formatPct(stats.win_rate)} | Profit Factor: ${stats.profit_factor.toFixed(2)}`,
+    `Total Trades: ${stats.total_trades} | Closed: ${stats.closed_trades} | Open: ${stats.open_trades} | Breakeven: ${stats.breakeven_trades}`,
+    `Win Rate: ${formatPct(stats.win_rate)} | Profit Factor: ${formatProfitFactor(stats.profit_factor, hasScored)}`,
     `Total PnL: ${formatUsd(stats.total_pnl)} | Avg Win: ${formatUsd(stats.avg_win)} | Avg Loss: ${formatUsd(stats.avg_loss)}`,
     `Avg RR Ratio: ${formatRr(stats.avg_rr_ratio)} | Avg Hold Time: ${formatHours(stats.avg_hold_time_hours)}`,
     "",

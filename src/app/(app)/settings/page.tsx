@@ -74,6 +74,9 @@ export default function SettingsPage() {
   const { user, profile, loading, refetch } = useUser();
   const [fullName, setFullName] = useState("");
   const [saving, setSaving] = useState(false);
+  // Guards the fullName init. Without it, every profile refetch (e.g. after
+  // saving the avatar) resets fullName and nukes whatever the user had typed.
+  const hasLoadedNameRef = useRef(false);
 
   // Avatar upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +110,10 @@ export default function SettingsPage() {
   const isOAuthUser = !!authProvider && authProvider !== "email";
 
   useEffect(() => {
-    if (profile) setFullName(profile.full_name ?? "");
+    if (profile && !hasLoadedNameRef.current) {
+      setFullName(profile.full_name ?? "");
+      hasLoadedNameRef.current = true;
+    }
   }, [profile]);
 
   useEffect(() => {

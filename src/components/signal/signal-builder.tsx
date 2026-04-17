@@ -5,10 +5,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2, TrendingUp, TrendingDown, Target, ShieldAlert } from "lucide-react";
-import { z } from "zod";
-
 import type { Signal, TradeDirection } from "@/types/database";
-import { createSignalSchema } from "@/lib/validators/signal";
+import { createSignalFormSchema } from "@/lib/validators/signal";
 import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
 import { computePipsDifference } from "@/lib/signals/computations";
 import { useUser } from "@/hooks/use-user";
@@ -21,8 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-
-const formSchema = createSignalSchema.omit({ trader_id: true, status: true });
 
 interface FormInput {
   instrument: string;
@@ -76,7 +72,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
     formState: { errors },
   } = useForm<FormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(formSchema) as any,
+    resolver: zodResolver(createSignalFormSchema) as any,
     defaultValues: {
       instrument: "",
       direction: undefined,

@@ -2,10 +2,24 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
+/**
+ * Validate the `next` redirect target to prevent open-redirect phishing.
+ * Only same-origin, single-slash-prefixed paths are allowed.
+ * Rejects: "//evil.com", "http://evil.com", "https://...", "javascript:..."
+ */
+function safeNextPath(raw: string | null): string {
+  if (!raw) return "/dashboard";
+  // Must start with "/" and must NOT start with "//" or "/\"
+  if (raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\")) {
+    return raw;
+  }
+  return "/dashboard";
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  const next = safeNextPath(searchParams.get("next"));
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?error=no_code", origin));

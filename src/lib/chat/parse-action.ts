@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+/**
+ * Accept ISO-8601 or any other string `new Date(...)` can parse.
+ * Zod's `.datetime()` is too strict — the model often emits
+ * "2026-04-17 14:30" or "2026-04-17T14:30" (no timezone), which the DB
+ * happily stores as a timestamptz, but .datetime() rejects. We validate
+ * instead with `Date.parse` and reject only truly unparseable junk.
+ */
+const flexibleDatetime = z
+  .string()
+  .min(1)
+  .refine((v) => !Number.isNaN(Date.parse(v)), {
+    message: "entry_time must be a parseable date/time string",
+  });
+
 const tradeActionSchema = z.object({
   action: z.literal("create_trade"),
   data: z.object({
@@ -13,8 +27,8 @@ const tradeActionSchema = z.object({
     stop_loss: z.coerce.number().positive().nullable().optional(),
     take_profit: z.coerce.number().positive().nullable().optional(),
     fees: z.coerce.number().min(0).optional().default(0),
-    entry_time: z.string().min(1),
-    exit_time: z.string().nullable().optional(),
+    entry_time: flexibleDatetime,
+    exit_time: flexibleDatetime.nullable().optional(),
     notes: z.string().nullable().optional(),
     tags: z.string().nullable().optional(),
   }),

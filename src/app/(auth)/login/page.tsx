@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -76,12 +76,16 @@ function LoginContent() {
 
   const supabase = createClient();
 
-  // Show error from URL params (e.g., OAuth failure)
+  // Show error from URL params (e.g., OAuth failure). Must fire from an effect
+  // — toasting during render was causing duplicate toasts on every re-render
+  // and the classic "setState during render" warning in React 19.
   const urlError = searchParams.get("error");
   const errorDetail = searchParams.get("detail");
-  if (urlError) {
-    toast.error(errorDetail ?? "Authentication failed. Please try again.");
-  }
+  useEffect(() => {
+    if (urlError) {
+      toast.error(errorDetail ?? "Authentication failed. Please try again.");
+    }
+  }, [urlError, errorDetail]);
 
   async function handleGoogleLogin() {
     setGoogleLoading(true);
