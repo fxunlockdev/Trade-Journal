@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
-// Using Sonner directly (not the shadcn wrapper) to avoid next-themes dependency
+import { ThemeProvider } from "@/components/theme-provider";
+import { ToasterProvider } from "@/components/toaster-provider";
 import "./globals.css";
 
 const inter = Inter({
@@ -21,15 +21,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${inter.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full bg-background text-foreground">
-        {children}
-        <Toaster
-          theme="light"
-          position="top-right"
-          richColors
-          closeButton
-        />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <ToasterProvider />
+        </ThemeProvider>
       </body>
     </html>
   );

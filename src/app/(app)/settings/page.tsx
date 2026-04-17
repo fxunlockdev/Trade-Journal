@@ -101,6 +101,11 @@ export default function SettingsPage() {
   const supabase = useMemo(() => createClient(), []);
   const isUserAdmin = profile?.role === "admin";
 
+  // Detect OAuth / social sign-in (e.g. Google). Password management is
+  // handled by the provider — don't show Change Password for these users.
+  const authProvider = user?.app_metadata?.provider as string | undefined;
+  const isOAuthUser = !!authProvider && authProvider !== "email";
+
   useEffect(() => {
     if (profile) setFullName(profile.full_name ?? "");
   }, [profile]);
@@ -484,102 +489,121 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <Separator className="bg-border" />
-
-              {/* ── Change Password ── */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Change Password
-                  </h3>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {/* New Password */}
-                  <div className="space-y-1.5">
-                    <Label className="text-sm text-foreground">
-                      New Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        type={showNewPassword ? "text" : "password"}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="New password"
-                        className="pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={
-                          showNewPassword ? "Hide password" : "Show password"
-                        }
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Minimum 8 characters
+              {/* ── Change Password (email users only) ── */}
+              {isOAuthUser ? (
+                <>
+                  <Separator className="bg-border" />
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-3">
+                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      You&apos;re signed in with{" "}
+                      <span className="font-medium capitalize text-foreground">
+                        {authProvider}
+                      </span>
+                      . Password management is handled by your sign-in provider.
                     </p>
                   </div>
-
-                  {/* Confirm Password */}
-                  <div className="space-y-1.5">
-                    <Label className="text-sm text-foreground">
-                      Confirm Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        type={showConfirmPassword ? "text" : "password"}
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Confirm new password"
-                        className={`pr-10 ${passwordMismatch ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={
-                          showConfirmPassword ? "Hide password" : "Show password"
-                        }
-                      >
-                        {showConfirmPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
+                </>
+              ) : (
+                <>
+                  <Separator className="bg-border" />
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold text-foreground">
+                        Change Password
+                      </h3>
                     </div>
-                    {passwordMismatch && (
-                      <p className="text-xs text-destructive">
-                        Passwords do not match
-                      </p>
-                    )}
-                  </div>
-                </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {/* New Password */}
+                      <div className="space-y-1.5">
+                        <Label className="text-sm text-foreground">
+                          New Password
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            type={showNewPassword ? "text" : "password"}
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="New password"
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={
+                              showNewPassword ? "Hide password" : "Show password"
+                            }
+                          >
+                            {showNewPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Minimum 8 characters
+                        </p>
+                      </div>
 
-                <div className="flex justify-start">
-                  <Button
-                    onClick={handlePasswordChange}
-                    disabled={passwordUpdateDisabled}
-                    variant="outline"
-                    className="gap-2"
-                  >
-                    {changingPassword ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Lock className="h-4 w-4" />
-                    )}
-                    Update Password
-                  </Button>
-                </div>
-              </div>
+                      {/* Confirm Password */}
+                      <div className="space-y-1.5">
+                        <Label className="text-sm text-foreground">
+                          Confirm Password
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            type={showConfirmPassword ? "text" : "password"}
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="Confirm new password"
+                            className={`pr-10 ${passwordMismatch ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={
+                              showConfirmPassword
+                                ? "Hide password"
+                                : "Show password"
+                            }
+                          >
+                            {showConfirmPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                        {passwordMismatch && (
+                          <p className="text-xs text-destructive">
+                            Passwords do not match
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-start">
+                      <Button
+                        onClick={handlePasswordChange}
+                        disabled={passwordUpdateDisabled}
+                        variant="outline"
+                        className="gap-2"
+                      >
+                        {changingPassword ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Lock className="h-4 w-4" />
+                        )}
+                        Update Password
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

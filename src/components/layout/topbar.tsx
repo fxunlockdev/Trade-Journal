@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, User, Settings, LogOut, Search, Moon } from "lucide-react";
+import { Menu, User, Settings, LogOut, Search, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
 interface UserProfile {
@@ -31,9 +32,11 @@ const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/journal": "Journal",
   "/signals": "Signals",
+  "/insights": "AI Insights",
+  "/risk-calculator": "Risk Calculator",
+  "/ai-chat": "AI Chat",
   "/import": "Import",
   "/settings": "Settings",
-  "/ai-chat": "AI Chat",
 };
 
 function getPageTitle(pathname: string): string {
@@ -61,8 +64,10 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const pageTitle = getPageTitle(pathname);
+  const isDark = resolvedTheme === "dark";
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
@@ -104,15 +109,19 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
 
       {/* Right side */}
       <div className="flex items-center gap-2">
-        {/* Dark mode toggle (placeholder) */}
+        {/* Dark / Light mode toggle */}
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 text-muted-foreground hover:text-muted-foreground"
-          aria-label="Toggle dark mode"
-          disabled
+          className="size-8 text-muted-foreground hover:text-foreground"
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          onClick={() => setTheme(isDark ? "light" : "dark")}
         >
-          <Moon className="size-4" />
+          {isDark ? (
+            <Sun className="size-4" />
+          ) : (
+            <Moon className="size-4" />
+          )}
         </Button>
 
         {/* User avatar dropdown */}

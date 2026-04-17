@@ -5,16 +5,62 @@ CURRENT DATE/TIME (use as default entry_time if not specified): ${currentDatetim
 
 ## INSTRUMENT RECOGNITION
 Normalize instrument names automatically:
-- BTC, bitcoin, BITCOIN → BTCUSDT (crypto)
-- ETH, ethereum → ETHUSDT (crypto)
-- SOL, solana → SOLUSDT (crypto)
-- XRP → XRPUSDT (crypto)
-- GOLD, gold, XAU → XAUUSD (metal)
-- SILVER, silver, XAG → XAGUSD (metal)
-- EURUSD, EUR/USD, euro → EURUSD (forex)
-- GBPUSD, GBP/USD → GBPUSD (forex)
-- Other forex pairs: normalize by removing spaces/slashes
-- asset_type: crypto instruments → "crypto", gold/silver → "metal", everything else → "forex"
+
+### Crypto
+- BTC, bitcoin, BITCOIN → BTCUSDT
+- ETH, ethereum → ETHUSDT
+- BNB → BNBUSDT
+- SOL, solana → SOLUSDT
+- XRP, ripple → XRPUSDT
+- ADA, cardano → ADAUSDT
+- DOGE, dogecoin → DOGEUSDT
+- AVAX, avalanche → AVAXUSDT
+- DOT, polkadot → DOTUSDT
+- MATIC, polygon → MATICUSDT
+- LINK, chainlink → LINKUSDT
+- LTC, litecoin → LTCUSDT
+- ATOM, cosmos → ATOMUSDT
+- UNI, uniswap → UNIUSDT
+- NEAR → NEARUSDT
+- APT, aptos → APTUSDT
+- ARB, arbitrum → ARBUSDT
+- OP, optimism → OPUSDT
+- SHIB, shiba → SHIBUSDT
+- TRX, tron → TRXUSDT
+- FTM, fantom → FTMUSDT
+
+### Metals & Commodities
+- GOLD, gold, XAU, XAUUSD → XAUUSD
+- SILVER, silver, XAG, XAGUSD → XAGUSD
+- PLATINUM, PT, XPT → XPTUSD
+- PALLADIUM, PD, XPD → XPDUSD
+- OIL, CRUDE, WTI, USOIL → USOIL
+- BRENT, UKOIL → UKOIL
+- GAS, NATGAS → NATGAS
+- COPPER → COPPER
+
+### Indices
+- DOW, DJ, US30, DJIA → US30
+- NASDAQ, NAS, NAS100, TECH → NAS100
+- SP500, S&P, SPX, SPX500 → SPX500
+- DAX, GER40, DE40 → GER40
+- FTSE, UK100 → UK100
+- NIKKEI, JPN225, JP225 → JPN225
+- ASX, AUS200 → AUS200
+- CAC, FRA40 → FRA40
+- HANGSENG, HK50 → HK50
+
+### Forex
+- EURUSD, EUR/USD, euro → EURUSD
+- GBPUSD, GBP/USD → GBPUSD
+- Other forex pairs: normalize by removing spaces/slashes (e.g. EUR/JPY → EURJPY)
+
+### Asset type rules
+- Crypto instruments → asset_type: "crypto"
+- Metals (XAU, XAG, XPT, XPD) → asset_type: "metal"
+- Commodities (OIL, GAS, COPPER, WHEAT, CORN) → asset_type: "commodity"
+- Indices (US30, NAS100, SPX500, GER40, etc.) → asset_type: "index"
+- Everything else → asset_type: "forex"
 
 ## DIRECTION PARSING
 - "buy", "long", "bought", "purchasing" → direction = "buy"
