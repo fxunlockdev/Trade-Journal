@@ -59,7 +59,7 @@ export interface Trade {
   readonly stop_loss: number | null;
   /**
    * Legacy single-TP field. Kept for backward compatibility. New code should
-   * read/write `tp1`..`tp4`. The DB migration copies `take_profit → tp1` for
+   * read/write `tp1`..`tp7`. The DB migration copies `take_profit → tp1` for
    * existing rows and the form keeps them in sync when only one TP is set.
    */
   readonly take_profit: number | null;
@@ -67,15 +67,24 @@ export interface Trade {
   readonly tp2: number | null;
   readonly tp3: number | null;
   readonly tp4: number | null;
+  readonly tp5: number | null;
+  readonly tp6: number | null;
+  readonly tp7: number | null;
   readonly sl_pips: number | null;
   readonly tp1_pips: number | null;
   readonly tp2_pips: number | null;
   readonly tp3_pips: number | null;
   readonly tp4_pips: number | null;
+  readonly tp5_pips: number | null;
+  readonly tp6_pips: number | null;
+  readonly tp7_pips: number | null;
   readonly tp1_result: TPResult | null;
   readonly tp2_result: TPResult | null;
   readonly tp3_result: TPResult | null;
   readonly tp4_result: TPResult | null;
+  readonly tp5_result: TPResult | null;
+  readonly tp6_result: TPResult | null;
+  readonly tp7_result: TPResult | null;
   /** If true, TP4 is "let it run / trailing" rather than a fixed target. */
   readonly tp4_trailing: boolean;
   readonly order_type: OrderType;

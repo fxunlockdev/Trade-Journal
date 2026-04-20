@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Check } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 
 import { createTradeFormSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
@@ -76,24 +76,50 @@ const TP_RESULTS: readonly { readonly value: TPResult; readonly label: string; r
   { value: "sl", label: "SL", className: "data-[selected=true]:bg-red-600 data-[selected=true]:text-white" },
 ] as const;
 
-/**
- * Per-TP palette. Colors match the screenshot mockup — green TP1, blue TP2,
- * purple TP3, orange TP4. We keep the palette semantic-token friendly where
- * possible, using explicit color utilities only for the emphasis strip + badge.
- */
-const TP_PALETTE: readonly {
-  readonly key: "tp1" | "tp2" | "tp3" | "tp4";
-  readonly pipsKey: "tp1_pips" | "tp2_pips" | "tp3_pips" | "tp4_pips";
-  readonly resultKey: "tp1_result" | "tp2_result" | "tp3_result" | "tp4_result";
+type TpKey = "tp1" | "tp2" | "tp3" | "tp4" | "tp5" | "tp6" | "tp7";
+type TpPipsKey =
+  | "tp1_pips"
+  | "tp2_pips"
+  | "tp3_pips"
+  | "tp4_pips"
+  | "tp5_pips"
+  | "tp6_pips"
+  | "tp7_pips";
+type TpResultKey =
+  | "tp1_result"
+  | "tp2_result"
+  | "tp3_result"
+  | "tp4_result"
+  | "tp5_result"
+  | "tp6_result"
+  | "tp7_result";
+
+interface TpPalette {
+  readonly key: TpKey;
+  readonly pipsKey: TpPipsKey;
+  readonly resultKey: TpResultKey;
   readonly label: string;
   readonly accent: string;
   readonly badge: string;
-}[] = [
-  { key: "tp1", pipsKey: "tp1_pips", resultKey: "tp1_result", label: "TP1", accent: "border-emerald-500/60 bg-emerald-500/5",   badge: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30" },
-  { key: "tp2", pipsKey: "tp2_pips", resultKey: "tp2_result", label: "TP2", accent: "border-sky-500/60 bg-sky-500/5",           badge: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30" },
-  { key: "tp3", pipsKey: "tp3_pips", resultKey: "tp3_result", label: "TP3", accent: "border-violet-500/60 bg-violet-500/5",     badge: "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30" },
-  { key: "tp4", pipsKey: "tp4_pips", resultKey: "tp4_result", label: "TP4", accent: "border-orange-500/60 bg-orange-500/5",     badge: "bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30" },
+}
+
+/**
+ * Per-TP palette. TP1..4 match the original mockup (emerald → orange);
+ * TP5..7 extend with a distinct but complementary set so 7 simultaneous TPs
+ * remain legible at a glance. All palette classes are tailwind utilities,
+ * so they tree-shake correctly at build time.
+ */
+const TP_PALETTE: readonly TpPalette[] = [
+  { key: "tp1", pipsKey: "tp1_pips", resultKey: "tp1_result", label: "TP1", accent: "border-emerald-500/60 bg-emerald-500/5", badge: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30" },
+  { key: "tp2", pipsKey: "tp2_pips", resultKey: "tp2_result", label: "TP2", accent: "border-sky-500/60 bg-sky-500/5", badge: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30" },
+  { key: "tp3", pipsKey: "tp3_pips", resultKey: "tp3_result", label: "TP3", accent: "border-violet-500/60 bg-violet-500/5", badge: "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30" },
+  { key: "tp4", pipsKey: "tp4_pips", resultKey: "tp4_result", label: "TP4", accent: "border-orange-500/60 bg-orange-500/5", badge: "bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30" },
+  { key: "tp5", pipsKey: "tp5_pips", resultKey: "tp5_result", label: "TP5", accent: "border-cyan-500/60 bg-cyan-500/5", badge: "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30" },
+  { key: "tp6", pipsKey: "tp6_pips", resultKey: "tp6_result", label: "TP6", accent: "border-rose-500/60 bg-rose-500/5", badge: "bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/30" },
+  { key: "tp7", pipsKey: "tp7_pips", resultKey: "tp7_result", label: "TP7", accent: "border-lime-500/60 bg-lime-500/5", badge: "bg-lime-500/15 text-lime-400 ring-1 ring-lime-500/30" },
 ] as const;
+
+const TP_KEYS: readonly TpKey[] = TP_PALETTE.map((p) => p.key);
 
 function inferAssetType(instrument: string): AssetType {
   const upper = instrument.trim().toUpperCase();
@@ -144,7 +170,6 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         entry_price_high: trade.entry_price_high ?? undefined,
         exit_price: trade.exit_price ?? undefined,
         quantity: trade.quantity,
-        lot_size: trade.lot_size ?? undefined,
         stop_loss: trade.stop_loss ?? undefined,
         sl_pips: trade.sl_pips ?? undefined,
         take_profit: trade.take_profit ?? undefined,
@@ -152,14 +177,23 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         tp2: trade.tp2 ?? undefined,
         tp3: trade.tp3 ?? undefined,
         tp4: trade.tp4 ?? undefined,
+        tp5: trade.tp5 ?? undefined,
+        tp6: trade.tp6 ?? undefined,
+        tp7: trade.tp7 ?? undefined,
         tp1_pips: trade.tp1_pips ?? undefined,
         tp2_pips: trade.tp2_pips ?? undefined,
         tp3_pips: trade.tp3_pips ?? undefined,
         tp4_pips: trade.tp4_pips ?? undefined,
+        tp5_pips: trade.tp5_pips ?? undefined,
+        tp6_pips: trade.tp6_pips ?? undefined,
+        tp7_pips: trade.tp7_pips ?? undefined,
         tp1_result: trade.tp1_result ?? undefined,
         tp2_result: trade.tp2_result ?? undefined,
         tp3_result: trade.tp3_result ?? undefined,
         tp4_result: trade.tp4_result ?? undefined,
+        tp5_result: trade.tp5_result ?? undefined,
+        tp6_result: trade.tp6_result ?? undefined,
+        tp7_result: trade.tp7_result ?? undefined,
         tp4_trailing: trade.tp4_trailing ?? false,
         num_positions: trade.num_positions ?? 1,
         split_risk: trade.split_risk ?? false,
@@ -186,6 +220,24 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     };
   }, [trade]);
 
+  /**
+   * Progressive "Add TP" reveal. Start with TP1 visible; each click of the
+   * "+ Add TP" button reveals the next slot. In edit mode we pre-expand to
+   * the highest slot that has data so the user doesn't lose existing values
+   * when they re-open a trade.
+   */
+  const initialVisibleTps: number = useMemo(() => {
+    if (!trade) return 1;
+    let max = 1;
+    TP_KEYS.forEach((k, idx) => {
+      const n = trade[k];
+      if (n != null) max = Math.max(max, idx + 1);
+    });
+    return Math.max(max, 1);
+  }, [trade]);
+
+  const [visibleTps, setVisibleTps] = useState<number>(initialVisibleTps);
+
   const {
     register,
     handleSubmit,
@@ -208,14 +260,17 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   const tp2Result = watch("tp2_result");
   const tp3Result = watch("tp3_result");
   const tp4Result = watch("tp4_result");
-  const resultsByKey: Record<
-    "tp1" | "tp2" | "tp3" | "tp4",
-    TPResult | undefined
-  > = {
+  const tp5Result = watch("tp5_result");
+  const tp6Result = watch("tp6_result");
+  const tp7Result = watch("tp7_result");
+  const resultsByKey: Record<TpKey, TPResult | undefined> = {
     tp1: tp1Result ?? undefined,
     tp2: tp2Result ?? undefined,
     tp3: tp3Result ?? undefined,
     tp4: tp4Result ?? undefined,
+    tp5: tp5Result ?? undefined,
+    tp6: tp6Result ?? undefined,
+    tp7: tp7Result ?? undefined,
   };
 
   const preview = useMemo(() => {
@@ -250,10 +305,16 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
       tp2: toOptNum(watched.tp2),
       tp3: toOptNum(watched.tp3),
       tp4: toOptNum(watched.tp4),
+      tp5: toOptNum(watched.tp5),
+      tp6: toOptNum(watched.tp6),
+      tp7: toOptNum(watched.tp7),
       tp1_result: watched.tp1_result ?? null,
       tp2_result: watched.tp2_result ?? null,
       tp3_result: watched.tp3_result ?? null,
       tp4_result: watched.tp4_result ?? null,
+      tp5_result: watched.tp5_result ?? null,
+      tp6_result: watched.tp6_result ?? null,
+      tp7_result: watched.tp7_result ?? null,
       num_positions: watched.num_positions ?? 1,
       split_risk: watched.split_risk ?? false,
     };
@@ -270,10 +331,16 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     watched.tp2,
     watched.tp3,
     watched.tp4,
+    watched.tp5,
+    watched.tp6,
+    watched.tp7,
     watched.tp1_result,
     watched.tp2_result,
     watched.tp3_result,
     watched.tp4_result,
+    watched.tp5_result,
+    watched.tp6_result,
+    watched.tp7_result,
     watched.num_positions,
     watched.split_risk,
     direction,
@@ -303,16 +370,27 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     if (parsed.tp2 != null) setValue("tp2", parsed.tp2, { shouldValidate: true });
     if (parsed.tp3 != null) setValue("tp3", parsed.tp3, { shouldValidate: true });
     if (parsed.tp4 != null) setValue("tp4", parsed.tp4, { shouldValidate: true });
+    if (parsed.tp5 != null) setValue("tp5", parsed.tp5, { shouldValidate: true });
+    if (parsed.tp6 != null) setValue("tp6", parsed.tp6, { shouldValidate: true });
+    if (parsed.tp7 != null) setValue("tp7", parsed.tp7, { shouldValidate: true });
     if (parsed.tp4_trailing) {
       setValue("tp4_trailing", true, { shouldValidate: true });
     }
+
+    // Reveal enough TP slots so the parsed values are visible in the form.
+    const parsedTps = [parsed.tp1, parsed.tp2, parsed.tp3, parsed.tp4, parsed.tp5, parsed.tp6, parsed.tp7];
+    let maxFilled = 0;
+    parsedTps.forEach((v, i) => {
+      if (v != null) maxFilled = i + 1;
+    });
+    if (maxFilled > 0) setVisibleTps((prev) => Math.max(prev, maxFilled));
 
     const filled = [
       parsed.instrument && "instrument",
       parsed.direction && "direction",
       parsed.entry_price != null && "entry",
       parsed.stop_loss != null && "SL",
-      (parsed.tp1 != null || parsed.tp2 != null || parsed.tp3 != null || parsed.tp4 != null) && "TPs",
+      parsedTps.some((v) => v != null) && "TPs",
     ].filter(Boolean);
 
     if (filled.length === 0) {
@@ -335,11 +413,31 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   );
 
   const toggleTpResult = useCallback(
-    (key: "tp1_result" | "tp2_result" | "tp3_result" | "tp4_result", value: TPResult) => {
+    (key: TpResultKey, value: TPResult) => {
       const current = watch(key);
       setValue(key, current === value ? undefined : value, { shouldValidate: true });
     },
     [setValue, watch],
+  );
+
+  /**
+   * Remove a TP slot. We clear price/pips/result for that slot then collapse
+   * the visible-TPs counter to the highest still-populated slot (but never
+   * below 1 — there's always at least TP1 visible).
+   */
+  const removeTp = useCallback(
+    (index: number) => {
+      const p = TP_PALETTE[index];
+      if (!p) return;
+      setValue(p.key, undefined, { shouldValidate: true });
+      setValue(p.pipsKey, undefined, { shouldValidate: true });
+      setValue(p.resultKey, undefined, { shouldValidate: true });
+      if (p.key === "tp4") {
+        setValue("tp4_trailing", false, { shouldValidate: true });
+      }
+      setVisibleTps((prev) => Math.max(1, prev - 1));
+    },
+    [setValue],
   );
 
   const onReset = useCallback(() => {
@@ -358,6 +456,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     });
     setPasteText("");
     setPasteWarnings([]);
+    setVisibleTps(1);
   }, [reset]);
 
   const onSubmit = useCallback(
@@ -400,7 +499,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           entry_time: entryIso,
           exit_time: toIsoOrNull(data.exit_time),
           exit_price: data.exit_price || null,
-          lot_size: data.lot_size || null,
+          // Always null — the lot size UI was removed per client feedback.
+          // The column still exists in the DB for CSV + MT5 imports.
+          lot_size: null,
           stop_loss: data.stop_loss || null,
           sl_pips: data.sl_pips || null,
           take_profit: legacyTp,
@@ -408,14 +509,23 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           tp2: data.tp2 || null,
           tp3: data.tp3 || null,
           tp4: data.tp4 || null,
+          tp5: data.tp5 || null,
+          tp6: data.tp6 || null,
+          tp7: data.tp7 || null,
           tp1_pips: data.tp1_pips || null,
           tp2_pips: data.tp2_pips || null,
           tp3_pips: data.tp3_pips || null,
           tp4_pips: data.tp4_pips || null,
+          tp5_pips: data.tp5_pips || null,
+          tp6_pips: data.tp6_pips || null,
+          tp7_pips: data.tp7_pips || null,
           tp1_result: data.tp1_result ?? null,
           tp2_result: data.tp2_result ?? null,
           tp3_result: data.tp3_result ?? null,
           tp4_result: data.tp4_result ?? null,
+          tp5_result: data.tp5_result ?? null,
+          tp6_result: data.tp6_result ?? null,
+          tp7_result: data.tp7_result ?? null,
           entry_price_high: data.entry_price_high || null,
           notes: data.notes || null,
         };
@@ -436,7 +546,13 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           return;
         }
 
-        toast.success(isEditMode ? "Trade updated" : "Trade created");
+        // Success toast includes R:R when we can compute it. This is the
+        // user-visible confirmation asked for in client feedback — it also
+        // matches what the preview card shows so there's no surprise.
+        const rr = preview?.risk_reward_ratio ?? null;
+        const base = isEditMode ? "Trade updated" : "Trade logged";
+        const withRr = rr !== null ? `${base} · R:R 1:${rr.toFixed(2)}` : base;
+        toast.success(withRr);
         onSuccess?.();
         router.push("/journal");
         router.refresh();
@@ -446,7 +562,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         setSubmitting(false);
       }
     },
-    [isEditMode, trade, onSuccess, router],
+    [isEditMode, trade, onSuccess, router, preview],
   );
 
   return (
@@ -696,18 +812,23 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         </CardContent>
       </Card>
 
-      {/* Take Profits grid */}
+      {/* Take Profits grid — progressive reveal up to 7 TPs */}
       <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Take Profits
           </CardTitle>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {visibleTps}/{TP_PALETTE.length}
+          </span>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {TP_PALETTE.map((tp) => {
+            {TP_PALETTE.slice(0, visibleTps).map((tp, idx) => {
               const isTp4 = tp.key === "tp4";
               const disablePrice = isTp4 && tp4Trailing;
+              const isLastVisible = idx === visibleTps - 1;
+              const canRemove = isLastVisible && idx > 0;
               return (
                 <div
                   key={tp.key}
@@ -716,21 +837,36 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                     tp.accent,
                   )}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", tp.badge)}>
                       {tp.label}
                     </span>
-                    {isTp4 && (
-                      <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Checkbox
-                          checked={!!tp4Trailing}
-                          onCheckedChange={(v) =>
-                            setValue("tp4_trailing", !!v, { shouldValidate: true })
-                          }
-                        />
-                        Open / Trail
-                      </label>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isTp4 && (
+                        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Checkbox
+                            checked={!!tp4Trailing}
+                            onCheckedChange={(v) =>
+                              setValue("tp4_trailing", !!v, { shouldValidate: true })
+                            }
+                          />
+                          Open / Trail
+                        </label>
+                      )}
+                      {canRemove && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeTp(idx)}
+                          aria-label={`Remove ${tp.label}`}
+                          title={`Remove ${tp.label}`}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -801,6 +937,22 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               );
             })}
           </div>
+
+          {visibleTps < TP_PALETTE.length && (
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setVisibleTps((n) => Math.min(TP_PALETTE.length, n + 1))}
+              >
+                <Plus className="size-3.5 mr-1" /> Add TP
+              </Button>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Signal groups sometimes use up to 7 TPs — add as many as you need.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -827,7 +979,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <FieldLabel htmlFor="num_positions" help="How many slices to split the risk into (1..10).">
                 Number of Positions
@@ -859,18 +1011,6 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               {errors.quantity && (
                 <p className="text-xs text-destructive">{errors.quantity.message}</p>
               )}
-            </div>
-            <div className="space-y-2">
-              <FieldLabel htmlFor="lot_size" help="Broker-facing lot size. Optional, for reporting.">
-                Lot Size
-              </FieldLabel>
-              <Input
-                id="lot_size"
-                type="number"
-                step="any"
-                placeholder="0.01"
-                {...register("lot_size")}
-              />
             </div>
             <div className="space-y-2">
               <FieldLabel htmlFor="fees" help="Commissions + spread + swap. Deducted from P&L.">

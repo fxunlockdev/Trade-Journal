@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Trade } from "@/types/database";
+import type { Trade, TPResult } from "@/types/database";
 import {
   cn,
   formatCurrency,
@@ -16,6 +16,69 @@ import { TradeDeleteButton } from "./trade-delete-button";
 
 interface TradeDetailPageProps {
   params: Promise<{ id: string }>;
+}
+
+/**
+ * Per-TP palette — must stay in sync with `src/components/trade/trade-form.tsx`
+ * and `src/components/trade/trade-table.tsx`. TP1..4 match the original mock
+ * and TP5..7 extend with distinct but readable accent colors so 7 simultaneous
+ * targets remain legible.
+ */
+interface TpSlot {
+  readonly key:
+    | "tp1"
+    | "tp2"
+    | "tp3"
+    | "tp4"
+    | "tp5"
+    | "tp6"
+    | "tp7";
+  readonly pipsKey:
+    | "tp1_pips"
+    | "tp2_pips"
+    | "tp3_pips"
+    | "tp4_pips"
+    | "tp5_pips"
+    | "tp6_pips"
+    | "tp7_pips";
+  readonly resultKey:
+    | "tp1_result"
+    | "tp2_result"
+    | "tp3_result"
+    | "tp4_result"
+    | "tp5_result"
+    | "tp6_result"
+    | "tp7_result";
+  readonly label: string;
+  readonly accent: string;
+  readonly badge: string;
+}
+
+const TP_SLOTS: readonly TpSlot[] = [
+  { key: "tp1", pipsKey: "tp1_pips", resultKey: "tp1_result", label: "TP1", accent: "border-emerald-500/60 bg-emerald-500/5", badge: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30" },
+  { key: "tp2", pipsKey: "tp2_pips", resultKey: "tp2_result", label: "TP2", accent: "border-sky-500/60 bg-sky-500/5", badge: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30" },
+  { key: "tp3", pipsKey: "tp3_pips", resultKey: "tp3_result", label: "TP3", accent: "border-violet-500/60 bg-violet-500/5", badge: "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30" },
+  { key: "tp4", pipsKey: "tp4_pips", resultKey: "tp4_result", label: "TP4", accent: "border-orange-500/60 bg-orange-500/5", badge: "bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30" },
+  { key: "tp5", pipsKey: "tp5_pips", resultKey: "tp5_result", label: "TP5", accent: "border-cyan-500/60 bg-cyan-500/5", badge: "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30" },
+  { key: "tp6", pipsKey: "tp6_pips", resultKey: "tp6_result", label: "TP6", accent: "border-rose-500/60 bg-rose-500/5", badge: "bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/30" },
+  { key: "tp7", pipsKey: "tp7_pips", resultKey: "tp7_result", label: "TP7", accent: "border-lime-500/60 bg-lime-500/5", badge: "bg-lime-500/15 text-lime-400 ring-1 ring-lime-500/30" },
+] as const;
+
+const TP_RESULT_LABEL: Readonly<Record<TPResult, string>> = {
+  hit: "Hit",
+  be: "BE",
+  sl: "SL",
+};
+
+function tpResultStyle(result: TPResult): string {
+  if (result === "hit")
+    return "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30";
+  if (result === "sl") return "bg-red-500/15 text-red-400 ring-1 ring-red-500/30";
+  return "bg-muted text-muted-foreground ring-1 ring-border/40";
+}
+
+function formatTpPrice(value: number): string {
+  return value.toFixed(value < 10 ? 5 : 2);
 }
 
 export default async function TradeDetailPage({ params }: TradeDetailPageProps) {
@@ -43,6 +106,19 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
   const t = trade as Trade;
   const isOpen = t.exit_price === null;
   const isProfitable = t.pnl_absolute !== null && t.pnl_absolute >= 0;
+
+  // Compute which TP slots have any data (price, pips, or result). Falling
+  // back to the legacy `take_profit` is only relevant when tp1 is null — all
+  // write paths (POST /api/trades, PATCH, chat) sync `take_profit → tp1`,
+  // so legacy rows from before the 7-TP refactor still render correctly.
+  const activeTpSlots = TP_SLOTS.filter((slot) => {
+    const price = t[slot.key];
+    const pips = t[slot.pipsKey];
+    const result = t[slot.resultKey];
+    return price !== null || pips !== null || result !== null;
+  });
+  const hasNoStructuredTps = activeTpSlots.length === 0;
+  const legacyTpOnly = hasNoStructuredTps && t.take_profit !== null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6 lg:p-8">
@@ -103,35 +179,28 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Entry</p>
                 <p className="text-lg font-semibold tabular-nums">
-                  {t.entry_price.toFixed(t.entry_price < 10 ? 5 : 2)}
+                  {formatTpPrice(t.entry_price)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Exit</p>
                 <p className="text-lg font-semibold tabular-nums">
-                  {t.exit_price !== null
-                    ? t.exit_price.toFixed(t.exit_price < 10 ? 5 : 2)
-                    : "---"}
+                  {t.exit_price !== null ? formatTpPrice(t.exit_price) : "---"}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Stop Loss</p>
                 <p className="text-lg font-semibold tabular-nums text-red-400">
-                  {t.stop_loss !== null
-                    ? t.stop_loss.toFixed(t.stop_loss < 10 ? 5 : 2)
-                    : "---"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Take Profit</p>
-                <p className="text-lg font-semibold tabular-nums text-emerald-400">
-                  {t.take_profit !== null
-                    ? t.take_profit.toFixed(t.take_profit < 10 ? 5 : 2)
-                    : "---"}
+                  {t.stop_loss !== null ? formatTpPrice(t.stop_loss) : "---"}
+                  {t.sl_pips !== null && (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      ({t.sl_pips} pips)
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -209,7 +278,94 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
             </div>
           </CardContent>
         </Card>
+      </div>
 
+      {/* Take Profits — full width so up to 7 slots fit comfortably. */}
+      <Card className="border-border/40 bg-card/50">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Take Profits
+          </CardTitle>
+          {t.split_risk && (
+            <Badge
+              variant="outline"
+              className="text-xs border-border/40 text-muted-foreground"
+            >
+              Split risk · {t.num_positions} positions
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent>
+          {legacyTpOnly && (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
+              <p className="text-xs text-muted-foreground mb-1">
+                Take Profit (legacy)
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-emerald-400">
+                {formatTpPrice(t.take_profit as number)}
+              </p>
+            </div>
+          )}
+          {!legacyTpOnly && hasNoStructuredTps && (
+            <p className="text-sm text-muted-foreground italic">
+              No take profits set on this trade.
+            </p>
+          )}
+          {activeTpSlots.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+              {activeTpSlots.map((slot) => {
+                const price = t[slot.key];
+                const pips = t[slot.pipsKey];
+                const result = t[slot.resultKey];
+                const isTp4Trailing = slot.key === "tp4" && t.tp4_trailing;
+                return (
+                  <div
+                    key={slot.key}
+                    className={cn(
+                      "rounded-md border p-3 space-y-2",
+                      slot.accent,
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded text-xs font-semibold tracking-wide",
+                          slot.badge,
+                        )}
+                      >
+                        {slot.label}
+                      </span>
+                      {result !== null && (
+                        <span
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase",
+                            tpResultStyle(result),
+                          )}
+                        >
+                          {TP_RESULT_LABEL[result]}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-base font-semibold tabular-nums text-foreground">
+                      {price !== null ? formatTpPrice(price) : "---"}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      {pips !== null && <span>{pips} pips</span>}
+                      {isTp4Trailing && (
+                        <span className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30 font-semibold uppercase">
+                          Trailing
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Meta */}
         <Card className="border-border/40 bg-card/50">
           <CardHeader className="pb-3">

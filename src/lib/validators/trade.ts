@@ -12,15 +12,24 @@ const sources = ["manual", "csv", "mt5_webhook"] as const;
 const orderTypes = ["market", "limit", "stop"] as const;
 const tpResults = ["hit", "be", "sl"] as const;
 
+type TpKey =
+  | "tp1"
+  | "tp2"
+  | "tp3"
+  | "tp4"
+  | "tp5"
+  | "tp6"
+  | "tp7";
+
 /**
  * Direction-aware geometry for optional SL + multi-TP.
  *
  * Rules:
  * - SL (if provided) must sit on the losing side of entry relative to direction.
  * - Each TP (if provided) must sit on the winning side of entry.
- * - Multi-TP ordering: TP1 → TP4 must be monotonically farther from entry in
+ * - Multi-TP ordering: TP1 → TP7 must be monotonically farther from entry in
  *   the winning direction (TP2 more profitable than TP1, etc.). Gaps are
- *   allowed (e.g. only TP1 + TP4 set), but the set values must respect order.
+ *   allowed (e.g. only TP1 + TP7 set), but the set values must respect order.
  * - `entry_price_high` (when set) must be >= entry_price.
  *
  * Only applied when the relevant field is present, so open trades without
@@ -37,6 +46,9 @@ function refineTradeGeometry(
     readonly tp2?: number | null;
     readonly tp3?: number | null;
     readonly tp4?: number | null;
+    readonly tp5?: number | null;
+    readonly tp6?: number | null;
+    readonly tp7?: number | null;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -93,11 +105,14 @@ function refineTradeGeometry(
   }
 
   // Multi-TP checks
-  const tps: ReadonlyArray<{ readonly key: "tp1" | "tp2" | "tp3" | "tp4"; readonly value: number | null | undefined }> = [
+  const tps: ReadonlyArray<{ readonly key: TpKey; readonly value: number | null | undefined }> = [
     { key: "tp1", value: data.tp1 },
     { key: "tp2", value: data.tp2 },
     { key: "tp3", value: data.tp3 },
     { key: "tp4", value: data.tp4 },
+    { key: "tp5", value: data.tp5 },
+    { key: "tp6", value: data.tp6 },
+    { key: "tp7", value: data.tp7 },
   ];
 
   // Each TP must be on the winning side of entry
@@ -119,9 +134,9 @@ function refineTradeGeometry(
     }
   }
 
-  // TP ordering: for buys, tp1 < tp2 < tp3 < tp4; reversed for sells.
+  // TP ordering: for buys, tp1 < tp2 < ... < tp7; reversed for sells.
   const filled = tps.filter((t) => t.value != null) as ReadonlyArray<{
-    readonly key: "tp1" | "tp2" | "tp3" | "tp4";
+    readonly key: TpKey;
     readonly value: number;
   }>;
   for (let i = 1; i < filled.length; i += 1) {
@@ -163,14 +178,23 @@ const createTradeObjectSchema = z.object({
   tp2: z.coerce.number().positive().nullable().optional(),
   tp3: z.coerce.number().positive().nullable().optional(),
   tp4: z.coerce.number().positive().nullable().optional(),
+  tp5: z.coerce.number().positive().nullable().optional(),
+  tp6: z.coerce.number().positive().nullable().optional(),
+  tp7: z.coerce.number().positive().nullable().optional(),
   tp1_pips: z.coerce.number().nonnegative().nullable().optional(),
   tp2_pips: z.coerce.number().nonnegative().nullable().optional(),
   tp3_pips: z.coerce.number().nonnegative().nullable().optional(),
   tp4_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp5_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp6_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp7_pips: z.coerce.number().nonnegative().nullable().optional(),
   tp1_result: z.enum(tpResults).nullable().optional(),
   tp2_result: z.enum(tpResults).nullable().optional(),
   tp3_result: z.enum(tpResults).nullable().optional(),
   tp4_result: z.enum(tpResults).nullable().optional(),
+  tp5_result: z.enum(tpResults).nullable().optional(),
+  tp6_result: z.enum(tpResults).nullable().optional(),
+  tp7_result: z.enum(tpResults).nullable().optional(),
   tp4_trailing: z.coerce.boolean().default(false),
   num_positions: z.coerce.number().int().min(1).max(10).default(1),
   split_risk: z.coerce.boolean().default(false),
@@ -241,6 +265,9 @@ export const updateTradeSchema = createTradeObjectSchema
           tp2: data.tp2 ?? null,
           tp3: data.tp3 ?? null,
           tp4: data.tp4 ?? null,
+          tp5: data.tp5 ?? null,
+          tp6: data.tp6 ?? null,
+          tp7: data.tp7 ?? null,
         },
         ctx,
       );

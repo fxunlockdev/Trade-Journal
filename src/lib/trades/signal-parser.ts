@@ -31,7 +31,10 @@ export interface ParsedSignal {
   readonly tp2?: number;
   readonly tp3?: number;
   readonly tp4?: number;
-  /** True when TP4 is explicitly marked as "open" or "runner". */
+  readonly tp5?: number;
+  readonly tp6?: number;
+  readonly tp7?: number;
+  /** True when the final TP (tp4 historically, now tp7) is marked "open" or "runner". */
   readonly tp4_trailing?: boolean;
   readonly warnings: readonly string[];
 }
@@ -131,42 +134,59 @@ function findStop(text: string): number | undefined {
   return toNumber(m[1]) ?? undefined;
 }
 
+type ParsedTpKey =
+  | "tp1"
+  | "tp2"
+  | "tp3"
+  | "tp4"
+  | "tp5"
+  | "tp6"
+  | "tp7";
+
+const MAX_TPS = 7;
+
 /**
- * Collects TP prices. Handles:
- *   TP 4830/4840/4850   → tp1..tp3
- *   TP1 4830 TP2 4840   → tp1, tp2
- *   target 66000, 67000 → tp1, tp2
- *   TP4: OPEN           → tp4_trailing = true (no price)
+ * Collects TP prices. Handles up to 7 TPs (some signal groups use that many).
+ *   TP 4830/4840/4850/4860/4870   → tp1..tp5
+ *   TP1 4830 TP2 4840             → tp1, tp2
+ *   target 66000, 67000           → tp1, tp2
+ *   TP4: OPEN                     → tp4_trailing = true (no price)
  */
 function findTps(text: string): {
   readonly tp1?: number;
   readonly tp2?: number;
   readonly tp3?: number;
   readonly tp4?: number;
+  readonly tp5?: number;
+  readonly tp6?: number;
+  readonly tp7?: number;
   readonly tp4_trailing?: boolean;
 } {
-  const tps: Partial<Record<"tp1" | "tp2" | "tp3" | "tp4", number>> = {};
+  const tps: Partial<Record<ParsedTpKey, number>> = {};
   let tp4Trailing = false;
 
-  // Numbered TPs: TP1..TP4 with optional colon.
-  const numberedRe = /tp\s*([1-4])\s*:?\s*([A-Z0-9.,\-]+)/gi;
+  // Numbered TPs: TP1..TP7 with optional colon.
+  const numberedRe = /tp\s*([1-7])\s*:?\s*([A-Z0-9.,\-]+)/gi;
   let match: RegExpExecArray | null;
   while ((match = numberedRe.exec(text)) !== null) {
     const idx = Number(match[1]);
     const raw = match[2];
+    // Historically tp4 had trailing semantics; keep that flag wired up for
+    // back-compat even though the form now supports tp5/6/7 too.
     if (idx === 4 && /open|running|runner|trail/i.test(raw)) {
       tp4Trailing = true;
       continue;
     }
     const n = toNumber(raw);
-    if (n != null && idx >= 1 && idx <= 4) {
-      const key = `tp${idx}` as "tp1" | "tp2" | "tp3" | "tp4";
+    if (n != null && idx >= 1 && idx <= MAX_TPS) {
+      const key = `tp${idx}` as ParsedTpKey;
       tps[key] = n;
     }
   }
 
   // If no numbered TPs found, try slashed or comma-separated list after TP/target.
-  if (!tps.tp1 && !tps.tp2 && !tps.tp3 && !tps.tp4) {
+  const anyFound = Object.values(tps).some((v) => v != null);
+  if (!anyFound) {
     const listRe = new RegExp(
       `(?:tp|take\\s*profit|target|targets)\\s*:?\\s*((?:${NUM_RE.source})(?:\\s*[/,]\\s*(?:${NUM_RE.source}|open|running))*)`,
       "i",
@@ -175,9 +195,10 @@ function findTps(text: string): {
     if (list) {
       const parts = list[1].split(/[/,]/).map((p) => p.trim());
       parts.forEach((part, i) => {
-        if (i >= 4) return;
-        const key = `tp${i + 1}` as "tp1" | "tp2" | "tp3" | "tp4";
+        if (i >= MAX_TPS) return;
+        const key = `tp${i + 1}` as ParsedTpKey;
         if (/open|running|runner|trail/i.test(part)) {
+          // "open" on the 4th slot preserves historical trailing semantics.
           if (i === 3) tp4Trailing = true;
           return;
         }
@@ -209,7 +230,14 @@ export function parseSignalText(input: string): ParsedSignal {
   if (stop_loss == null) warnings.push("Could not identify stop loss");
 
   const tps = findTps(text);
-  const hasAnyTp = tps.tp1 != null || tps.tp2 != null || tps.tp3 != null || tps.tp4 != null;
+  const hasAnyTp =
+    tps.tp1 != null ||
+    tps.tp2 != null ||
+    tps.tp3 != null ||
+    tps.tp4 != null ||
+    tps.tp5 != null ||
+    tps.tp6 != null ||
+    tps.tp7 != null;
   if (!hasAnyTp && !tps.tp4_trailing) {
     warnings.push("Could not identify any take profit");
   }
@@ -224,6 +252,9 @@ export function parseSignalText(input: string): ParsedSignal {
     tp2: tps.tp2,
     tp3: tps.tp3,
     tp4: tps.tp4,
+    tp5: tps.tp5,
+    tp6: tps.tp6,
+    tp7: tps.tp7,
     tp4_trailing: tps.tp4_trailing,
     warnings,
   };

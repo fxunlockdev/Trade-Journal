@@ -4,8 +4,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { Trade } from "@/types/database";
-import { cn, formatCurrency, formatPercentage, formatDateTime } from "@/lib/utils";
+import type { Trade, TPResult } from "@/types/database";
+import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,34 +28,189 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface TradeTableProps {
   readonly trades: readonly Trade[];
 }
 
+/**
+ * Sort keys. `tps_hit_pct` and `status` are derived client-side but sortable
+ * because users asked for them in the mock. `mode` sorts on split_risk.
+ */
 type SortKey =
   | "entry_time"
   | "instrument"
   | "direction"
+  | "order_type"
   | "entry_price"
-  | "exit_price"
+  | "stop_loss"
+  | "tps_hit_pct"
+  | "risk_reward_ratio"
   | "pnl_absolute"
-  | "risk_reward_ratio";
+  | "status"
+  | "source"
+  | "mode";
 
 interface SortState {
   readonly key: SortKey;
   readonly dir: "asc" | "desc";
 }
 
+type TradeStatus = "open" | "win" | "loss" | "breakeven" | "partial";
+
+interface TpSummary {
+  readonly total: number;
+  readonly hit: number;
+  readonly pct: number; // 0..1
+}
+
+/**
+ * Count TPs that are set and count how many have been hit. We treat "be" as
+ * 0.5 of a hit for display purposes (it's not a loss, not a full win), but
+ * we keep the integer count too so the table shows "2/4" not "2.5/4".
+ */
+function summarizeTps(trade: Trade): TpSummary {
+  const prices: readonly (number | null)[] = [
+    trade.tp1,
+    trade.tp2,
+    trade.tp3,
+    trade.tp4,
+    trade.tp5,
+    trade.tp6,
+    trade.tp7,
+  ];
+  const results: readonly (TPResult | null)[] = [
+    trade.tp1_result,
+    trade.tp2_result,
+    trade.tp3_result,
+    trade.tp4_result,
+    trade.tp5_result,
+    trade.tp6_result,
+    trade.tp7_result,
+  ];
+
+  let total = 0;
+  let hit = 0;
+  for (let i = 0; i < prices.length; i += 1) {
+    // A TP "counts" if it has a price OR a result (edge: legacy trades with
+    // only take_profit set will still show a usable summary via tp1 fallback).
+    if (prices[i] != null || results[i] != null) total += 1;
+    if (results[i] === "hit") hit += 1;
+  }
+
+  // Legacy single-TP fallback: if no tp* prices but take_profit is set.
+  if (total === 0 && trade.take_profit != null) {
+    total = 1;
+    if (trade.exit_price != null && trade.pnl_absolute != null && trade.pnl_absolute > 0) {
+      hit = 1;
+    }
+  }
+
+  const pct = total > 0 ? hit / total : 0;
+  return { total, hit, pct };
+}
+
+/**
+ * Derive the trade status from existing columns. Order matters — we resolve
+ * "most specific" first (partial is not just closed, it's closed with mixed
+ * TP outcomes).
+ */
+function deriveStatus(trade: Trade, tps: TpSummary): TradeStatus {
+  // Multi-TP path: if any tp*_result is set but exit_price is null, we can
+  // still classify without waiting for a single closing exit price.
+  const results: readonly (TPResult | null)[] = [
+    trade.tp1_result,
+    trade.tp2_result,
+    trade.tp3_result,
+    trade.tp4_result,
+    trade.tp5_result,
+    trade.tp6_result,
+    trade.tp7_result,
+  ];
+  const anyResult = results.some((r) => r != null);
+
+  if (!anyResult && trade.exit_price === null) return "open";
+
+  // Any loss closes the trade on the losing side of the book.
+  const slCount = results.filter((r) => r === "sl").length;
+  const hitCount = results.filter((r) => r === "hit").length;
+  const beCount = results.filter((r) => r === "be").length;
+
+  if (anyResult) {
+    if (hitCount > 0 && slCount > 0) return "partial";
+    if (hitCount > 0 && beCount > 0) return "partial";
+    if (hitCount === tps.total && tps.total > 0) return "win";
+    if (slCount > 0 && hitCount === 0) return "loss";
+    if (beCount > 0 && hitCount === 0 && slCount === 0) return "breakeven";
+    if (hitCount > 0) return "win";
+    if (slCount > 0) return "loss";
+    return "open";
+  }
+
+  // Legacy exit-price path.
+  if (trade.pnl_absolute === null) return "open";
+  if (trade.pnl_absolute > 0) return "win";
+  if (trade.pnl_absolute < 0) return "loss";
+  return "breakeven";
+}
+
+interface StatusStyle {
+  readonly label: string;
+  readonly className: string;
+}
+
+function statusStyle(s: TradeStatus): StatusStyle {
+  switch (s) {
+    case "win":
+      return { label: "Win", className: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" };
+    case "loss":
+      return { label: "Loss", className: "border-red-500/30 text-red-400 bg-red-500/10" };
+    case "breakeven":
+      return { label: "BE", className: "border-amber-500/30 text-amber-400 bg-amber-500/10" };
+    case "partial":
+      return { label: "Partial", className: "border-sky-500/30 text-sky-400 bg-sky-500/10" };
+    case "open":
+    default:
+      return { label: "Open", className: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" };
+  }
+}
+
+function sourceLabel(src: Trade["source"]): string {
+  switch (src) {
+    case "mt5_webhook":
+      return "MT5";
+    case "csv":
+      return "CSV";
+    case "manual":
+    default:
+      return "Manual";
+  }
+}
+
+function formatPrice(n: number): string {
+  // Use 5 decimals for small-value FX pairs and 2 for everything else.
+  return n.toFixed(n < 10 ? 5 : 2);
+}
+
+/**
+ * Build a sortable scalar value for each column. Open-trade nulls sort last
+ * in descending mode (which is the common user expectation: "show me the
+ * biggest wins first, leave open trades to the bottom").
+ */
 function getSortValue(trade: Trade, key: SortKey): number | string {
-  const val = trade[key];
-  if (val === null || val === undefined) return key === "instrument" || key === "direction" ? "" : -Infinity;
-  return val;
+  if (key === "entry_time") return trade.entry_time;
+  if (key === "instrument") return trade.instrument;
+  if (key === "direction") return trade.direction;
+  if (key === "order_type") return trade.order_type ?? "market";
+  if (key === "entry_price") return trade.entry_price;
+  if (key === "stop_loss") return trade.stop_loss ?? -Infinity;
+  if (key === "tps_hit_pct") return summarizeTps(trade).pct;
+  if (key === "risk_reward_ratio") return trade.risk_reward_ratio ?? -Infinity;
+  if (key === "pnl_absolute") return trade.pnl_absolute ?? -Infinity;
+  if (key === "status") return deriveStatus(trade, summarizeTps(trade));
+  if (key === "source") return trade.source;
+  if (key === "mode") return trade.split_risk ? "split" : "single";
+  return "";
 }
 
 export function TradeTable({ trades }: TradeTableProps) {
@@ -104,9 +259,12 @@ export function TradeTable({ trades }: TradeTableProps) {
   );
 
   const SortHeader = useCallback(
-    ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    ({ label, sortKey, className }: { label: string; sortKey: SortKey; className?: string }) => (
       <TableHead
-        className="cursor-pointer select-none hover:text-foreground transition-colors"
+        className={cn(
+          "cursor-pointer select-none hover:text-foreground transition-colors text-[11px] uppercase tracking-wider",
+          className,
+        )}
         onClick={() => toggleSort(sortKey)}
       >
         <span className="inline-flex items-center gap-1">
@@ -147,26 +305,34 @@ export function TradeTable({ trades }: TradeTableProps) {
   }
 
   return (
-    <div className="rounded-lg border border-border/40 overflow-hidden">
+    <div className="rounded-lg border border-border/40 overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent border-border/40">
             <SortHeader label="Date" sortKey="entry_time" />
-            <SortHeader label="Instrument" sortKey="instrument" />
-            <SortHeader label="Direction" sortKey="direction" />
-            <SortHeader label="Entry" sortKey="entry_price" />
-            <TableHead>Exit</TableHead>
-            <SortHeader label="P&L" sortKey="pnl_absolute" />
-            <SortHeader label="R:R" sortKey="risk_reward_ratio" />
-            <TableHead>Tags</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <SortHeader label="Symbol" sortKey="instrument" />
+            <SortHeader label="Dir" sortKey="direction" />
+            <SortHeader label="Type" sortKey="order_type" />
+            <SortHeader label="Entry" sortKey="entry_price" className="text-right" />
+            <SortHeader label="SL" sortKey="stop_loss" className="text-right" />
+            <SortHeader label="TPs Hit" sortKey="tps_hit_pct" className="text-right" />
+            <SortHeader label="R:R" sortKey="risk_reward_ratio" className="text-right" />
+            <SortHeader label="P&L" sortKey="pnl_absolute" className="text-right" />
+            <SortHeader label="Status" sortKey="status" />
+            <SortHeader label="Source" sortKey="source" />
+            <SortHeader label="Mode" sortKey="mode" />
+            <TableHead className="text-right text-[11px] uppercase tracking-wider">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {sorted.map((trade) => {
+            const tps = summarizeTps(trade);
+            const status = deriveStatus(trade, tps);
+            const style = statusStyle(status);
             const isProfitable =
               trade.pnl_absolute !== null && trade.pnl_absolute >= 0;
-            const isOpen = trade.exit_price === null;
+            const isOpen = status === "open";
+            const mode = trade.split_risk ? "Split" : "Single";
 
             return (
               <TableRow
@@ -174,7 +340,7 @@ export function TradeTable({ trades }: TradeTableProps) {
                 className="cursor-pointer border-border/40 hover:bg-muted/50 transition-colors"
                 onClick={() => router.push(`/journal/${trade.id}`)}
               >
-                <TableCell className="text-sm tabular-nums text-muted-foreground">
+                <TableCell className="text-sm tabular-nums text-muted-foreground whitespace-nowrap">
                   {formatDateTime(trade.entry_time)}
                 </TableCell>
                 <TableCell className="font-medium">{trade.instrument}</TableCell>
@@ -191,19 +357,41 @@ export function TradeTable({ trades }: TradeTableProps) {
                     {trade.direction}
                   </Badge>
                 </TableCell>
-                <TableCell className="tabular-nums">
-                  {trade.entry_price.toFixed(trade.entry_price < 10 ? 5 : 2)}
+                <TableCell className="text-xs uppercase text-muted-foreground tracking-wider">
+                  {trade.order_type ?? "market"}
                 </TableCell>
-                <TableCell className="tabular-nums text-muted-foreground">
-                  {trade.exit_price !== null
-                    ? trade.exit_price.toFixed(trade.exit_price < 10 ? 5 : 2)
-                    : "---"}
+                <TableCell className="text-right tabular-nums">
+                  {formatPrice(trade.entry_price)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
+                  {trade.stop_loss !== null ? formatPrice(trade.stop_loss) : "—"}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {tps.total > 0 ? (
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        tps.hit === tps.total && tps.total > 0
+                          ? "text-emerald-400"
+                          : tps.hit > 0
+                            ? "text-sky-400"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {tps.hit}/{tps.total}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
+                  {trade.risk_reward_ratio !== null
+                    ? `1:${trade.risk_reward_ratio.toFixed(2)}`
+                    : "—"}
+                </TableCell>
+                <TableCell className="text-right">
                   {isOpen ? (
-                    <Badge variant="outline" className="text-xs border-yellow-500/30 text-yellow-400 bg-yellow-500/10">
-                      Open
-                    </Badge>
+                    <span className="text-muted-foreground">—</span>
                   ) : (
                     <span
                       className={cn(
@@ -211,42 +399,22 @@ export function TradeTable({ trades }: TradeTableProps) {
                         isProfitable ? "text-emerald-400" : "text-red-400",
                       )}
                     >
-                      {isProfitable ? "+" : ""}
-                      {formatCurrency(trade.pnl_absolute!)}
+                      {trade.pnl_absolute !== null
+                        ? `${isProfitable ? "+" : ""}${formatCurrency(trade.pnl_absolute)}`
+                        : "—"}
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="tabular-nums text-muted-foreground">
-                  {trade.risk_reward_ratio !== null
-                    ? `1:${trade.risk_reward_ratio.toFixed(1)}`
-                    : "---"}
-                </TableCell>
                 <TableCell>
-                  <div className="flex gap-1 flex-wrap">
-                    {trade.tags.slice(0, 3).map((tag) => (
-                      <Badge
-                        key={tag}
-                        variant="secondary"
-                        className="text-[10px] px-1.5 py-0"
-                      >
-                        {tag}
-                      </Badge>
-                    ))}
-                    {trade.tags.length > 3 && (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0" />
-                          }
-                        >
-                          +{trade.tags.length - 3}
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {trade.tags.slice(3).join(", ")}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
+                  <Badge variant="outline" className={cn("text-xs", style.className)}>
+                    {style.label}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground uppercase tracking-wider">
+                  {sourceLabel(trade.source)}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {mode}
                 </TableCell>
                 <TableCell className="text-right">
                   <div

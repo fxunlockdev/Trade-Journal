@@ -13,10 +13,16 @@ interface TradeForComputation {
   readonly tp2?: number | null;
   readonly tp3?: number | null;
   readonly tp4?: number | null;
+  readonly tp5?: number | null;
+  readonly tp6?: number | null;
+  readonly tp7?: number | null;
   readonly tp1_result?: TPResult | null;
   readonly tp2_result?: TPResult | null;
   readonly tp3_result?: TPResult | null;
   readonly tp4_result?: TPResult | null;
+  readonly tp5_result?: TPResult | null;
+  readonly tp6_result?: TPResult | null;
+  readonly tp7_result?: TPResult | null;
   readonly num_positions?: number | null;
   readonly split_risk?: boolean | null;
 }
@@ -131,6 +137,9 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
     { price: trade.tp2, result: trade.tp2_result },
     { price: trade.tp3, result: trade.tp3_result },
     { price: trade.tp4, result: trade.tp4_result },
+    { price: trade.tp5, result: trade.tp5_result },
+    { price: trade.tp6, result: trade.tp6_result },
+    { price: trade.tp7, result: trade.tp7_result },
   ];
 
   const concrete = results.filter((r) => r.result != null);
@@ -184,7 +193,10 @@ export function computeTradeFields<T extends TradeForComputation>(
     trade.tp1_result != null ||
     trade.tp2_result != null ||
     trade.tp3_result != null ||
-    trade.tp4_result != null;
+    trade.tp4_result != null ||
+    trade.tp5_result != null ||
+    trade.tp6_result != null ||
+    trade.tp7_result != null;
 
   if (hasAnyResult) {
     const multi = computeMultiTpPnl(trade);
