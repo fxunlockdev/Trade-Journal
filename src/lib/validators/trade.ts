@@ -9,39 +9,59 @@ const assetTypes = [
 ] as const;
 const directions = ["buy", "sell"] as const;
 const sources = ["manual", "csv", "mt5_webhook"] as const;
+const orderTypes = ["market", "limit", "stop"] as const;
+const tpResults = ["hit", "be", "sl"] as const;
 
 /**
- * Direction-aware geometry for optional SL/TP.
- * Ported from validators/signal.ts so manually-logged trades enforce
- * the same physical invariants as signals (buy → SL<entry<TP, etc.).
- * Applied only when the relevant field is present, so open trades
- * without a TP/SL still validate.
+ * Direction-aware geometry for optional SL + multi-TP.
+ *
+ * Rules:
+ * - SL (if provided) must sit on the losing side of entry relative to direction.
+ * - Each TP (if provided) must sit on the winning side of entry.
+ * - Multi-TP ordering: TP1 → TP4 must be monotonically farther from entry in
+ *   the winning direction (TP2 more profitable than TP1, etc.). Gaps are
+ *   allowed (e.g. only TP1 + TP4 set), but the set values must respect order.
+ * - `entry_price_high` (when set) must be >= entry_price.
+ *
+ * Only applied when the relevant field is present, so open trades without
+ * SL/TPs still validate.
  */
 function refineTradeGeometry(
   data: {
     readonly direction: "buy" | "sell";
     readonly entry_price: number;
+    readonly entry_price_high?: number | null;
     readonly stop_loss?: number | null;
     readonly take_profit?: number | null;
-    readonly exit_price?: number | null;
+    readonly tp1?: number | null;
+    readonly tp2?: number | null;
+    readonly tp3?: number | null;
+    readonly tp4?: number | null;
   },
   ctx: z.RefinementCtx,
 ): void {
-  const { direction, entry_price, stop_loss, take_profit } = data;
+  const { direction, entry_price, entry_price_high, stop_loss } = data;
 
+  // Entry range
+  if (
+    entry_price_high != null &&
+    Number.isFinite(entry_price_high) &&
+    entry_price_high < entry_price
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entry_price_high"],
+      message: "Entry price high must be ≥ entry price",
+    });
+  }
+
+  // SL
   if (direction === "buy") {
     if (stop_loss != null && stop_loss >= entry_price) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["stop_loss"],
         message: "Stop loss must be below entry price for a buy trade",
-      });
-    }
-    if (take_profit != null && take_profit <= entry_price) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["take_profit"],
-        message: "Take profit must be above entry price for a buy trade",
       });
     }
   } else {
@@ -52,11 +72,73 @@ function refineTradeGeometry(
         message: "Stop loss must be above entry price for a sell trade",
       });
     }
-    if (take_profit != null && take_profit >= entry_price) {
+  }
+
+  // Legacy single TP (take_profit)
+  if (data.take_profit != null) {
+    if (direction === "buy" && data.take_profit <= entry_price) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["take_profit"],
+        message: "Take profit must be above entry price for a buy trade",
+      });
+    }
+    if (direction === "sell" && data.take_profit >= entry_price) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["take_profit"],
         message: "Take profit must be below entry price for a sell trade",
+      });
+    }
+  }
+
+  // Multi-TP checks
+  const tps: ReadonlyArray<{ readonly key: "tp1" | "tp2" | "tp3" | "tp4"; readonly value: number | null | undefined }> = [
+    { key: "tp1", value: data.tp1 },
+    { key: "tp2", value: data.tp2 },
+    { key: "tp3", value: data.tp3 },
+    { key: "tp4", value: data.tp4 },
+  ];
+
+  // Each TP must be on the winning side of entry
+  for (const { key, value } of tps) {
+    if (value == null) continue;
+    if (direction === "buy" && value <= entry_price) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key.toUpperCase()} must be above entry price for a buy trade`,
+      });
+    }
+    if (direction === "sell" && value >= entry_price) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key.toUpperCase()} must be below entry price for a sell trade`,
+      });
+    }
+  }
+
+  // TP ordering: for buys, tp1 < tp2 < tp3 < tp4; reversed for sells.
+  const filled = tps.filter((t) => t.value != null) as ReadonlyArray<{
+    readonly key: "tp1" | "tp2" | "tp3" | "tp4";
+    readonly value: number;
+  }>;
+  for (let i = 1; i < filled.length; i += 1) {
+    const prev = filled[i - 1];
+    const curr = filled[i];
+    if (direction === "buy" && curr.value <= prev.value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [curr.key],
+        message: `${curr.key.toUpperCase()} must be greater than ${prev.key.toUpperCase()} for a buy trade`,
+      });
+    }
+    if (direction === "sell" && curr.value >= prev.value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [curr.key],
+        message: `${curr.key.toUpperCase()} must be less than ${prev.key.toUpperCase()} for a sell trade`,
       });
     }
   }
@@ -67,12 +149,31 @@ const createTradeObjectSchema = z.object({
   instrument: z.string().trim().min(1).max(20),
   asset_type: z.enum(assetTypes),
   direction: z.enum(directions),
+  order_type: z.enum(orderTypes).default("market"),
   entry_price: z.coerce.number().positive(),
+  entry_price_high: z.coerce.number().positive().nullable().optional(),
   exit_price: z.coerce.number().positive().nullable().optional(),
   quantity: z.coerce.number().positive(),
   lot_size: z.coerce.number().positive().nullable().optional(),
   stop_loss: z.coerce.number().positive().nullable().optional(),
+  sl_pips: z.coerce.number().nonnegative().nullable().optional(),
+  // Legacy single-TP — kept in sync with tp1 when only one target is set.
   take_profit: z.coerce.number().positive().nullable().optional(),
+  tp1: z.coerce.number().positive().nullable().optional(),
+  tp2: z.coerce.number().positive().nullable().optional(),
+  tp3: z.coerce.number().positive().nullable().optional(),
+  tp4: z.coerce.number().positive().nullable().optional(),
+  tp1_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp2_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp3_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp4_pips: z.coerce.number().nonnegative().nullable().optional(),
+  tp1_result: z.enum(tpResults).nullable().optional(),
+  tp2_result: z.enum(tpResults).nullable().optional(),
+  tp3_result: z.enum(tpResults).nullable().optional(),
+  tp4_result: z.enum(tpResults).nullable().optional(),
+  tp4_trailing: z.coerce.boolean().default(false),
+  num_positions: z.coerce.number().int().min(1).max(10).default(1),
+  split_risk: z.coerce.boolean().default(false),
   fees: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(5000).nullable().optional(),
   tags: z.array(z.string().trim()).default([]),
@@ -133,8 +234,13 @@ export const updateTradeSchema = createTradeObjectSchema
         {
           direction: data.direction,
           entry_price: data.entry_price,
+          entry_price_high: data.entry_price_high ?? null,
           stop_loss: data.stop_loss ?? null,
           take_profit: data.take_profit ?? null,
+          tp1: data.tp1 ?? null,
+          tp2: data.tp2 ?? null,
+          tp3: data.tp3 ?? null,
+          tp4: data.tp4 ?? null,
         },
         ctx,
       );

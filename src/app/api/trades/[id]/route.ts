@@ -80,10 +80,17 @@ export async function PATCH(
     const merged = { ...existing, ...parsed.data };
     const computed = computeTradeFields(merged);
 
+    // Keep legacy `take_profit` synchronized with `tp1` on edits so reports
+    // + MT5 webhook readers that still query `take_profit` don't drift.
+    const updatePatch: Record<string, unknown> = { ...parsed.data };
+    if ("tp1" in parsed.data) {
+      updatePatch.take_profit = parsed.data.tp1 ?? parsed.data.take_profit ?? null;
+    }
+
     const { data, error } = await supabase
       .from("trades")
       .update({
-        ...parsed.data,
+        ...updatePatch,
         pnl_absolute: computed.pnl_absolute,
         pnl_percentage: computed.pnl_percentage,
         risk_reward_ratio: computed.risk_reward_ratio,

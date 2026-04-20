@@ -132,11 +132,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Normalize all nullable fields to `null` (never `undefined`) so Supabase
+    // receives a clean row. Also keep `take_profit` (legacy single-TP) in sync
+    // with `tp1` so older reports / MT5 webhook readers keep working.
+    const tp1 = parsed.data.tp1 ?? null;
+    const legacyTp = tp1 ?? parsed.data.take_profit ?? null;
+
     const tradeData = {
       ...parsed.data,
       exit_price: parsed.data.exit_price ?? null,
+      entry_price_high: parsed.data.entry_price_high ?? null,
       stop_loss: parsed.data.stop_loss ?? null,
-      take_profit: parsed.data.take_profit ?? null,
+      sl_pips: parsed.data.sl_pips ?? null,
+      take_profit: legacyTp,
+      tp1,
+      tp2: parsed.data.tp2 ?? null,
+      tp3: parsed.data.tp3 ?? null,
+      tp4: parsed.data.tp4 ?? null,
+      tp1_pips: parsed.data.tp1_pips ?? null,
+      tp2_pips: parsed.data.tp2_pips ?? null,
+      tp3_pips: parsed.data.tp3_pips ?? null,
+      tp4_pips: parsed.data.tp4_pips ?? null,
+      tp1_result: parsed.data.tp1_result ?? null,
+      tp2_result: parsed.data.tp2_result ?? null,
+      tp3_result: parsed.data.tp3_result ?? null,
+      tp4_result: parsed.data.tp4_result ?? null,
+      tp4_trailing: parsed.data.tp4_trailing ?? false,
+      order_type: parsed.data.order_type ?? "market",
+      num_positions: parsed.data.num_positions ?? 1,
+      split_risk: parsed.data.split_risk ?? false,
+      lot_size: parsed.data.lot_size ?? null,
+      notes: parsed.data.notes ?? null,
+      exit_time: parsed.data.exit_time ?? null,
     };
     const computed = computeTradeFields(tradeData);
 

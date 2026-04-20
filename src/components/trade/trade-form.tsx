@@ -5,22 +5,34 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { Check } from "lucide-react";
 
 import { createTradeFormSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
-import { z } from "zod";
-
-const formSchema = createTradeFormSchema;
-type FormInput = z.infer<typeof formSchema>;
-import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
+import { parseSignalText } from "@/lib/trades/signal-parser";
+import {
+  ALL_INSTRUMENTS,
+  FOREX_PAIRS,
+  CRYPTO_PAIRS,
+  METALS,
+  INDICES,
+  COMMODITIES,
+} from "@/lib/constants/instruments";
 import { cn, formatCurrency, formatPercentage } from "@/lib/utils";
-import type { Trade, AssetType, TradeDirection } from "@/types/database";
+import type {
+  Trade,
+  AssetType,
+  OrderType,
+  TPResult,
+} from "@/types/database";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldLabel } from "@/components/trade/field-label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -41,43 +53,85 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+
+const formSchema = createTradeFormSchema;
+type FormInput = z.infer<typeof formSchema>;
 
 interface TradeFormProps {
   readonly trade?: Trade;
   readonly onSuccess?: () => void;
 }
 
-const ASSET_TYPES: readonly { readonly value: AssetType; readonly label: string }[] = [
-  { value: "forex", label: "Forex" },
-  { value: "crypto", label: "Crypto" },
-  { value: "metal", label: "Metal" },
+const ORDER_TYPES: readonly { readonly value: OrderType; readonly label: string }[] = [
+  { value: "market", label: "MARKET" },
+  { value: "limit", label: "LIMIT" },
+  { value: "stop", label: "STOP" },
 ] as const;
+
+const TP_RESULTS: readonly { readonly value: TPResult; readonly label: string; readonly className: string }[] = [
+  { value: "hit", label: "Hit", className: "data-[selected=true]:bg-emerald-600 data-[selected=true]:text-white" },
+  { value: "be", label: "BE", className: "data-[selected=true]:bg-amber-500 data-[selected=true]:text-white" },
+  { value: "sl", label: "SL", className: "data-[selected=true]:bg-red-600 data-[selected=true]:text-white" },
+] as const;
+
+/**
+ * Per-TP palette. Colors match the screenshot mockup — green TP1, blue TP2,
+ * purple TP3, orange TP4. We keep the palette semantic-token friendly where
+ * possible, using explicit color utilities only for the emphasis strip + badge.
+ */
+const TP_PALETTE: readonly {
+  readonly key: "tp1" | "tp2" | "tp3" | "tp4";
+  readonly pipsKey: "tp1_pips" | "tp2_pips" | "tp3_pips" | "tp4_pips";
+  readonly resultKey: "tp1_result" | "tp2_result" | "tp3_result" | "tp4_result";
+  readonly label: string;
+  readonly accent: string;
+  readonly badge: string;
+}[] = [
+  { key: "tp1", pipsKey: "tp1_pips", resultKey: "tp1_result", label: "TP1", accent: "border-emerald-500/60 bg-emerald-500/5",   badge: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30" },
+  { key: "tp2", pipsKey: "tp2_pips", resultKey: "tp2_result", label: "TP2", accent: "border-sky-500/60 bg-sky-500/5",           badge: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30" },
+  { key: "tp3", pipsKey: "tp3_pips", resultKey: "tp3_result", label: "TP3", accent: "border-violet-500/60 bg-violet-500/5",     badge: "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30" },
+  { key: "tp4", pipsKey: "tp4_pips", resultKey: "tp4_result", label: "TP4", accent: "border-orange-500/60 bg-orange-500/5",     badge: "bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30" },
+] as const;
+
+function inferAssetType(instrument: string): AssetType {
+  const upper = instrument.trim().toUpperCase();
+  if ((FOREX_PAIRS as readonly string[]).includes(upper)) return "forex";
+  if ((CRYPTO_PAIRS as readonly string[]).includes(upper)) return "crypto";
+  if ((METALS as readonly string[]).includes(upper)) return "metal";
+  if ((INDICES as readonly string[]).includes(upper)) return "index";
+  if ((COMMODITIES as readonly string[]).includes(upper)) return "commodity";
+  return "forex";
+}
+
+/**
+ * `<input type="datetime-local">` interprets its value as **local** wall
+ * clock time. Using `toISOString().slice(0,16)` returns a UTC wall clock
+ * string, so rendering an edit form in any non-UTC timezone showed the
+ * wrong time AND (worse) silently shifted `entry_time` by the user's UTC
+ * offset every time they saved. Always build + parse these values in the
+ * user's local timezone.
+ */
+function toLocalInputValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
 
 export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   const router = useRouter();
   const [instrumentOpen, setInstrumentOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"manual" | "paste">("manual");
+  const [pasteText, setPasteText] = useState("");
+  const [pasteWarnings, setPasteWarnings] = useState<readonly string[]>([]);
 
   const isEditMode = trade !== undefined;
-
-  /**
-   * `<input type="datetime-local">` interprets its value as **local** wall
-   * clock time. Using `toISOString().slice(0,16)` returns a UTC wall clock
-   * string, so rendering an edit form in any non-UTC timezone showed the
-   * wrong time AND (worse) silently shifted `entry_time` by the user's UTC
-   * offset every time they saved. Always build + parse these values in the
-   * user's local timezone.
-   */
-  const toLocalInputValue = useCallback((iso: string): string => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return (
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-      `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-    );
-  }, []);
 
   const defaultValues: Partial<FormInput> = useMemo(() => {
     if (trade) {
@@ -85,37 +139,59 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         instrument: trade.instrument,
         asset_type: trade.asset_type,
         direction: trade.direction,
+        order_type: trade.order_type ?? "market",
         entry_price: trade.entry_price,
+        entry_price_high: trade.entry_price_high ?? undefined,
         exit_price: trade.exit_price ?? undefined,
         quantity: trade.quantity,
         lot_size: trade.lot_size ?? undefined,
         stop_loss: trade.stop_loss ?? undefined,
+        sl_pips: trade.sl_pips ?? undefined,
         take_profit: trade.take_profit ?? undefined,
+        tp1: trade.tp1 ?? trade.take_profit ?? undefined,
+        tp2: trade.tp2 ?? undefined,
+        tp3: trade.tp3 ?? undefined,
+        tp4: trade.tp4 ?? undefined,
+        tp1_pips: trade.tp1_pips ?? undefined,
+        tp2_pips: trade.tp2_pips ?? undefined,
+        tp3_pips: trade.tp3_pips ?? undefined,
+        tp4_pips: trade.tp4_pips ?? undefined,
+        tp1_result: trade.tp1_result ?? undefined,
+        tp2_result: trade.tp2_result ?? undefined,
+        tp3_result: trade.tp3_result ?? undefined,
+        tp4_result: trade.tp4_result ?? undefined,
+        tp4_trailing: trade.tp4_trailing ?? false,
+        num_positions: trade.num_positions ?? 1,
+        split_risk: trade.split_risk ?? false,
         fees: trade.fees,
         notes: trade.notes ?? undefined,
         tags: [...trade.tags],
         entry_time: trade.entry_time ? toLocalInputValue(trade.entry_time) : "",
-        exit_time: trade.exit_time
-          ? toLocalInputValue(trade.exit_time)
-          : undefined,
+        exit_time: trade.exit_time ? toLocalInputValue(trade.exit_time) : undefined,
         source: trade.source,
       };
     }
     return {
       asset_type: "forex",
       direction: "buy",
+      order_type: "market",
       fees: 0,
+      quantity: 1,
+      tp4_trailing: false,
+      num_positions: 1,
+      split_risk: false,
       tags: [],
       source: "manual",
       entry_time: toLocalInputValue(new Date().toISOString()),
     };
-  }, [trade, toLocalInputValue]);
+  }, [trade]);
 
   const {
     register,
     handleSubmit,
     setValue,
     watch,
+    reset,
     formState: { errors },
   } = useForm<FormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,8 +199,24 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
     defaultValues,
   });
 
-  const watchedFields = watch();
+  const watched = watch();
   const direction = watch("direction");
+  const tp4Trailing = watch("tp4_trailing");
+  const splitRisk = watch("split_risk");
+  const numPositions = watch("num_positions");
+  const tp1Result = watch("tp1_result");
+  const tp2Result = watch("tp2_result");
+  const tp3Result = watch("tp3_result");
+  const tp4Result = watch("tp4_result");
+  const resultsByKey: Record<
+    "tp1" | "tp2" | "tp3" | "tp4",
+    TPResult | undefined
+  > = {
+    tp1: tp1Result ?? undefined,
+    tp2: tp2Result ?? undefined,
+    tp3: tp3Result ?? undefined,
+    tp4: tp4Result ?? undefined,
+  };
 
   const preview = useMemo(() => {
     // `Number("1e400")` is Infinity and `Number("abc")` is NaN. Both slip
@@ -134,44 +226,146 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
       const n = Number(v);
       return Number.isFinite(n) ? n : 0;
     };
-    const entry = toFinite(watchedFields.entry_price);
-    const exit = toFinite(watchedFields.exit_price);
-    const qty = toFinite(watchedFields.quantity);
-    const fees = toFinite(watchedFields.fees);
-    const sl = toFinite(watchedFields.stop_loss);
-    const tp = toFinite(watchedFields.take_profit);
-    const dir = watchedFields.direction ?? "buy";
+    const entry = toFinite(watched.entry_price);
+    const qty = toFinite(watched.quantity);
+    const fees = toFinite(watched.fees);
+    const sl = toFinite(watched.stop_loss);
 
     if (entry <= 0 || qty <= 0) return null;
 
+    const toOptNum = (v: unknown): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+
     const tradeData = {
       entry_price: entry,
-      exit_price: exit > 0 ? exit : null,
+      exit_price: toOptNum(watched.exit_price),
       quantity: qty,
-      direction: dir,
+      direction: direction ?? "buy",
       fees,
       stop_loss: sl > 0 ? sl : null,
-      take_profit: tp > 0 ? tp : null,
+      take_profit: toOptNum(watched.tp1) ?? toOptNum(watched.take_profit),
+      tp1: toOptNum(watched.tp1),
+      tp2: toOptNum(watched.tp2),
+      tp3: toOptNum(watched.tp3),
+      tp4: toOptNum(watched.tp4),
+      tp1_result: watched.tp1_result ?? null,
+      tp2_result: watched.tp2_result ?? null,
+      tp3_result: watched.tp3_result ?? null,
+      tp4_result: watched.tp4_result ?? null,
+      num_positions: watched.num_positions ?? 1,
+      split_risk: watched.split_risk ?? false,
     };
 
     return computeTradeFields(tradeData);
   }, [
-    watchedFields.entry_price,
-    watchedFields.exit_price,
-    watchedFields.quantity,
-    watchedFields.fees,
-    watchedFields.stop_loss,
-    watchedFields.take_profit,
-    watchedFields.direction,
+    watched.entry_price,
+    watched.exit_price,
+    watched.quantity,
+    watched.fees,
+    watched.stop_loss,
+    watched.take_profit,
+    watched.tp1,
+    watched.tp2,
+    watched.tp3,
+    watched.tp4,
+    watched.tp1_result,
+    watched.tp2_result,
+    watched.tp3_result,
+    watched.tp4_result,
+    watched.num_positions,
+    watched.split_risk,
+    direction,
   ]);
+
+  const applyParsedSignal = useCallback(() => {
+    const parsed = parseSignalText(pasteText);
+    setPasteWarnings(parsed.warnings);
+
+    if (parsed.instrument) {
+      setValue("instrument", parsed.instrument, { shouldValidate: true });
+      setValue("asset_type", inferAssetType(parsed.instrument), { shouldValidate: true });
+    }
+    if (parsed.direction) {
+      setValue("direction", parsed.direction, { shouldValidate: true });
+    }
+    if (parsed.entry_price != null) {
+      setValue("entry_price", parsed.entry_price, { shouldValidate: true });
+    }
+    if (parsed.entry_price_high != null) {
+      setValue("entry_price_high", parsed.entry_price_high, { shouldValidate: true });
+    }
+    if (parsed.stop_loss != null) {
+      setValue("stop_loss", parsed.stop_loss, { shouldValidate: true });
+    }
+    if (parsed.tp1 != null) setValue("tp1", parsed.tp1, { shouldValidate: true });
+    if (parsed.tp2 != null) setValue("tp2", parsed.tp2, { shouldValidate: true });
+    if (parsed.tp3 != null) setValue("tp3", parsed.tp3, { shouldValidate: true });
+    if (parsed.tp4 != null) setValue("tp4", parsed.tp4, { shouldValidate: true });
+    if (parsed.tp4_trailing) {
+      setValue("tp4_trailing", true, { shouldValidate: true });
+    }
+
+    const filled = [
+      parsed.instrument && "instrument",
+      parsed.direction && "direction",
+      parsed.entry_price != null && "entry",
+      parsed.stop_loss != null && "SL",
+      (parsed.tp1 != null || parsed.tp2 != null || parsed.tp3 != null || parsed.tp4 != null) && "TPs",
+    ].filter(Boolean);
+
+    if (filled.length === 0) {
+      toast.error("Could not parse anything — please check the signal format");
+      return;
+    }
+
+    toast.success(`Parsed: ${filled.join(", ")} — review & submit`);
+    setActiveTab("manual");
+  }, [pasteText, setValue]);
+
+  const onInstrumentSelect = useCallback(
+    (value: string) => {
+      const upper = value.toUpperCase();
+      setValue("instrument", upper, { shouldValidate: true });
+      setValue("asset_type", inferAssetType(upper), { shouldValidate: true });
+      setInstrumentOpen(false);
+    },
+    [setValue],
+  );
+
+  const toggleTpResult = useCallback(
+    (key: "tp1_result" | "tp2_result" | "tp3_result" | "tp4_result", value: TPResult) => {
+      const current = watch(key);
+      setValue(key, current === value ? undefined : value, { shouldValidate: true });
+    },
+    [setValue, watch],
+  );
+
+  const onReset = useCallback(() => {
+    reset({
+      asset_type: "forex",
+      direction: "buy",
+      order_type: "market",
+      fees: 0,
+      quantity: 1,
+      tp4_trailing: false,
+      num_positions: 1,
+      split_risk: false,
+      tags: [],
+      source: "manual",
+      entry_time: toLocalInputValue(new Date().toISOString()),
+    });
+    setPasteText("");
+    setPasteWarnings([]);
+  }, [reset]);
 
   const onSubmit = useCallback(
     async (data: FormInput) => {
       // No client-side auth gate: the browser Supabase client can show
       // `user === null` during a cookie-refresh blip even though the server
       // session is perfectly valid. `/api/trades` already authenticates via
-      // server cookies and RLS enforces per-user isolation, so we rely on
-      // those two layers and surface a real 401 (if any) via response.ok.
+      // server cookies and RLS enforces per-user isolation.
       setSubmitting(true);
 
       try {
@@ -194,6 +388,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           return;
         }
 
+        // Keep legacy take_profit in sync with tp1 so old UI / reports keep
+        // working. When the user explicitly set take_profit in edit mode we
+        // prefer tp1 (the new canonical field).
+        const tp1Value = data.tp1 ?? null;
+        const legacyTp = tp1Value ?? data.take_profit ?? null;
+
         const payload = {
           ...data,
           tags: tagsValue,
@@ -202,7 +402,21 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           exit_price: data.exit_price || null,
           lot_size: data.lot_size || null,
           stop_loss: data.stop_loss || null,
-          take_profit: data.take_profit || null,
+          sl_pips: data.sl_pips || null,
+          take_profit: legacyTp,
+          tp1: tp1Value,
+          tp2: data.tp2 || null,
+          tp3: data.tp3 || null,
+          tp4: data.tp4 || null,
+          tp1_pips: data.tp1_pips || null,
+          tp2_pips: data.tp2_pips || null,
+          tp3_pips: data.tp3_pips || null,
+          tp4_pips: data.tp4_pips || null,
+          tp1_result: data.tp1_result ?? null,
+          tp2_result: data.tp2_result ?? null,
+          tp3_result: data.tp3_result ?? null,
+          tp4_result: data.tp4_result ?? null,
+          entry_price_high: data.entry_price_high || null,
           notes: data.notes || null,
         };
 
@@ -237,23 +451,70 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      {/* Section 1: Trade Details */}
+      {/* Tabs: Manual vs Paste Signal */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "manual" | "paste")}
+      >
+        <TabsList>
+          <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+          <TabsTrigger value="paste">Paste Signal</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="paste" className="mt-4">
+          <Card className="border-border/40 bg-card/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Paste signal text
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Textarea
+                rows={6}
+                placeholder={
+                  "e.g.\nBUY XAUUSD 2340 SL 2330 TP1 2350 TP2 2360 TP3 2370 TP4 OPEN"
+                }
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+              />
+              {pasteWarnings.length > 0 && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-400 space-y-1">
+                  {pasteWarnings.map((w) => (
+                    <p key={w}>• {w}</p>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPasteText("");
+                    setPasteWarnings([]);
+                  }}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  onClick={applyParsedSignal}
+                  disabled={!pasteText.trim()}
+                >
+                  Parse & fill form
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Row 1: Symbol / Direction / Order Type / Date */}
       <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Trade Details
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Instrument Combobox */}
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="instrument"
-                required
-                help="The asset you traded — e.g. EURUSD, BTCUSD, XAUUSD. Start typing to search the catalog."
-              >
-                Instrument
+              <FieldLabel required help="The asset you traded. Start typing to search.">
+                Symbol
               </FieldLabel>
               <Popover open={instrumentOpen} onOpenChange={setInstrumentOpen}>
                 <PopoverTrigger
@@ -266,24 +527,19 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                     />
                   }
                 >
-                  {watchedFields.instrument || "Select instrument..."}
+                  {watched.instrument || "Select symbol..."}
                 </PopoverTrigger>
                 <PopoverContent className="w-[240px] p-0" align="start">
                   <Command>
-                    <CommandInput placeholder="Search instruments..." />
+                    <CommandInput placeholder="Search symbols..." />
                     <CommandList>
-                      <CommandEmpty>No instrument found.</CommandEmpty>
+                      <CommandEmpty>No symbol found.</CommandEmpty>
                       <CommandGroup>
                         {ALL_INSTRUMENTS.map((inst) => (
                           <CommandItem
                             key={inst}
                             value={inst}
-                            onSelect={(value) => {
-                              setValue("instrument", value.toUpperCase(), {
-                                shouldValidate: true,
-                              });
-                              setInstrumentOpen(false);
-                            }}
+                            onSelect={onInstrumentSelect}
                           >
                             {inst}
                           </CommandItem>
@@ -299,42 +555,8 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
 
-            {/* Asset Type */}
             <div className="space-y-2">
-              <FieldLabel
-                required
-                help="Category of the instrument. Forex = currency pairs. Crypto = digital coins. Metal = gold/silver. Commodity = oil/gas/agri. Index = stock indices like SPX."
-              >
-                Asset Type
-              </FieldLabel>
-              <Select
-                defaultValue={defaultValues.asset_type}
-                onValueChange={(value) =>
-                  setValue("asset_type", value as AssetType, { shouldValidate: true })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSET_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.asset_type && (
-                <p className="text-xs text-destructive">{errors.asset_type.message}</p>
-              )}
-            </div>
-
-            {/* Direction Toggle */}
-            <div className="space-y-2">
-              <FieldLabel
-                required
-                help="BUY (Long) — you profit when price rises above entry. SELL (Short) — you profit when price drops below entry."
-              >
+              <FieldLabel required help="BUY (long) profits when price rises. SELL (short) profits when price falls.">
                 Direction
               </FieldLabel>
               <div className="flex gap-2">
@@ -343,12 +565,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                   variant={direction === "buy" ? "default" : "outline"}
                   className={cn(
                     "flex-1 font-semibold",
-                    direction === "buy" &&
-                      "bg-emerald-600 hover:bg-emerald-700 text-white",
+                    direction === "buy" && "bg-emerald-600 hover:bg-emerald-700 text-white",
                   )}
-                  onClick={() =>
-                    setValue("direction", "buy", { shouldValidate: true })
-                  }
+                  onClick={() => setValue("direction", "buy", { shouldValidate: true })}
                 >
                   BUY
                 </Button>
@@ -357,37 +576,67 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                   variant={direction === "sell" ? "default" : "outline"}
                   className={cn(
                     "flex-1 font-semibold",
-                    direction === "sell" &&
-                      "bg-red-600 hover:bg-red-700 text-white",
+                    direction === "sell" && "bg-red-600 hover:bg-red-700 text-white",
                   )}
-                  onClick={() =>
-                    setValue("direction", "sell", { shouldValidate: true })
-                  }
+                  onClick={() => setValue("direction", "sell", { shouldValidate: true })}
                 >
                   SELL
                 </Button>
               </div>
               <input type="hidden" {...register("direction")} />
             </div>
+
+            <div className="space-y-2">
+              <FieldLabel required help="MARKET = fill at current price. LIMIT = fill only at your price or better. STOP = trigger once price passes your level.">
+                Order Type
+              </FieldLabel>
+              <Select
+                defaultValue={defaultValues.order_type}
+                onValueChange={(v) =>
+                  setValue("order_type", v as OrderType, { shouldValidate: true })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ORDER_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel htmlFor="entry_time" required help="When you opened the trade. Used to bucket by day/week/hour on the calendar + stats.">
+                Date
+              </FieldLabel>
+              <Input
+                id="entry_time"
+                type="datetime-local"
+                {...register("entry_time")}
+              />
+              {errors.entry_time && (
+                <p className="text-xs text-destructive">{errors.entry_time.message}</p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Section 2: Prices */}
+      {/* Row 2: Entry Low / Entry High / SL / SL Pips */}
       <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-4">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Prices
+            Entry & Stop Loss
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="entry_price"
-                required
-                help="The price at which you entered the trade. Use the exact fill price from your broker for accurate P&L."
-              >
+              <FieldLabel htmlFor="entry_price" required help="Fill price (or lower bound of a range).">
                 Entry Price
               </FieldLabel>
               <Input
@@ -402,26 +651,23 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="exit_price"
-                help="The price at which you closed the trade. Leave blank if the trade is still open — P&L will be computed once you set this."
-              >
-                Exit Price
+              <FieldLabel htmlFor="entry_price_high" help="Optional — upper bound for range entries like '1.2300 – 1.2310'.">
+                Entry High
               </FieldLabel>
               <Input
-                id="exit_price"
+                id="entry_price_high"
                 type="number"
                 step="any"
-                placeholder="0.00"
-                {...register("exit_price")}
+                placeholder="optional"
+                {...register("entry_price_high")}
               />
+              {errors.entry_price_high && (
+                <p className="text-xs text-destructive">{errors.entry_price_high.message}</p>
+              )}
             </div>
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="stop_loss"
-                help="Price that would auto-close the trade to cap your loss. Must be BELOW entry for BUY trades, ABOVE entry for SELL trades."
-              >
-                Stop Loss
+              <FieldLabel htmlFor="stop_loss" help="Price that closes the trade for a loss. Below entry for BUY, above for SELL.">
+                SL Price
               </FieldLabel>
               <Input
                 id="stop_loss"
@@ -435,42 +681,172 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="take_profit"
-                help="Price that would auto-close the trade to lock in profit. Must be ABOVE entry for BUY trades, BELOW entry for SELL trades."
-              >
-                Take Profit
+              <FieldLabel htmlFor="sl_pips" help="Distance to SL in pips/points. Informational — doesn't affect PnL math.">
+                SL Pips / Pts
               </FieldLabel>
               <Input
-                id="take_profit"
+                id="sl_pips"
                 type="number"
                 step="any"
-                placeholder="0.00"
-                {...register("take_profit")}
+                placeholder="0"
+                {...register("sl_pips")}
               />
-              {errors.take_profit && (
-                <p className="text-xs text-destructive">{errors.take_profit.message}</p>
-              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Section 3: Size */}
+      {/* Take Profits grid */}
       <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-4">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Size
+            Take Profits
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {TP_PALETTE.map((tp) => {
+              const isTp4 = tp.key === "tp4";
+              const disablePrice = isTp4 && tp4Trailing;
+              return (
+                <div
+                  key={tp.key}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-3 transition-colors",
+                    tp.accent,
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", tp.badge)}>
+                      {tp.label}
+                    </span>
+                    {isTp4 && (
+                      <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Checkbox
+                          checked={!!tp4Trailing}
+                          onCheckedChange={(v) =>
+                            setValue("tp4_trailing", !!v, { shouldValidate: true })
+                          }
+                        />
+                        Open / Trail
+                      </label>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                      Price
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder={disablePrice ? "trailing" : "0.00"}
+                      disabled={disablePrice}
+                      {...register(tp.key)}
+                    />
+                    {errors[tp.key] && (
+                      <p className="text-xs text-destructive">{errors[tp.key]?.message as string}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                      Pips / Pts
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder="0"
+                      {...register(tp.pipsKey)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                      Outcome
+                    </label>
+                    <div className="grid grid-cols-4 gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={resultsByKey[tp.key] == null ? "secondary" : "outline"}
+                        className="h-7 px-0 text-[11px]"
+                        onClick={() =>
+                          setValue(tp.resultKey, undefined, { shouldValidate: true })
+                        }
+                      >
+                        —
+                      </Button>
+                      {TP_RESULTS.map((r) => {
+                        const isSelected = resultsByKey[tp.key] === r.value;
+                        return (
+                          <Button
+                            key={r.value}
+                            type="button"
+                            size="sm"
+                            variant={isSelected ? "default" : "outline"}
+                            className={cn(
+                              "h-7 px-0 text-[11px] font-semibold",
+                              isSelected && r.value === "hit" && "bg-emerald-600 hover:bg-emerald-700 text-white",
+                              isSelected && r.value === "be" && "bg-amber-500 hover:bg-amber-600 text-white",
+                              isSelected && r.value === "sl" && "bg-red-600 hover:bg-red-700 text-white",
+                            )}
+                            onClick={() => toggleTpResult(tp.resultKey, r.value)}
+                          >
+                            {isSelected && <Check className="size-3 mr-0.5" />}
+                            {r.label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Position structure */}
+      <Card className="border-border/40 bg-card/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Position
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={!!splitRisk}
+              onCheckedChange={(v) =>
+                setValue("split_risk", !!v, { shouldValidate: true })
+              }
+            />
+            <div className="flex-1">
+              <label className="text-sm font-medium">Split risk across positions</label>
+              <p className="text-xs text-muted-foreground">
+                Each TP closes 1/N of the position, where N = number of positions.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="quantity"
-                required
-                help="Number of units / contracts / shares traded. For forex, this is typically the lot size × contract size (e.g. 0.1 lots = 10,000 units on a standard pair)."
-              >
+              <FieldLabel htmlFor="num_positions" help="How many slices to split the risk into (1..10).">
+                Number of Positions
+              </FieldLabel>
+              <Input
+                id="num_positions"
+                type="number"
+                step="1"
+                min="1"
+                max="10"
+                disabled={!splitRisk}
+                {...register("num_positions", { valueAsNumber: true })}
+              />
+              {errors.num_positions && (
+                <p className="text-xs text-destructive">{errors.num_positions.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="quantity" required help="Total units / contracts on the trade. Used for P&L math.">
                 Quantity
               </FieldLabel>
               <Input
@@ -485,10 +861,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="lot_size"
-                help="Broker-facing position size (e.g. 0.01 micro, 0.1 mini, 1.0 standard in forex). Optional — stored for reporting only; doesn't change P&L math."
-              >
+              <FieldLabel htmlFor="lot_size" help="Broker-facing lot size. Optional, for reporting.">
                 Lot Size
               </FieldLabel>
               <Input
@@ -500,10 +873,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <FieldLabel
-                htmlFor="fees"
-                help="Total commissions, spread, and swap charges paid on this trade. Deducted from P&L so your numbers reflect real net performance."
-              >
+              <FieldLabel htmlFor="fees" help="Commissions + spread + swap. Deducted from P&L.">
                 Fees
               </FieldLabel>
               <Input
@@ -518,92 +888,41 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         </CardContent>
       </Card>
 
-      {/* Section 4: Time */}
+      {/* Notes + Tags */}
       <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Time
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <FieldLabel
-                htmlFor="entry_time"
-                required
-                help="When you opened the trade, in your local time. Used to bucket trades on the calendar, equity curve, and by-hour stats."
-              >
-                Entry Time
-              </FieldLabel>
-              <Input
-                id="entry_time"
-                type="datetime-local"
-                {...register("entry_time")}
-              />
-              {errors.entry_time && (
-                <p className="text-xs text-destructive">{errors.entry_time.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <FieldLabel
-                htmlFor="exit_time"
-                help="When you closed the trade. Leave blank if still open. Hold duration = exit time − entry time."
-              >
-                Exit Time
-              </FieldLabel>
-              <Input
-                id="exit_time"
-                type="datetime-local"
-                {...register("exit_time")}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Section 5: Notes & Tags */}
-      <Card className="border-border/40 bg-card/50">
-        <CardHeader className="pb-4">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Notes
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <FieldLabel
-              htmlFor="notes"
-              help="Your rationale, setup, emotions, or post-trade review. Optional — but the traders who keep notes improve fastest."
-            >
-              Notes
+            <FieldLabel htmlFor="notes" help="Rationale, setup, emotions. Optional — notes turn one trade into a lesson.">
+              Trade Notes
             </FieldLabel>
             <Textarea
               id="notes"
-              placeholder="Trade rationale, observations..."
+              placeholder="Rationale, setup, observations..."
               rows={4}
               {...register("notes")}
             />
           </div>
           <div className="space-y-2">
-            <FieldLabel
-              htmlFor="tags"
-              help="Comma-separated labels for grouping & filtering — e.g. 'breakout, trend, news'. Used by the Journal filters and AI Insights to compare tagged vs untagged performance."
-            >
+            <FieldLabel htmlFor="tags" help="Comma-separated labels — e.g. 'breakout, trend, news'.">
               Tags
             </FieldLabel>
             <Input
               id="tags"
-              placeholder="breakout, trend, scalp (comma-separated)"
+              placeholder="breakout, trend, scalp"
               defaultValue={trade?.tags.join(", ") ?? ""}
               {...register("tags" as never)}
             />
-            <p className="text-xs text-muted-foreground">
-              Separate tags with commas
-            </p>
+            <p className="text-xs text-muted-foreground">Separate tags with commas</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* PnL Preview */}
+      {/* Preview */}
       {preview && (
         <>
           <Separator />
@@ -669,6 +988,12 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                   </p>
                 </div>
               </div>
+              {splitRisk && numPositions != null && numPositions > 1 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Risk split across {numPositions} positions — each filled TP closes 1/
+                  {numPositions} of the trade.
+                </p>
+              )}
             </CardContent>
           </Card>
         </>
@@ -676,19 +1001,15 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
       {/* Submit */}
       <div className="flex justify-end gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.back()}
-        >
-          Cancel
+        <Button type="button" variant="outline" onClick={onReset}>
+          Reset
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting
             ? "Saving..."
             : isEditMode
               ? "Update Trade"
-              : "Create Trade"}
+              : "Log Trade"}
         </Button>
       </div>
     </form>

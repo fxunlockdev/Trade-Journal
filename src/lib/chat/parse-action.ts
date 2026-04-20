@@ -14,18 +14,50 @@ const flexibleDatetime = z
     message: "entry_time must be a parseable date/time string",
   });
 
+/**
+ * Trade-action schema for AI-produced JSON.
+ *
+ * Keep the core fields (entry, SL, TP, direction, symbol) identical to the
+ * prior chat contract so prompts don't regress. The multi-TP + order-type
+ * fields are appended as OPTIONAL pass-throughs — if the model emits them we
+ * accept them; if not, the server still writes a valid single-TP trade and
+ * auto-syncs `take_profit → tp1` (see `/api/chat/route.ts#createTradeFromAction`).
+ */
+const tpResultEnum = z.enum(["hit", "be", "sl"]);
+const orderTypeEnum = z.enum(["market", "limit", "stop"]);
+
 const tradeActionSchema = z.object({
   action: z.literal("create_trade"),
   data: z.object({
     instrument: z.string().min(1),
     asset_type: z.enum(["forex", "crypto", "metal", "commodity", "index"]),
     direction: z.enum(["buy", "sell"]),
+    order_type: orderTypeEnum.optional(),
     entry_price: z.coerce.number().positive(),
+    entry_price_high: z.coerce.number().positive().nullable().optional(),
     exit_price: z.coerce.number().positive().nullable().optional(),
     quantity: z.coerce.number().positive().default(1),
     lot_size: z.coerce.number().positive().nullable().optional(),
     stop_loss: z.coerce.number().positive().nullable().optional(),
+    sl_pips: z.coerce.number().nonnegative().nullable().optional(),
+    // Legacy single-TP — still fully supported.
     take_profit: z.coerce.number().positive().nullable().optional(),
+    // Multi-TP (optional, additive).
+    tp1: z.coerce.number().positive().nullable().optional(),
+    tp2: z.coerce.number().positive().nullable().optional(),
+    tp3: z.coerce.number().positive().nullable().optional(),
+    tp4: z.coerce.number().positive().nullable().optional(),
+    tp1_pips: z.coerce.number().nonnegative().nullable().optional(),
+    tp2_pips: z.coerce.number().nonnegative().nullable().optional(),
+    tp3_pips: z.coerce.number().nonnegative().nullable().optional(),
+    tp4_pips: z.coerce.number().nonnegative().nullable().optional(),
+    tp1_result: tpResultEnum.nullable().optional(),
+    tp2_result: tpResultEnum.nullable().optional(),
+    tp3_result: tpResultEnum.nullable().optional(),
+    tp4_result: tpResultEnum.nullable().optional(),
+    tp4_trailing: z.coerce.boolean().optional(),
+    num_positions: z.coerce.number().int().min(1).max(10).optional(),
+    split_risk: z.coerce.boolean().optional(),
     fees: z.coerce.number().min(0).optional().default(0),
     entry_time: flexibleDatetime,
     exit_time: flexibleDatetime.nullable().optional(),
