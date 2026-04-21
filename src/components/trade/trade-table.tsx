@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Trade, TPResult } from "@/types/database";
-import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
+import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ type SortKey =
   | "stop_loss"
   | "tps_hit_pct"
   | "risk_reward_ratio"
-  | "pnl_absolute"
+  | "pips"
   | "status"
   | "source"
   | "mode";
@@ -193,6 +194,45 @@ function formatPrice(n: number): string {
 }
 
 /**
+ * Risk-to-reward display. Drops trailing zeros so clean ratios render as
+ * `1:3` instead of `1:3.00`, while fractional ratios keep just enough
+ * precision to be readable (`1:3.5`, `1:2.75`, `1:1.12`). Matches the client
+ * mock — the table should *not* look like a scientific output when the
+ * numbers are tidy.
+ */
+function formatRR(ratio: number): string {
+  // Round to 2dp to kill float noise (1.9999999 → 2), then strip zeros.
+  const rounded = Math.round(ratio * 100) / 100;
+  // toString already drops trailing zeros: 3 → "3", 3.5 → "3.5", 3.52 → "3.52".
+  return `1:${rounded}`;
+}
+
+/**
+ * Realized pips for a closed trade. Null for open trades (no exit). We look
+ * up the per-instrument `pipSize` so forex majors, JPY pairs, XAUUSD, indices,
+ * and crypto CFDs all use their correct pip convention.
+ *
+ * Sign convention: positive = trade made money, negative = trade lost money.
+ * For a buy, (exit − entry) / pipSize; for a sell, flip the sign.
+ */
+function computePips(trade: Trade): number | null {
+  if (trade.exit_price === null) return null;
+  const spec = getInstrumentSpec(trade.instrument);
+  if (spec.pipSize <= 0) return null;
+  const rawMove = trade.exit_price - trade.entry_price;
+  const directional = trade.direction === "buy" ? rawMove : -rawMove;
+  return directional / spec.pipSize;
+}
+
+function formatPips(n: number): string {
+  // Display as integer — pip fractions below 1 aren't useful at the table glance,
+  // and larger moves are always whole-pip rounded in broker statements.
+  const rounded = Math.round(n);
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded}`;
+}
+
+/**
  * Build a sortable scalar value for each column. Open-trade nulls sort last
  * in descending mode (which is the common user expectation: "show me the
  * biggest wins first, leave open trades to the bottom").
@@ -206,7 +246,7 @@ function getSortValue(trade: Trade, key: SortKey): number | string {
   if (key === "stop_loss") return trade.stop_loss ?? -Infinity;
   if (key === "tps_hit_pct") return summarizeTps(trade).pct;
   if (key === "risk_reward_ratio") return trade.risk_reward_ratio ?? -Infinity;
-  if (key === "pnl_absolute") return trade.pnl_absolute ?? -Infinity;
+  if (key === "pips") return computePips(trade) ?? -Infinity;
   if (key === "status") return deriveStatus(trade, summarizeTps(trade));
   if (key === "source") return trade.source;
   if (key === "mode") return trade.split_risk ? "split" : "single";
@@ -317,7 +357,7 @@ export function TradeTable({ trades }: TradeTableProps) {
             <SortHeader label="SL" sortKey="stop_loss" className="text-right" />
             <SortHeader label="TPs Hit" sortKey="tps_hit_pct" className="text-right" />
             <SortHeader label="R:R" sortKey="risk_reward_ratio" className="text-right" />
-            <SortHeader label="P&L" sortKey="pnl_absolute" className="text-right" />
+            <SortHeader label="Pips" sortKey="pips" className="text-right" />
             <SortHeader label="Status" sortKey="status" />
             <SortHeader label="Source" sortKey="source" />
             <SortHeader label="Mode" sortKey="mode" />
@@ -329,8 +369,7 @@ export function TradeTable({ trades }: TradeTableProps) {
             const tps = summarizeTps(trade);
             const status = deriveStatus(trade, tps);
             const style = statusStyle(status);
-            const isProfitable =
-              trade.pnl_absolute !== null && trade.pnl_absolute >= 0;
+            const pips = computePips(trade);
             const isOpen = status === "open";
             const mode = trade.split_risk ? "Split" : "Single";
 
@@ -386,22 +425,20 @@ export function TradeTable({ trades }: TradeTableProps) {
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">
                   {trade.risk_reward_ratio !== null
-                    ? `1:${trade.risk_reward_ratio.toFixed(2)}`
+                    ? formatRR(trade.risk_reward_ratio)
                     : "—"}
                 </TableCell>
                 <TableCell className="text-right">
-                  {isOpen ? (
+                  {isOpen || pips === null ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
                     <span
                       className={cn(
                         "font-semibold tabular-nums",
-                        isProfitable ? "text-emerald-400" : "text-red-400",
+                        pips >= 0 ? "text-emerald-400" : "text-red-400",
                       )}
                     >
-                      {trade.pnl_absolute !== null
-                        ? `${isProfitable ? "+" : ""}${formatCurrency(trade.pnl_absolute)}`
-                        : "—"}
+                      {formatPips(pips)}
                     </span>
                   )}
                 </TableCell>

@@ -6,7 +6,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, Star, X } from "lucide-react";
+
+import { useFavoriteInstruments } from "@/hooks/use-favorite-instruments";
 
 import { createTradeFormSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
@@ -52,6 +54,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -152,7 +155,17 @@ function toLocalInputValue(iso: string): string {
 export function TradeForm({ trade, onSuccess }: TradeFormProps) {
   const router = useRouter();
   const [instrumentOpen, setInstrumentOpen] = useState(false);
+  const favoriteInstruments = useFavoriteInstruments();
   const [submitting, setSubmitting] = useState(false);
+
+  // Reorder: favorites first (in the order the user starred them), then every
+  // non-favorited instrument from the canonical list. Memoized so toggling a
+  // star doesn't re-sort on every render during the optimistic update.
+  const orderedInstruments = useMemo<readonly string[]>(() => {
+    const favSet = new Set(favoriteInstruments.favorites);
+    const rest = ALL_INSTRUMENTS.filter((inst) => !favSet.has(inst));
+    return [...favoriteInstruments.favorites, ...rest];
+  }, [favoriteInstruments.favorites]);
   const [activeTab, setActiveTab] = useState<"manual" | "paste">("manual");
   const [pasteText, setPasteText] = useState("");
   const [pasteWarnings, setPasteWarnings] = useState<readonly string[]>([]);
@@ -645,21 +658,79 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
                 >
                   {watched.instrument || "Select symbol..."}
                 </PopoverTrigger>
-                <PopoverContent className="w-[240px] p-0" align="start">
+                <PopoverContent className="w-[260px] p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Search symbols..." />
                     <CommandList>
                       <CommandEmpty>No symbol found.</CommandEmpty>
-                      <CommandGroup>
-                        {ALL_INSTRUMENTS.map((inst) => (
-                          <CommandItem
-                            key={inst}
-                            value={inst}
-                            onSelect={onInstrumentSelect}
-                          >
-                            {inst}
-                          </CommandItem>
-                        ))}
+                      {favoriteInstruments.favorites.length > 0 && (
+                        <>
+                          <CommandGroup heading="Favourites">
+                            {favoriteInstruments.favorites.map((inst) => (
+                              <CommandItem
+                                key={`fav-${inst}`}
+                                value={inst}
+                                onSelect={onInstrumentSelect}
+                                className="group"
+                              >
+                                <span className="flex-1">{inst}</span>
+                                <button
+                                  type="button"
+                                  aria-label={`Unfavourite ${inst}`}
+                                  className="ml-2 p-0.5 rounded hover:bg-muted"
+                                  onPointerDown={(e) => {
+                                    // Prevent cmdk from selecting the item when
+                                    // the user clicks the star — otherwise we'd
+                                    // fill the form with this instrument on unstar.
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void favoriteInstruments.toggle(inst);
+                                  }}
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                </button>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                          <CommandSeparator />
+                        </>
+                      )}
+                      <CommandGroup heading="All Symbols">
+                        {orderedInstruments
+                          .filter(
+                            (inst) =>
+                              !favoriteInstruments.favorites.includes(inst),
+                          )
+                          .map((inst) => (
+                            <CommandItem
+                              key={inst}
+                              value={inst}
+                              onSelect={onInstrumentSelect}
+                              className="group"
+                            >
+                              <span className="flex-1">{inst}</span>
+                              <button
+                                type="button"
+                                aria-label={`Favourite ${inst}`}
+                                className="ml-2 p-0.5 rounded opacity-50 hover:opacity-100 hover:bg-muted transition-opacity"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void favoriteInstruments.toggle(inst);
+                                }}
+                              >
+                                <Star className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                            </CommandItem>
+                          ))}
                       </CommandGroup>
                     </CommandList>
                   </Command>
