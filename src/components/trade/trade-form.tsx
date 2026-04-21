@@ -21,7 +21,7 @@ import {
   INDICES,
   COMMODITIES,
 } from "@/lib/constants/instruments";
-import { cn, formatCurrency, formatPercentage } from "@/lib/utils";
+import { cn, formatCurrency, formatPercentage, formatRR } from "@/lib/utils";
 import type {
   Trade,
   AssetType,
@@ -564,7 +564,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         // matches what the preview card shows so there's no surprise.
         const rr = preview?.risk_reward_ratio ?? null;
         const base = isEditMode ? "Trade updated" : "Trade logged";
-        const withRr = rr !== null ? `${base} · R:R 1:${rr.toFixed(2)}` : base;
+        const withRr = rr !== null ? `${base} · R:R ${formatRR(rr)}` : base;
         toast.success(withRr);
         onSuccess?.();
         router.push("/journal");

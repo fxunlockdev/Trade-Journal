@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Trade, TPResult } from "@/types/database";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatRR } from "@/lib/utils";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 
 import { Badge } from "@/components/ui/badge";
@@ -191,20 +191,6 @@ function sourceLabel(src: Trade["source"]): string {
 function formatPrice(n: number): string {
   // Use 5 decimals for small-value FX pairs and 2 for everything else.
   return n.toFixed(n < 10 ? 5 : 2);
-}
-
-/**
- * Risk-to-reward display. Drops trailing zeros so clean ratios render as
- * `1:3` instead of `1:3.00`, while fractional ratios keep just enough
- * precision to be readable (`1:3.5`, `1:2.75`, `1:1.12`). Matches the client
- * mock — the table should *not* look like a scientific output when the
- * numbers are tidy.
- */
-function formatRR(ratio: number): string {
-  // Round to 2dp to kill float noise (1.9999999 → 2), then strip zeros.
-  const rounded = Math.round(ratio * 100) / 100;
-  // toString already drops trailing zeros: 3 → "3", 3.5 → "3.5", 3.52 → "3.52".
-  return `1:${rounded}`;
 }
 
 /**

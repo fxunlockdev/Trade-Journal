@@ -28,3 +28,15 @@ export function formatDateTime(date: string | Date): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return format(d, "MMM dd, yyyy HH:mm");
 }
+
+/**
+ * Format a risk:reward ratio dropping unnecessary trailing zeros.
+ * 3     → "1:3"
+ * 3.5   → "1:3.5"
+ * 2.75  → "1:2.75"
+ * Rounds to 2 dp first to kill float noise (1.9999... → 2).
+ */
+export function formatRR(ratio: number): string {
+  const rounded = Math.round(ratio * 100) / 100;
+  return `1:${rounded}`;
+}

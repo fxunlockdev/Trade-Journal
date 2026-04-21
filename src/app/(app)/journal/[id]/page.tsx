@@ -7,6 +7,7 @@ import {
   formatCurrency,
   formatPercentage,
   formatDateTime,
+  formatRR,
 } from "@/lib/utils";
 
 import { Badge } from "@/components/ui/badge";
@@ -254,7 +255,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                 <p className="text-xs text-muted-foreground mb-1">R:R Ratio</p>
                 <p className="text-xl font-bold tabular-nums text-foreground">
                   {t.risk_reward_ratio !== null
-                    ? `1:${t.risk_reward_ratio.toFixed(2)}`
+                    ? formatRR(t.risk_reward_ratio)
                     : "---"}
                 </p>
               </div>
