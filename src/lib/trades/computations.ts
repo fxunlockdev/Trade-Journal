@@ -184,6 +184,14 @@ export function computeTradeFields<T extends TradeForComputation>(
   readonly pnl_percentage: number | null;
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
+  /**
+   * Effective exit price. For legacy trades this is just `trade.exit_price`.
+   * For multi-TP trades with at least one concrete tp_result, this is the
+   * quantity-weighted exit derived from those results — so downstream code
+   * that still keys off `exit_price` (analytics, equity curve, Pips column)
+   * keeps working without needing to know about TP mechanics.
+   */
+  readonly exit_price: number | null;
 } {
   // First TP (for R:R reference). Prefer tp1 > take_profit legacy fallback.
   const primaryTp = trade.tp1 ?? trade.take_profit ?? null;
@@ -231,6 +239,10 @@ export function computeTradeFields<T extends TradeForComputation>(
         pnl_percentage: pnlPercentage,
         risk_reward_ratio: riskRewardRatio,
         r_multiple: rMultiple,
+        // Persist the weighted TP exit as `exit_price` so downstream
+        // readers (Pips column, equity curve, drawdown chart) all see a
+        // concrete closed price without needing TP-aware logic.
+        exit_price: multi.price,
       };
     }
   }
@@ -251,6 +263,7 @@ export function computeTradeFields<T extends TradeForComputation>(
             )
           : null,
       r_multiple: null,
+      exit_price: null,
     };
   }
 
@@ -294,5 +307,6 @@ export function computeTradeFields<T extends TradeForComputation>(
     pnl_percentage: pnlPercentage,
     risk_reward_ratio: riskRewardRatio,
     r_multiple: rMultiple,
+    exit_price: trade.exit_price,
   };
 }

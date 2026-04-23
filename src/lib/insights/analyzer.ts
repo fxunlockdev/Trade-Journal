@@ -294,8 +294,17 @@ function buildRecentTradesText(closedByTime: readonly Trade[]): string {
 export function computeTradingStats(
   trades: readonly Trade[]
 ): TradingStats {
-  const closedTrades = trades.filter((t) => t.exit_price !== null);
-  const openTrades = trades.filter((t) => t.exit_price === null);
+  // "Closed" = has a computed pnl_absolute. This covers BOTH legacy
+  // single-exit_price trades AND multi-TP trades whose pnl was derived from
+  // tp_results (exit_price stays null in that case). Prior version filtered
+  // on exit_price only and silently excluded every TP-closed trade from
+  // every stat — turning a winning journal into "0 closed trades".
+  const closedTrades = trades.filter(
+    (t) => t.pnl_absolute !== null && Number.isFinite(t.pnl_absolute),
+  );
+  const openTrades = trades.filter(
+    (t) => t.pnl_absolute === null || !Number.isFinite(t.pnl_absolute),
+  );
 
   // Separate buckets — zero-PnL trades are breakeven, NOT losses. Classing
   // them as losses inflates sumLosses and drags profit factor unfairly.

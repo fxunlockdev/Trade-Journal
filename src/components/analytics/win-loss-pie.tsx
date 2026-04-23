@@ -44,8 +44,11 @@ function ChartTooltip({ active, payload }: CustomTooltipProps) {
 }
 
 export function WinLossPie({ trades }: WinLossPieProps) {
+  // "Closed" = has a computed pnl_absolute. Multi-TP trades close via
+  // tp_results (pnl populated, exit_price stays null), so filtering on
+  // exit_price would silently hide them from the pie chart.
   const closed = trades.filter(
-    (t) => t.exit_price !== null && t.pnl_absolute !== null,
+    (t) => t.pnl_absolute !== null && Number.isFinite(t.pnl_absolute),
   );
   // Strict classification — `losses = total - wins` previously absorbed
   // break-even trades (pnl === 0) into the loss bucket, distorting the pie.

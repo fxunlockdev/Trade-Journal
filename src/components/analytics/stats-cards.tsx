@@ -36,8 +36,10 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
   const profitFactor = computeProfitFactor(trades);
   const maxDrawdown = computeMaxDrawdown(trades);
 
+  // "Closed" just needs a computed pnl_absolute — multi-TP trades have it
+  // set from tp_results and never have an exit_price, but they ARE closed.
   const closedCount = trades.filter(
-    (t) => t.exit_price !== null && t.pnl_absolute !== null,
+    (t) => t.pnl_absolute !== null && Number.isFinite(t.pnl_absolute),
   ).length;
   const winCount = trades.filter(
     (t) => t.pnl_absolute !== null && t.pnl_absolute > 0,

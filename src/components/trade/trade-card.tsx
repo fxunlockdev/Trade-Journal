@@ -10,7 +10,9 @@ interface TradeCardProps {
 }
 
 export function TradeCard({ trade }: TradeCardProps) {
-  const isOpen = trade.exit_price === null;
+  // Use pnl_absolute as the canonical "closed" signal — trades closed via
+  // multi-TP results have it set even when exit_price is null.
+  const isOpen = trade.pnl_absolute === null;
   const isProfitable =
     trade.pnl_absolute !== null && trade.pnl_absolute >= 0;
 

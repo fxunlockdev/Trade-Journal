@@ -146,6 +146,11 @@ export async function PATCH(
         pnl_percentage: computed.pnl_percentage,
         risk_reward_ratio: computed.risk_reward_ratio,
         r_multiple: computed.r_multiple,
+        // Persist the computed effective exit_price. For multi-TP trades
+        // this captures the weighted exit derived from tp_results so Pips
+        // column, equity curve, and analytics all work. For legacy trades
+        // this is just the user-entered exit_price round-tripped.
+        exit_price: computed.exit_price,
       })
       .eq("id", id)
       .select()

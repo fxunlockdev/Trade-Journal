@@ -1,15 +1,22 @@
 import type { Trade } from "@/types/database";
 
+/**
+ * A trade is "closed" for analytics purposes when `pnl_absolute` is set.
+ * This is broader than "has exit_price" on purpose — multi-TP trades close
+ * via `tp1_result = "hit"`/etc. and never get a manual `exit_price`, but
+ * computeTradeFields fills in `pnl_absolute` from the TP results. The old
+ * gate (exit_price !== null) silently treated those as open, so dashboard
+ * stats came out as $0 / 0% / "0 closed trades" even with wins on screen.
+ */
 interface ClosedTrade {
   readonly pnl_absolute: number;
   readonly entry_time: string;
-  readonly exit_price: number;
 }
 
 function getClosedTrades(trades: readonly Trade[]): readonly ClosedTrade[] {
   return trades.filter(
-    (t): t is Trade & { pnl_absolute: number; exit_price: number } =>
-      t.exit_price !== null && t.pnl_absolute !== null,
+    (t): t is Trade & { pnl_absolute: number } =>
+      t.pnl_absolute !== null && Number.isFinite(t.pnl_absolute),
   );
 }
 

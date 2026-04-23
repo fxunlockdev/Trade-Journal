@@ -125,7 +125,18 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
   }
 
   const t = trade as Trade;
-  const isOpen = t.exit_price === null;
+  // Multi-TP trades close via tp_result="hit"/"be"/"sl" and may leave
+  // exit_price null. The concrete "is this trade closed" signal is
+  // pnl_absolute being populated. Fall back to exit_price for legacy paths.
+  const hasAnyTpResult =
+    t.tp1_result !== null ||
+    t.tp2_result !== null ||
+    t.tp3_result !== null ||
+    t.tp4_result !== null ||
+    t.tp5_result !== null ||
+    t.tp6_result !== null ||
+    t.tp7_result !== null;
+  const isOpen = t.pnl_absolute === null && t.exit_price === null && !hasAnyTpResult;
   const isProfitable = t.pnl_absolute !== null && t.pnl_absolute >= 0;
 
   // Compute which TP slots have any data (price, pips, or result). Falling
