@@ -604,17 +604,6 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
         const withRr = rr !== null ? `${base} · R:R ${formatRR(rr)}` : base;
         toast.success(`${withRr}${tradeId}`);
 
-        // Debug for users reporting "trade logged but not visible":
-        // log the actual saved row's journal_id so they can check Network
-        // tab response body or console for ambiguity.
-        if (typeof window !== "undefined") {
-          console.info("[trade-save] saved", {
-            trade_id: savedRow?.id,
-            target_journal_id: journalId,
-            returned_journal_id: savedRow?.journal_id,
-            mismatch: savedRow?.journal_id !== journalId,
-          });
-        }
         onSuccess?.();
 
         // Critical: if the user logged this trade into a journal that's NOT

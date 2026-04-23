@@ -128,12 +128,17 @@ export function TradeFiltersBar({ onFilterChange }: TradeFiltersProps) {
     onFilterChange(cleared);
   }, [onFilterChange]);
 
-  const hasActiveFilters =
-    filters.from ??
-    filters.to ??
-    filters.instrument ??
-    filters.tags ??
-    (filters.pnl_filter && filters.pnl_filter !== "all");
+  // Use `||` not `??` — `??` only short-circuits on null/undefined, so once
+  // filters.from is a non-empty string the chain stops there. We want the
+  // clear-button to appear when ANY filter is active, including
+  // pnl_filter = "profit"/"loss" when all string fields are undefined.
+  const hasActiveFilters = Boolean(
+    filters.from ||
+      filters.to ||
+      filters.instrument ||
+      filters.tags ||
+      (filters.pnl_filter && filters.pnl_filter !== "all"),
+  );
 
   // Parse YYYY-MM-DD back to a Date for the calendar selected prop
   const fromDate = filters.from ? new Date(`${filters.from}T00:00:00`) : undefined;

@@ -5,6 +5,12 @@ import { getActiveJournal } from "@/lib/journals/active-journal";
 import { cn } from "@/lib/utils";
 import { COLOR_CLASS_SERVER } from "./color-class";
 
+// Journal name / archive-badge / role-badge must reflect the DB after the
+// archive toggle or rename — without force-dynamic Next.js may serve a
+// stale render of this header.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 /**
  * Settings-section layout. Shows the active journal's name + tab nav, then
  * renders the active tab's page. Every tab is scoped to the **active

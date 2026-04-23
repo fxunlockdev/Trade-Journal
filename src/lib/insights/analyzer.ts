@@ -366,9 +366,15 @@ export function computeTradingStats(
         100
       : 0;
 
+  // Count any trade that has a TP set — either the legacy take_profit field
+  // OR the multi-TP tp1 field (MT5 imports and the new form set tp1 directly
+  // and keep take_profit in sync, but older/imported trades may only have tp1).
   const pctWithTakeProfit =
     trades.length > 0
-      ? (trades.filter((t) => t.take_profit !== null).length / trades.length) *
+      ? (trades.filter(
+          (t) => t.take_profit !== null || t.tp1 !== null,
+        ).length /
+          trades.length) *
         100
       : 0;
 

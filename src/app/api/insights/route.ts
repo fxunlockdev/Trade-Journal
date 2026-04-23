@@ -140,7 +140,7 @@ export async function POST(): Promise<NextResponse> {
     const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const response = await openaiClient.responses.create({
-      model: "gpt-5.4",
+      model: "gpt-5.4-mini",
       instructions: buildInsightsSystemPrompt(),
       input: buildInsightsUserPrompt(stats),
       temperature: 0.3,

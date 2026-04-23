@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,7 @@ import { PnlChart } from "@/components/analytics/pnl-chart";
 import { WinLossPie } from "@/components/analytics/win-loss-pie";
 import { DrawdownChart } from "@/components/analytics/drawdown-chart";
 import { TimeFilter } from "@/components/analytics/time-filter";
+import { PerformanceCalendar } from "@/components/analytics/performance-calendar";
 import { useAnalytics } from "@/hooks/use-analytics";
 import type { AssetType, JournalColor, Trade } from "@/types/database";
 
@@ -61,15 +62,44 @@ export function DashboardCharts({
   const [direction, setDirection] = useState<"all" | "buy" | "sell">("all");
   const [asset, setAsset] = useState<AssetFilter>("all");
 
-  // Only show asset filter buttons for classes that actually appear in this
-  // journal's trades — hiding empty categories keeps the bar clean.
+  // Only show asset filter buttons for classes that actually appear in the
+  // date-and-direction-filtered trade set — otherwise choosing 7D with no
+  // crypto trades still shows a clickable "Crypto" button that yields zero.
+  const prefilteredTrades = useMemo(() => {
+    let result = [...trades];
+    if (dateRange !== "all") {
+      const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : 90;
+      const cutoff = new Date();
+      cutoff.setHours(0, 0, 0, 0);
+      cutoff.setDate(cutoff.getDate() - days);
+      result = result.filter((t) => new Date(t.entry_time) >= cutoff);
+    }
+    if (direction !== "all") {
+      result = result.filter((t) => t.direction === direction);
+    }
+    return result;
+  }, [trades, dateRange, direction]);
+
   const availableAssets = useMemo(() => {
     const present = new Set<AssetType>();
-    for (const t of trades) present.add(t.asset_type);
+    for (const t of prefilteredTrades) present.add(t.asset_type);
     return ASSET_FILTERS.filter(
       (f) => f.value === "all" || present.has(f.value as AssetType),
     );
-  }, [trades]);
+  }, [prefilteredTrades]);
+
+  // Auto-reset asset filter to "all" if the user's current selection
+  // disappears after date/direction change (e.g. switch to 7D and no more
+  // crypto trades). Prevents the dashboard from showing zero numbers while
+  // still displaying a highlighted asset pill.
+  useEffect(() => {
+    if (
+      asset !== "all" &&
+      !availableAssets.some((a) => a.value === asset)
+    ) {
+      setAsset("all");
+    }
+  }, [asset, availableAssets]);
 
   const filteredTrades = useMemo(() => {
     let result = [...trades];
@@ -249,6 +279,10 @@ export function DashboardCharts({
           </Suspense>
         </CardContent>
       </Card>
+
+      {/* Performance calendar honours the same filter bar — moved inside so
+          Range/Direction/Asset selections also scope the calendar heatmap. */}
+      <PerformanceCalendar trades={filteredTrades} />
     </div>
   );
 }

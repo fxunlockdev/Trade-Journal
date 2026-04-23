@@ -61,7 +61,9 @@ export default async function JournalPage({ searchParams }: JournalPageProps) {
     query = query.gte("entry_time", params.from);
   }
   if (params.to) {
-    query = query.lte("entry_time", params.to);
+    // Append end-of-day so trades logged after midnight on the selected date
+    // are included. Mirrors the same fix in /api/trades GET.
+    query = query.lte("entry_time", `${params.to}T23:59:59.999Z`);
   }
   if (params.instrument) {
     query = query.ilike("instrument", `%${params.instrument}%`);

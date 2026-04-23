@@ -36,7 +36,9 @@ export default async function EditTradePage({ params }: EditTradePageProps) {
     notFound();
   }
 
-  const { data: membership } = await supabase
+  // Use admin for the membership read too — SSR auth is flaky on Vercel
+  // and would otherwise 404 valid owners/members back to notFound().
+  const { data: membership } = await admin
     .from("journal_members")
     .select("role")
     .eq("journal_id", (trade as Trade).journal_id)

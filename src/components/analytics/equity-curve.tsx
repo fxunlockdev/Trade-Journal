@@ -67,7 +67,12 @@ export function EquityCurve({ trades }: EquityCurveProps) {
     );
   }
 
-  const dataWithOrigin = [{ date: data[0].date, cumPnl: 0 }, ...data];
+  // Synthesise an origin point one day before the first trade so the chart
+  // doesn't stack the origin (cumPnl=0) and the first actual trade on the
+  // same X position (which compressed the leftmost bar and broke tooltips).
+  const firstDate = new Date(data[0].date);
+  const originDate = new Date(firstDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const dataWithOrigin = [{ date: originDate, cumPnl: 0 }, ...data];
 
   return (
     <ResponsiveContainer width="100%" height={350}>
