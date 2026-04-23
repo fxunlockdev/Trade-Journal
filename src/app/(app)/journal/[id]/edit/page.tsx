@@ -6,6 +6,9 @@ import type { Trade } from "@/types/database";
 
 import { TradeForm } from "@/components/trade/trade-form";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface EditTradePageProps {
   params: Promise<{ id: string }>;
 }

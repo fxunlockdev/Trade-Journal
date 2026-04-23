@@ -3,6 +3,13 @@ import { BookOpen, MessageSquare, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
+
+// Always re-run this server component on every request — never serve a
+// cached version. Without this, after logging a trade the dashboard can
+// render stale (pre-insert) numbers because Next.js route-segment cache
+// assumes server components are pure. Dashboard depends on mutable DB state.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";

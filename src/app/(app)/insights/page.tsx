@@ -6,6 +6,8 @@ import { InsightsPanel } from "@/components/insights/insights-panel";
 import type { TradeInsightsResult } from "@/lib/insights/prompt";
 
 export const metadata = { title: "AI Insights | TRDR" };
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 interface CachedInsightsRow {
   readonly insights: TradeInsightsResult;

@@ -7,6 +7,10 @@ import type { Trade } from "@/types/database";
 
 import { JournalClient } from "./journal-client";
 
+// Dynamic — trades list changes on every insert/delete.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface JournalPageProps {
   searchParams: Promise<{
     from?: string;

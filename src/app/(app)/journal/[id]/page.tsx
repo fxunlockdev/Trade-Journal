@@ -3,6 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Trade, TPResult } from "@/types/database";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import {
   cn,
   formatCurrency,

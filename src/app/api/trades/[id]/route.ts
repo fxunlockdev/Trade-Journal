@@ -8,12 +8,26 @@ import { canEditTrades } from "@/lib/journals/active-journal";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * Single-trade endpoints. After the 2026-04-23 multi-journal migration, the
- * old `.eq("user_id", user.id)` guard is gone — access is governed by
- * journal-membership RLS. RLS already filters to rows the caller can see;
- * for write ops we additionally verify the caller has `owner` or `member`
- * role in the trade's journal (viewers cannot mutate).
+ * Single-trade endpoints. All reads + writes go through the admin client
+ * because the Supabase SSR client's JWT context drops intermittently on
+ * Vercel, making RLS-gated reads return empty sets even for the trade's
+ * owner (root cause of the "Trade not found" delete bug).
+ *
+ * Safety model:
+ *   1. supabase.auth.getUser() on SSR client to authenticate the caller.
+ *   2. Admin client reads the trade by id (no RLS).
+ *   3. Admin client reads the caller's journal_members row to check role.
+ *   4. Only then does the admin mutation run.
+ * Without step 3 there'd be no authorization; with it, the admin client
+ * is just a reliable transport for already-verified access.
  */
+
+async function getAuthedUser(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return null;
+  return user;
+}
+
 export async function GET(
   _request: NextRequest,
   context: RouteContext,
@@ -21,29 +35,39 @@ export async function GET(
   try {
     const { id } = await context.params;
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const user = await getAuthedUser(supabase);
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // RLS (`trades_select`) restricts to trades in journals the caller
-    // belongs to. No explicit journal filter needed here — a non-member
-    // sees PGRST116 (no row) → 404.
-    const { data, error } = await supabase
+    const admin = createAdminClient();
+    const { data: trade, error } = await admin
       .from("trades")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.code === "PGRST116" ? 404 : 500 },
-      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!trade) {
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ data });
+    // Authorization gate — caller must be a member of the trade's journal.
+    const { data: membership } = await admin
+      .from("journal_members")
+      .select("role")
+      .eq("journal_id", trade.journal_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!membership) {
+      // 404 not 403 — don't reveal existence to non-members.
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ data: trade });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -57,15 +81,13 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const user = await getAuthedUser(supabase);
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body: unknown = await request.json();
     const parsed = updateTradeSchema.safeParse(body);
-
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
@@ -73,31 +95,35 @@ export async function PATCH(
       );
     }
 
-    // Fetch existing trade (RLS restricts to journals the caller is in)
-    const { data: existing, error: fetchError } = await supabase
+    const admin = createAdminClient();
+
+    // Fetch via admin — SSR client was returning null even for the trade's
+    // own owner on Vercel, surfacing as a spurious "Trade not found" 404.
+    const { data: existing, error: fetchError } = await admin
       .from("trades")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (fetchError || !existing) {
-      return NextResponse.json(
-        { error: "Trade not found" },
-        { status: 404 },
-      );
+    if (fetchError) {
+      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
     }
 
-    // Verify caller has edit rights in this trade's journal. RLS would block
-    // the UPDATE anyway, but we return a cleaner 403 instead of a generic
-    // Supabase "row violates policy" error.
-    const { data: membership } = await supabase
+    // Authorization: must be owner or member of trade's journal
+    const { data: membership } = await admin
       .from("journal_members")
       .select("role")
       .eq("journal_id", existing.journal_id)
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (!membership || !canEditTrades(membership.role)) {
+    if (!membership) {
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+    }
+    if (!canEditTrades(membership.role)) {
       return NextResponse.json(
         { error: "You don't have permission to edit trades in this journal." },
         { status: 403 },
@@ -107,15 +133,11 @@ export async function PATCH(
     const merged = { ...existing, ...parsed.data };
     const computed = computeTradeFields(merged);
 
-    // Keep legacy `take_profit` synchronized with `tp1` on edits so reports
-    // + MT5 webhook readers that still query `take_profit` don't drift.
     const updatePatch: Record<string, unknown> = { ...parsed.data };
     if ("tp1" in parsed.data) {
       updatePatch.take_profit = parsed.data.tp1 ?? parsed.data.take_profit ?? null;
     }
 
-    // Admin client for the mutation — auth + role already verified above.
-    const admin = createAdminClient();
     const { data, error } = await admin
       .from("trades")
       .update({
@@ -130,6 +152,7 @@ export async function PATCH(
       .single();
 
     if (error) {
+      console.error("[trades/PATCH] update failed:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -147,14 +170,16 @@ export async function DELETE(
   try {
     const { id } = await context.params;
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const user = await getAuthedUser(supabase);
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch to check permissions + produce a clean 403/404 before RLS kicks in
-    const { data: existing } = await supabase
+    const admin = createAdminClient();
+
+    // Admin fetch — SSR client returning null was the entire "Trade not
+    // found" bug. With admin, the row is there; authorization handled in TS.
+    const { data: existing } = await admin
       .from("trades")
       .select("id, journal_id")
       .eq("id", id)
@@ -164,28 +189,31 @@ export async function DELETE(
       return NextResponse.json({ error: "Trade not found" }, { status: 404 });
     }
 
-    const { data: membership } = await supabase
+    const { data: membership } = await admin
       .from("journal_members")
       .select("role")
       .eq("journal_id", existing.journal_id)
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (!membership || !canEditTrades(membership.role)) {
+    if (!membership) {
+      // 404 not 403 — don't reveal existence of trades to non-members.
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+    }
+    if (!canEditTrades(membership.role)) {
       return NextResponse.json(
         { error: "You don't have permission to delete trades in this journal." },
         { status: 403 },
       );
     }
 
-    // Admin client — role already verified above.
-    const admin = createAdminClient();
     const { error } = await admin
       .from("trades")
       .delete()
       .eq("id", id);
 
     if (error) {
+      console.error("[trades/DELETE] delete failed:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
