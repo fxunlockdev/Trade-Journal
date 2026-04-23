@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
+import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
 
 interface TradeListParams {
   readonly from?: string;
@@ -9,6 +10,7 @@ interface TradeListParams {
   readonly instrument?: string;
   readonly pnl_filter?: "profit" | "loss" | "all";
   readonly tags?: string;
+  readonly journal?: string;
   readonly page: number;
   readonly limit: number;
   readonly sort_by: string;
@@ -28,6 +30,7 @@ function parseSearchParams(searchParams: URLSearchParams): TradeListParams {
     instrument: searchParams.get("instrument") ?? undefined,
     pnl_filter: (searchParams.get("pnl_filter") as TradeListParams["pnl_filter"]) ?? "all",
     tags: searchParams.get("tags") ?? undefined,
+    journal: searchParams.get("journal") ?? undefined,
     page,
     limit,
     sort_by,
@@ -48,12 +51,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const params = parseSearchParams(request.nextUrl.searchParams);
+
+    // Resolve active journal. `?journal=<id>` overrides the cookie so bookmarked
+    // URLs keep working. If neither resolves to a journal the user is a member
+    // of, we fall back to their Personal journal.
+    const { journal: activeJournal } = await getActiveJournal(
+      supabase,
+      user.id,
+      params.journal,
+    );
+
     const offset = (params.page - 1) * params.limit;
 
+    // NOTE: we filter by `journal_id` (not `user_id`) so shared workspaces
+    // show trades from every member. RLS still enforces membership as a
+    // safety net if someone bypasses this filter.
     let query = supabase
       .from("trades")
       .select("*", { count: "exact" })
-      .eq("user_id", user.id);
+      .eq("journal_id", activeJournal.id);
 
     if (params.from) {
       query = query.gte("entry_time", params.from);
@@ -99,6 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         total: count ?? 0,
         page: params.page,
         limit: params.limit,
+        journal_id: activeJournal.id,
       },
     });
   } catch (err: unknown) {
@@ -120,8 +137,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const body: unknown = await request.json();
+    const bodyObj = typeof body === "object" && body !== null
+      ? (body as Record<string, unknown>)
+      : {};
+
+    // The client form may include `journal_id` (once the form dropdown ships);
+    // in the meantime, fall back to the cookie-resolved active journal.
+    const requestedJournalId =
+      typeof bodyObj.journal_id === "string" ? bodyObj.journal_id : undefined;
+
+    const { journal: activeJournal, role } = await getActiveJournal(
+      supabase,
+      user.id,
+      requestedJournalId,
+    );
+
+    if (!canEditTrades(role)) {
+      return NextResponse.json(
+        { error: "Viewers cannot create trades in this journal." },
+        { status: 403 },
+      );
+    }
+
     const parsed = createTradeSchema.safeParse({
-      ...(typeof body === "object" && body !== null ? body : {}),
+      ...bodyObj,
       user_id: user.id,
     });
 
@@ -140,6 +179,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const tradeData = {
       ...parsed.data,
+      journal_id: activeJournal.id,
       exit_price: parsed.data.exit_price ?? null,
       entry_price_high: parsed.data.entry_price_high ?? null,
       stop_loss: parsed.data.stop_loss ?? null,

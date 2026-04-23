@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookOpen, MessageSquare, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveJournal } from "@/lib/journals/active-journal";
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
@@ -23,12 +24,16 @@ export default async function DashboardPage() {
     return <EmptyAuthState />;
   }
 
+  // Dashboard stats are scoped to the **active journal** (not the user's
+  // authored trades) so shared workspaces show every member's contributions.
+  const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
+
   // Fetch trades and profile in parallel
   const [tradesResult, profileResult] = await Promise.all([
     supabase
       .from("trades")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("journal_id", activeJournal.id)
       .order("entry_time", { ascending: true }),
     supabase
       .from("users")

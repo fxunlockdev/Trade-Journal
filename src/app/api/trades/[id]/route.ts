@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { updateTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
+import { canEditTrades } from "@/lib/journals/active-journal";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+/**
+ * Single-trade endpoints. After the 2026-04-23 multi-journal migration, the
+ * old `.eq("user_id", user.id)` guard is gone — access is governed by
+ * journal-membership RLS. RLS already filters to rows the caller can see;
+ * for write ops we additionally verify the caller has `owner` or `member`
+ * role in the trade's journal (viewers cannot mutate).
+ */
 export async function GET(
   _request: NextRequest,
   context: RouteContext,
@@ -18,11 +26,13 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // RLS (`trades_select`) restricts to trades in journals the caller
+    // belongs to. No explicit journal filter needed here — a non-member
+    // sees PGRST116 (no row) → 404.
     const { data, error } = await supabase
       .from("trades")
       .select("*")
       .eq("id", id)
-      .eq("user_id", user.id)
       .single();
 
     if (error) {
@@ -62,18 +72,34 @@ export async function PATCH(
       );
     }
 
-    // Fetch existing trade to merge for recomputation
+    // Fetch existing trade (RLS restricts to journals the caller is in)
     const { data: existing, error: fetchError } = await supabase
       .from("trades")
       .select("*")
       .eq("id", id)
-      .eq("user_id", user.id)
       .single();
 
     if (fetchError || !existing) {
       return NextResponse.json(
         { error: "Trade not found" },
         { status: 404 },
+      );
+    }
+
+    // Verify caller has edit rights in this trade's journal. RLS would block
+    // the UPDATE anyway, but we return a cleaner 403 instead of a generic
+    // Supabase "row violates policy" error.
+    const { data: membership } = await supabase
+      .from("journal_members")
+      .select("role")
+      .eq("journal_id", existing.journal_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!membership || !canEditTrades(membership.role)) {
+      return NextResponse.json(
+        { error: "You don't have permission to edit trades in this journal." },
+        { status: 403 },
       );
     }
 
@@ -97,7 +123,6 @@ export async function PATCH(
         r_multiple: computed.r_multiple,
       })
       .eq("id", id)
-      .eq("user_id", user.id)
       .select()
       .single();
 
@@ -125,11 +150,35 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Fetch to check permissions + produce a clean 403/404 before RLS kicks in
+    const { data: existing } = await supabase
+      .from("trades")
+      .select("id, journal_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!existing) {
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+    }
+
+    const { data: membership } = await supabase
+      .from("journal_members")
+      .select("role")
+      .eq("journal_id", existing.journal_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!membership || !canEditTrades(membership.role)) {
+      return NextResponse.json(
+        { error: "You don't have permission to delete trades in this journal." },
+        { status: 403 },
+      );
+    }
+
     const { error } = await supabase
       .from("trades")
       .delete()
-      .eq("id", id)
-      .eq("user_id", user.id);
+      .eq("id", id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

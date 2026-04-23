@@ -24,6 +24,86 @@ export type SignalStatus =
   | "SL_HIT"
   | "CLOSED";
 
+/**
+ * Multi-journal + collaboration (see DB migration 2026-04-23).
+ *
+ * A journal is a shared workspace that holds trades. Every user auto-gets a
+ * "Personal" journal on signup (they're the owner). Owners can invite others
+ * via link-based invites; invitees join as `member` (can CRUD any trade in
+ * the journal, tracked in `trade_audit_log`) or `viewer` (read-only).
+ */
+export type JournalRole = "owner" | "member" | "viewer";
+
+export type JournalColor =
+  | "slate"
+  | "emerald"
+  | "sky"
+  | "violet"
+  | "orange"
+  | "cyan"
+  | "rose"
+  | "lime"
+  | "amber"
+  | "red";
+
+export type TradeAuditAction = "created" | "updated" | "deleted";
+
+export interface Journal {
+  readonly id: string;
+  readonly owner_user_id: string;
+  readonly name: string;
+  readonly color: JournalColor;
+  readonly description: string | null;
+  readonly is_archived: boolean;
+  readonly sort_order: number;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export interface JournalMember {
+  readonly journal_id: string;
+  readonly user_id: string;
+  readonly role: JournalRole;
+  readonly invited_by_user_id: string | null;
+  readonly joined_at: string;
+}
+
+/** A journal annotated with the *current viewer's* role (server-resolved). */
+export interface JournalWithRole extends Journal {
+  readonly my_role: JournalRole;
+}
+
+export interface JournalInvite {
+  readonly id: string;
+  readonly journal_id: string;
+  readonly token: string;
+  /** Owner role cannot be invited — only member/viewer. */
+  readonly role: Exclude<JournalRole, "owner">;
+  readonly created_by_user_id: string;
+  readonly expires_at: string;
+  readonly accepted_at: string | null;
+  readonly accepted_by_user_id: string | null;
+  readonly revoked_at: string | null;
+  readonly created_at: string;
+}
+
+/**
+ * One row per trade create / update / delete. Written automatically by the
+ * `log_trade_change` trigger. `actor_user_id` is NULL for system-driven
+ * changes (e.g. the migration backfill); UI should hide those rows.
+ */
+export interface TradeAuditEntry {
+  readonly id: string;
+  readonly trade_id: string | null;
+  readonly journal_id: string | null;
+  readonly actor_user_id: string | null;
+  readonly action: TradeAuditAction;
+  readonly changed_fields: readonly string[];
+  readonly before_data: Readonly<Record<string, unknown>> | null;
+  readonly after_data: Readonly<Record<string, unknown>> | null;
+  readonly created_at: string;
+}
+
 export interface User {
   readonly id: string;
   readonly email: string;
@@ -46,7 +126,20 @@ export interface ChatMessage {
 
 export interface Trade {
   readonly id: string;
-  readonly user_id: string;
+  /**
+   * Author (who created the trade). Nullable because the FK is `ON DELETE
+   * SET NULL` — when a user deletes their account, their trades survive in
+   * shared journals as "unknown author" rather than vanishing.
+   */
+  readonly user_id: string | null;
+  /**
+   * Which journal this trade belongs to. NOT NULL since the 2026-04-23
+   * migration — every trade lives in exactly one workspace.
+   */
+  readonly journal_id: string;
+  /** Last-edit metadata (populated by the `stamp_trade_edit_metadata` BEFORE UPDATE trigger). */
+  readonly last_edited_by_user_id: string | null;
+  readonly last_edited_at: string | null;
   readonly instrument: string;
   readonly asset_type: AssetType;
   readonly direction: TradeDirection;
@@ -145,6 +238,10 @@ export type CreateTrade = Omit<
   | "r_multiple"
   | "created_at"
   | "updated_at"
+  // Journal context + edit metadata are populated server-side / via DB trigger
+  | "journal_id"
+  | "last_edited_by_user_id"
+  | "last_edited_at"
 >;
 
 export type UpdateTrade = Partial<CreateTrade>;

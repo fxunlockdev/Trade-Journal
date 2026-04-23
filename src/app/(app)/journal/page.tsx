@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveJournal } from "@/lib/journals/active-journal";
 import { redirect } from "next/navigation";
 import type { Trade } from "@/types/database";
 
@@ -13,6 +14,7 @@ interface JournalPageProps {
     pnl_filter?: string;
     tags?: string;
     page?: string;
+    journal?: string;
   }>;
 }
 
@@ -27,10 +29,18 @@ export default async function JournalPage({ searchParams }: JournalPageProps) {
     redirect("/login");
   }
 
+  // Scope the journal list to the active journal (cookie-based, with optional
+  // `?journal=<id>` override for deep links).
+  const { journal: activeJournal } = await getActiveJournal(
+    supabase,
+    user.id,
+    params.journal,
+  );
+
   let query = supabase
     .from("trades")
     .select("*", { count: "exact" })
-    .eq("user_id", user.id);
+    .eq("journal_id", activeJournal.id);
 
   if (params.from) {
     query = query.gte("entry_time", params.from);

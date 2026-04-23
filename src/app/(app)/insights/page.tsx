@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveJournal } from "@/lib/journals/active-journal";
 import { InsightsPanel } from "@/components/insights/insights-panel";
 import type { TradeInsightsResult } from "@/lib/insights/prompt";
 
@@ -23,13 +24,19 @@ export default async function InsightsPage() {
     redirect("/login");
   }
 
+  // Insights are scoped to the active journal. Trade count + cached results
+  // both filter by `journal_id` so switching workspaces shows journal-specific
+  // analysis, not a global one. NOTE: `trade_insights` cache is still keyed
+  // by user_id for now — Phase 10 will re-key by (user_id, journal_id).
+  const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
+
   const adminDB = createAdminClient();
 
   const [countResult, cachedResult] = await Promise.all([
     adminDB
       .from("trades")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id),
+      .eq("journal_id", activeJournal.id),
     adminDB
       .from("trade_insights")
       .select("*")

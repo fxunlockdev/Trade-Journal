@@ -20,11 +20,13 @@ export default async function EditTradePage({ params }: EditTradePageProps) {
     redirect("/login");
   }
 
+  // RLS restricts to trades in journals the user is a member of. The form
+  // itself also enforces edit-rights when submitting (viewers get 403 from
+  // the API).
   const { data: trade } = await supabase
     .from("trades")
     .select("*")
     .eq("id", id)
-    .eq("user_id", user.id)
     .single();
 
   if (!trade) {

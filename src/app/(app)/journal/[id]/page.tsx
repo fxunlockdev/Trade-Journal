@@ -93,11 +93,12 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
     redirect("/login");
   }
 
+  // RLS (`trades_select`) scopes to trades in journals the user belongs to.
+  // Deep-linking to a trade you don't have access to returns 404 via notFound().
   const { data: trade } = await supabase
     .from("trades")
     .select("*")
     .eq("id", id)
-    .eq("user_id", user.id)
     .single();
 
   if (!trade) {

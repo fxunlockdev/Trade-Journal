@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveJournal } from "@/lib/journals/active-journal";
 import { computeTradingStats } from "@/lib/insights/analyzer";
 import {
   buildInsightsSystemPrompt,
@@ -73,10 +74,14 @@ export async function POST(): Promise<NextResponse> {
 
     const adminDB = createAdminClient();
 
+    // Insights are per-active-journal. If the user flips to another workspace
+    // and regenerates, the cache is overwritten (user_id-keyed for now).
+    const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
+
     const { data: tradesData, error: tradesError } = await adminDB
       .from("trades")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("journal_id", activeJournal.id)
       .order("entry_time", { ascending: true });
 
     if (tradesError) {
