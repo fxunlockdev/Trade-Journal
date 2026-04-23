@@ -7,9 +7,17 @@ import { toast } from "sonner";
 import type { Trade, TPResult } from "@/types/database";
 import { cn, formatDateTime, formatRR } from "@/lib/utils";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
+import { useTradeAuthors } from "@/hooks/use-trade-authors";
+import { useUser } from "@/hooks/use-user";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -244,6 +252,13 @@ export function TradeTable({ trades }: TradeTableProps) {
   const [sort, setSort] = useState<SortState>({ key: "entry_time", dir: "desc" });
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Author badges — fetch the journal's members to display "logged by X"
+  // tooltips on each row. All trades in the table belong to the active
+  // journal, so any trade's journal_id is fine as the lookup key.
+  const journalId = trades[0]?.journal_id ?? null;
+  const { authors } = useTradeAuthors(journalId);
+  const { user: currentUser } = useUser();
+
   const sorted = useMemo(() => {
     const copy = [...trades];
     copy.sort((a, b) => {
@@ -368,7 +383,20 @@ export function TradeTable({ trades }: TradeTableProps) {
                 <TableCell className="text-sm tabular-nums text-muted-foreground whitespace-nowrap">
                   {formatDateTime(trade.entry_time)}
                 </TableCell>
-                <TableCell className="font-medium">{trade.instrument}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <span>{trade.instrument}</span>
+                    {trade.user_id && (
+                      <AuthorBadge
+                        userId={trade.user_id}
+                        author={authors[trade.user_id]}
+                        isMe={
+                          currentUser?.id === trade.user_id
+                        }
+                      />
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <Badge
                     variant="outline"
@@ -493,5 +521,55 @@ export function TradeTable({ trades }: TradeTableProps) {
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+interface AuthorBadgeProps {
+  readonly userId: string;
+  readonly author: { readonly full_name: string; readonly email: string; readonly avatar_url: string } | undefined;
+  readonly isMe: boolean;
+}
+
+/**
+ * Tiny avatar shown next to each trade's instrument cell so shared journals
+ * can tell at a glance who logged which trade. For the owner's own trades
+ * we render a muted "you" dot instead of repeating their face on every row.
+ */
+function AuthorBadge({ userId, author, isMe }: AuthorBadgeProps) {
+  const name = author?.full_name?.trim() || author?.email || "Former member";
+  const initials = (() => {
+    if (author?.full_name?.trim()) {
+      return author.full_name
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return author?.email?.[0]?.toUpperCase() ?? "?";
+  })();
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className="inline-flex shrink-0"
+            onClick={(e) => e.stopPropagation()}
+            data-user-id={userId}
+          />
+        }
+      >
+        <Avatar className="size-5 border border-border/60">
+          {author?.avatar_url && <AvatarImage src={author.avatar_url} />}
+          <AvatarFallback className="bg-muted text-[9px] text-muted-foreground">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+      </TooltipTrigger>
+      <TooltipContent>
+        {isMe ? "Logged by you" : `Logged by ${name}`}
+      </TooltipContent>
+    </Tooltip>
   );
 }

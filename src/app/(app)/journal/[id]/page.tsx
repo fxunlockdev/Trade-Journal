@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { TradeDeleteButton } from "./trade-delete-button";
+import { ActivityFeed } from "@/components/journals/activity-feed";
 
 interface TradeDetailPageProps {
   params: Promise<{ id: string }>;
@@ -414,7 +415,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
         </Card>
 
         {/* Notes & Tags */}
-        <Card className="border-border/40 bg-card/50">
+        <Card className="border-border/40 bg-card/50" id="notes">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
               Notes & Tags
@@ -446,6 +447,21 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
           </CardContent>
         </Card>
       </div>
+
+      {/* Activity — every create/edit/delete on this trade, with actor names. */}
+      <Card className="border-border/40 bg-card/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ActivityFeed
+            endpoint={`/api/trades/${t.id}/audit`}
+            emptyLabel="No activity recorded yet for this trade."
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }
