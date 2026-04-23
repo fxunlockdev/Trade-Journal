@@ -9,6 +9,8 @@ import { z } from "zod";
 import { Check, Plus, Star, X } from "lucide-react";
 
 import { useFavoriteInstruments } from "@/hooks/use-favorite-instruments";
+import { useJournals } from "@/hooks/use-journals";
+import { JournalPicker } from "@/components/trade/journal-picker";
 
 import { createTradeFormSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
@@ -65,6 +67,13 @@ type FormInput = z.infer<typeof formSchema>;
 interface TradeFormProps {
   readonly trade?: Trade;
   readonly onSuccess?: () => void;
+  /**
+   * Which journal this trade belongs to. In new-trade mode this defaults to
+   * the caller's active journal. In edit mode it defaults to the trade's
+   * existing journal_id. The picker then lets the user switch (subject to
+   * owner/member role in the target journal).
+   */
+  readonly defaultJournalId: string;
 }
 
 const ORDER_TYPES: readonly { readonly value: OrderType; readonly label: string }[] = [
@@ -152,10 +161,12 @@ function toLocalInputValue(iso: string): string {
   );
 }
 
-export function TradeForm({ trade, onSuccess }: TradeFormProps) {
+export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps) {
   const router = useRouter();
   const [instrumentOpen, setInstrumentOpen] = useState(false);
   const favoriteInstruments = useFavoriteInstruments();
+  const { journals: availableJournals } = useJournals();
+  const [journalId, setJournalId] = useState<string>(defaultJournalId);
   const [submitting, setSubmitting] = useState(false);
 
   // Reorder: favorites first (in the order the user starred them), then every
@@ -508,6 +519,9 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
 
         const payload = {
           ...data,
+          // Explicit journal target — the server will verify the caller has
+          // owner/member role in this journal before accepting the write.
+          journal_id: journalId,
           tags: tagsValue,
           entry_time: entryIso,
           exit_time: toIsoOrNull(data.exit_time),
@@ -575,7 +589,7 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
         setSubmitting(false);
       }
     },
-    [isEditMode, trade, onSuccess, router, preview],
+    [isEditMode, trade, onSuccess, router, preview, journalId],
   );
 
   return (
@@ -636,6 +650,28 @@ export function TradeForm({ trade, onSuccess }: TradeFormProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Journal target — picks which workspace the trade lands in. */}
+      <Card className="border-border/40 bg-card/50">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2 md:col-span-2">
+              <FieldLabel
+                required
+                help="Which journal this trade will be saved into. Only journals where you're an owner or member are shown."
+              >
+                Journal
+              </FieldLabel>
+              <JournalPicker
+                journals={availableJournals}
+                value={journalId}
+                onChange={setJournalId}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Row 1: Symbol / Direction / Order Type / Date */}
       <Card className="border-border/40 bg-card/50">

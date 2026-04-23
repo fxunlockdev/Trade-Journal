@@ -47,7 +47,7 @@ export default async function EditTradePage({ params }: EditTradePageProps) {
         </h1>
       </div>
 
-      <TradeForm trade={trade as Trade} />
+      <TradeForm trade={trade as Trade} defaultJournalId={(trade as Trade).journal_id} />
     </div>
   );
 }
