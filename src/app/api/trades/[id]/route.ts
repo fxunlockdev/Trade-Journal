@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { updateTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { canEditTrades } from "@/lib/journals/active-journal";
@@ -113,7 +114,9 @@ export async function PATCH(
       updatePatch.take_profit = parsed.data.tp1 ?? parsed.data.take_profit ?? null;
     }
 
-    const { data, error } = await supabase
+    // Admin client for the mutation — auth + role already verified above.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("trades")
       .update({
         ...updatePatch,
@@ -175,7 +178,9 @@ export async function DELETE(
       );
     }
 
-    const { error } = await supabase
+    // Admin client — role already verified above.
+    const admin = createAdminClient();
+    const { error } = await admin
       .from("trades")
       .delete()
       .eq("id", id);

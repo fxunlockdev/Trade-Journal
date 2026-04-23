@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * DELETE /api/journals/[id]/invites/[inviteId] — revoke an invite link.
@@ -43,7 +44,9 @@ export async function DELETE(
       );
     }
 
-    const { error } = await supabase
+    // Admin client — owner check enforced above server-side.
+    const admin = createAdminClient();
+    const { error } = await admin
       .from("journal_invites")
       .update({ revoked_at: new Date().toISOString() })
       .eq("id", inviteId)

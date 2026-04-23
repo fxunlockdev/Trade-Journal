@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { JournalRole } from "@/types/database";
 
 /**
@@ -71,7 +72,9 @@ export async function PATCH(
       );
     }
 
-    const { data, error } = await supabase
+    // Admin client — owner gate + self-check enforced above.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("journal_members")
       .update({ role: parsed.data.role })
       .eq("journal_id", id)
@@ -135,7 +138,11 @@ export async function DELETE(
       );
     }
 
-    const { error, count } = await supabase
+    // Admin client — owner/self gate enforced above. The
+    // prevent_removing_last_owner trigger still runs and blocks the final
+    // owner deletion.
+    const admin = createAdminClient();
+    const { error, count } = await admin
       .from("journal_members")
       .delete({ count: "exact" })
       .eq("journal_id", id)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { canManageJournal } from "@/lib/journals/active-journal";
 import type { JournalRole } from "@/types/database";
 
@@ -125,7 +126,10 @@ export async function PATCH(
       );
     }
 
-    const { data, error } = await supabase
+    // Admin client for the UPDATE — we've already verified owner role above.
+    // The SSR client's auth context isn't reliable for mutations on journals.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("journals")
       .update(parsed.data)
       .eq("id", id)
@@ -133,7 +137,12 @@ export async function PATCH(
       .single();
 
     if (error) {
-      console.error("[journals/PATCH] update failed:", error.message);
+      console.error("[journals/PATCH] update failed:", {
+        id,
+        user_id: user.id,
+        code: error.code,
+        message: error.message,
+      });
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 

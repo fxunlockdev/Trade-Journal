@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
@@ -226,7 +227,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       journal_id: activeJournal.id,
     };
 
-    const { data, error } = await supabase
+    // Admin client — we've verified user auth + journal membership + role
+    // above. SSR client's auth wasn't reliably carrying to trades INSERT
+    // (triggered repeated RLS false-positives). Since we're hard-setting
+    // user_id + journal_id from server-trusted values, this is safe.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("trades")
       .insert(insertPayload)
       .select()
