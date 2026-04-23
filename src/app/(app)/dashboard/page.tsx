@@ -67,7 +67,11 @@ export default async function DashboardPage() {
     <div className="space-y-6 p-6">
       <WelcomeCard name={fullName} role={role} tradeCount={trades.length} />
       {/* DashboardCharts already renders StatsCards with filter-aware trades */}
-      <DashboardCharts trades={trades} />
+      <DashboardCharts
+        trades={trades}
+        journalName={activeJournal.name}
+        journalColor={activeJournal.color}
+      />
       <PerformanceCalendar trades={trades} />
       <RecentTrades trades={trades} />
     </div>
