@@ -88,6 +88,22 @@ interface CfdOverrideRow {
  * oil uses bigger tick values, etc.).
  */
 const CFD_OVERRIDES: Readonly<Record<string, CfdOverrideRow>> = {
+  // Crypto USD-quoted CFDs (broker style: BTCUSD, ETHUSD, …)
+  // Same spec as USDT equivalents — 1 coin/lot, $0.01/tick.
+  BTCUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BTC",  quote: "USD" },
+  ETHUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "ETH",  quote: "USD" },
+  BNBUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BNB",  quote: "USD" },
+  SOLUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "SOL",  quote: "USD" },
+  XRPUSD:  { pipSize: 0.0001, tickSize: 0.0001, tickValuePerLotUSD: 0.0001, contractSize: 1, base: "XRP",  quote: "USD" },
+  ADAUSD:  { pipSize: 0.0001, tickSize: 0.0001, tickValuePerLotUSD: 0.0001, contractSize: 1, base: "ADA",  quote: "USD" },
+  DOGEUSD: { pipSize: 0.0001, tickSize: 0.0001, tickValuePerLotUSD: 0.0001, contractSize: 1, base: "DOGE", quote: "USD" },
+  AVAXUSD: { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "AVAX", quote: "USD" },
+  DOTUSD:  { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.001, contractSize: 1, base: "DOT",  quote: "USD" },
+  LINKUSD: { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.001, contractSize: 1, base: "LINK", quote: "USD" },
+  LTCUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "LTC",  quote: "USD" },
+  UNIUSD:  { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.001, contractSize: 1, base: "UNI",  quote: "USD" },
+  NEARUSD: { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.001, contractSize: 1, base: "NEAR", quote: "USD" },
+
   // Metals
   XAUUSD: { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 1, contractSize: 100, base: "XAU", quote: "USD" },
   XAGUSD: { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.5, contractSize: 5000, base: "XAG", quote: "USD" },
@@ -161,13 +177,16 @@ function buildSpec(symbol: string): InstrumentSpec {
   }
 
   // 4) Crypto CFD generic default — 1 coin per lot, $/tick = tickSize USD.
+  //    pipSize must equal tickSize (both 0.01) — the previous value of 1
+  //    made "pips at risk" report 100x smaller than reality because
+  //    pipsAtRisk = priceDistance / pipSize and priceDistance is in USD.
   if (assetClass === "crypto") {
     return {
       symbol: upper,
       assetClass: "crypto",
       baseCurrency: upper.replace(/USDT|USDC|USD|BTC$/i, "") || upper,
       quoteCurrency: upper.endsWith("BTC") ? "BTC" : "USD",
-      pipSize: 1,
+      pipSize: 0.01,
       tickSize: 0.01,
       tickValuePerLotUSD: 0.01,
       contractSize: 1,

@@ -145,7 +145,20 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
   const concrete = results.filter((r) => r.result != null);
   if (concrete.length === 0) return null;
 
-  const slices = Math.max(1, Math.min(10, trade.num_positions ?? concrete.length));
+  // Count how many TP price slots are populated. This is the "intended" number
+  // of partial-close positions the user set up. We use it as the slice fallback
+  // so that hitting TP2 out of 3 gives 1/3 position size per hit — not 1/2
+  // (which would happen if we fell back to concrete.length=2 instead of 3).
+  // If the user explicitly set num_positions we always honour that.
+  const totalTpsSet = [
+    trade.tp1, trade.tp2, trade.tp3, trade.tp4,
+    trade.tp5, trade.tp6, trade.tp7,
+  ].filter((p) => p != null && p > 0).length;
+
+  const slices = Math.max(
+    1,
+    Math.min(10, trade.num_positions ?? Math.max(concrete.length, totalTpsSet)),
+  );
   // Each concrete result closes out one slice (up to `slices` total).
   const perSliceQty = trade.quantity / slices;
 

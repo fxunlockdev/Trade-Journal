@@ -25,13 +25,19 @@ export const FOREX_PAIRS = [
 
 // ── Crypto ─────────────────────────────────────────────────────────────────
 export const CRYPTO_PAIRS = [
-  // Large caps
+  // Large caps — USDT quoted (Binance / most CEX style)
   "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
   "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
-  // Mid caps
+  // Mid caps — USDT quoted
   "LINKUSDT", "LTCUSDT", "ATOMUSDT", "UNIUSDT", "NEARUSDT",
   "APTUSDT", "ARBUSDT", "OPUSDT", "SHIBUSDT", "TRXUSDT",
   "FTMUSDT", "ALGOUSDT", "VETUSDT", "ICPUSDT", "FILUSDT",
+  // USD quoted — CFD broker style (IC Markets, Pepperstone, FTMO, etc.)
+  // These are the same coins but priced against USD (not USDT), which is
+  // how MT4/MT5 brokers typically list crypto CFDs.
+  "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
+  "ADAUSD", "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
+  "LTCUSD", "UNIUSD", "NEARUSD",
   // BTC pairs
   "ETHBTC", "BNBBTC", "SOLBTC",
 ] as const;

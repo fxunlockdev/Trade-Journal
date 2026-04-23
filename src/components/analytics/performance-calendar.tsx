@@ -39,17 +39,39 @@ function getPnlTier(absValue: number): PnlTier {
   return 3;
 }
 
+// Static class lookup — Tailwind's content scanner needs the full class
+// string to appear literally in source so it isn't purged in production.
+// Previously used template-literal concatenation (`bg-emerald-500${opacity}`)
+// which got stripped at build time, making the heatmap monochrome in prod.
+const WIN_CLASS: Record<Exclude<PnlTier, 0>, string> = {
+  1: "bg-emerald-500/30",
+  2: "bg-emerald-500/60",
+  3: "bg-emerald-500/90",
+};
+const LOSS_CLASS: Record<Exclude<PnlTier, 0>, string> = {
+  1: "bg-red-500/30",
+  2: "bg-red-500/60",
+  3: "bg-red-500/90",
+};
+
 function getDayColor(pnl: number, tier: PnlTier): string {
   if (tier === 0) return "bg-muted opacity-40";
-  const opacity = tier === 1 ? "/30" : tier === 2 ? "/60" : "/90";
-  return pnl >= 0 ? `bg-emerald-500${opacity}` : `bg-red-500${opacity}`;
+  return pnl >= 0 ? WIN_CLASS[tier] : LOSS_CLASS[tier];
 }
 
 function buildDayMap(trades: readonly Trade[]): Map<string, DayData> {
   const map = new Map<string, DayData>();
 
   for (const trade of trades) {
-    if (trade.pnl_absolute === null) continue;
+    // Skip null AND non-finite (NaN/Infinity) — the latter can leak through
+    // if pnl_absolute gets corrupted and would pollute every downstream
+    // calculation with NaN (making a whole day's tier silently = 0).
+    if (
+      trade.pnl_absolute === null ||
+      !Number.isFinite(trade.pnl_absolute)
+    ) {
+      continue;
+    }
     const date = trade.entry_time.slice(0, 10);
     const existing = map.get(date);
     if (existing) {
@@ -331,7 +353,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           </p>
           <p className="mt-1 text-base font-bold text-red-400">
             {worstDay
-              ? `$${worstDay.pnl.toFixed(2)}`
+              ? `${worstDay.pnl >= 0 ? "+" : "-"}$${Math.abs(worstDay.pnl).toFixed(2)}`
               : "—"}
           </p>
           {worstDay && (

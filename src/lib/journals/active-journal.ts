@@ -80,10 +80,14 @@ async function fetchJournalWithMembership(
 ): Promise<ActiveJournalContext | null> {
   // One round-trip: left-join journal_members so we get the role too.
   // RLS on journals ensures this returns nothing if the user isn't a member.
+  // Also exclude archived journals — a stale cookie pointing to an archived
+  // journal must fall through to the fallback (oldest non-archived journal)
+  // so the user is never silently scoped to a read-only archived workspace.
   const { data: journal, error } = await supabase
     .from("journals")
     .select("*")
     .eq("id", journalId)
+    .eq("is_archived", false)
     .maybeSingle();
 
   if (error || !journal) return null;
@@ -108,27 +112,28 @@ async function fetchFallbackJournal(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActiveJournalContext | null> {
-  const { data: membership } = await supabase
+  // Inner-join on journals with is_archived = false so if the user's oldest
+  // journal is archived we don't silently resolve to it (which would then
+  // accept writes into an archived workspace).
+  const { data: rows } = await supabase
     .from("journal_members")
-    .select("journal_id, role, joined_at")
+    .select("role, joined_at, journals!inner(*)")
     .eq("user_id", userId)
+    .eq("journals.is_archived", false)
     .order("joined_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
-  if (!membership) return null;
+  const row = (rows as unknown as Array<{
+    role: JournalRole;
+    joined_at: string;
+    journals: Omit<JournalWithRole, "my_role">;
+  }> | null)?.[0];
 
-  const { data: journal } = await supabase
-    .from("journals")
-    .select("*")
-    .eq("id", membership.journal_id)
-    .maybeSingle();
+  if (!row || !row.journals) return null;
 
-  if (!journal) return null;
-
-  const role = membership.role as JournalRole;
+  const role = row.role;
   return {
-    journal: { ...journal, my_role: role } as JournalWithRole,
+    journal: { ...row.journals, my_role: role } as JournalWithRole,
     role,
   };
 }
