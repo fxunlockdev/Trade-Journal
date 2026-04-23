@@ -14,11 +14,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   Table,
   TableBody,
   TableCell,
@@ -549,27 +544,22 @@ function AuthorBadge({ userId, author, isMe }: AuthorBadgeProps) {
     return author?.email?.[0]?.toUpperCase() ?? "?";
   })();
 
+  // Use native title attribute instead of base-ui Tooltip — the Tooltip's
+  // render-prop pattern was tripping React.Children.only in shared-journal
+  // tables. Native title is reliable, zero-dep, and screen-reader friendly.
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            className="inline-flex shrink-0"
-            onClick={(e) => e.stopPropagation()}
-            data-user-id={userId}
-          />
-        }
-      >
-        <Avatar className="size-5 border border-border/60">
-          {author?.avatar_url && <AvatarImage src={author.avatar_url} />}
-          <AvatarFallback className="bg-muted text-[9px] text-muted-foreground">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
-      </TooltipTrigger>
-      <TooltipContent>
-        {isMe ? "Logged by you" : `Logged by ${name}`}
-      </TooltipContent>
-    </Tooltip>
+    <span
+      className="inline-flex shrink-0"
+      onClick={(e) => e.stopPropagation()}
+      data-user-id={userId}
+      title={isMe ? "Logged by you" : `Logged by ${name}`}
+    >
+      <Avatar className="size-5 border border-border/60">
+        {author?.avatar_url && <AvatarImage src={author.avatar_url} />}
+        <AvatarFallback className="bg-muted text-[9px] text-muted-foreground">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+    </span>
   );
 }

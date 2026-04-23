@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Check, ChevronsUpDown, Plus, LinkIcon, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -173,14 +172,15 @@ export function JournalSwitcher({
                   Join via invite link
                 </CommandItem>
                 {active.my_role === "owner" && (
-                  <CommandItem asChild className="gap-2 text-sm">
-                    <Link
-                      href="/journal/settings"
-                      onClick={() => setOpen(false)}
-                    >
-                      <Settings2 className="size-4" />
-                      {active.name} settings
-                    </Link>
+                  <CommandItem
+                    onSelect={() => {
+                      setOpen(false);
+                      router.push("/journal/settings");
+                    }}
+                    className="gap-2 text-sm"
+                  >
+                    <Settings2 className="size-4" />
+                    {active.name} settings
                   </CommandItem>
                 )}
               </CommandGroup>
