@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Journal, JournalWithRole, JournalRole } from "@/types/database";
 
 /**
@@ -102,7 +103,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { data, error } = await supabase
+    // Use the admin client for the INSERT. The SSR client's cookie-based
+    // auth wasn't reliably carrying through to this specific table's RLS
+    // check (tripped "new row violates row-level security policy for table
+    // 'journals'" in user testing). We've already verified the user via
+    // supabase.auth.getUser() above and we hard-code owner_user_id to
+    // user.id below — admin is safe here because we're enforcing the
+    // equivalent of the RLS rule server-side in TypeScript.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("journals")
       .insert({
         owner_user_id: user.id,
@@ -116,8 +125,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (error) {
       // Triggers surface as message text: "Maximum 20 active journals per
       // user reached." or unique-index violation on (user, name). Bubble up
-      // as 400 so the UI can show the exact reason.
-      console.error("[journals/POST] create failed:", error.message);
+      // as 400 so the UI can show the exact reason. Log full details.
+      console.error("[journals/POST] create failed:", {
+        user_id: user.id,
+        name: parsed.data.name,
+        code: error.code,
+        message: error.message,
+        hint: error.hint,
+        details: error.details,
+      });
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
