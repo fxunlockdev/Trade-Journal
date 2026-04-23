@@ -128,13 +128,27 @@ export async function DELETE(
     }
 
     const isSelf = userId === user.id;
-    const isOwnerRemoval = !isSelf && myMembership.role !== "owner";
+    const callerIsOwner = myMembership.role === "owner";
 
-    // Either owner kicking someone else, OR self-leave (non-owner).
-    if (isOwnerRemoval) {
+    // Rule 1: Non-owners cannot kick anyone other than themselves.
+    if (!isSelf && !callerIsOwner) {
       return NextResponse.json(
         { error: "Only owners can remove other members." },
         { status: 403 },
+      );
+    }
+
+    // Rule 2: Owners cannot "leave" their own journal — the
+    // prevent_removing_last_owner DB trigger would block it at the last
+    // owner, but defence-in-depth: reject upfront with a clear message so
+    // the owner knows to archive or transfer ownership instead.
+    if (isSelf && callerIsOwner) {
+      return NextResponse.json(
+        {
+          error:
+            "Owners cannot leave their own journal. Archive it from General settings, or transfer ownership to another member first.",
+        },
+        { status: 400 },
       );
     }
 

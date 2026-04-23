@@ -577,10 +577,47 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
         // user-visible confirmation asked for in client feedback — it also
         // matches what the preview card shows so there's no surprise.
         const rr = preview?.risk_reward_ratio ?? null;
+        const savedRow = result?.data as
+          | { readonly id?: string; readonly journal_id?: string }
+          | undefined;
+        const tradeId = savedRow?.id ? ` (#${savedRow.id.slice(0, 8)})` : "";
         const base = isEditMode ? "Trade updated" : "Trade logged";
         const withRr = rr !== null ? `${base} · R:R ${formatRR(rr)}` : base;
-        toast.success(withRr);
+        toast.success(`${withRr}${tradeId}`);
+
+        // Debug for users reporting "trade logged but not visible":
+        // log the actual saved row's journal_id so they can check Network
+        // tab response body or console for ambiguity.
+        if (typeof window !== "undefined") {
+          console.info("[trade-save] saved", {
+            trade_id: savedRow?.id,
+            target_journal_id: journalId,
+            returned_journal_id: savedRow?.journal_id,
+            mismatch: savedRow?.journal_id !== journalId,
+          });
+        }
         onSuccess?.();
+
+        // Critical: if the user logged this trade into a journal that's NOT
+        // their current active workspace (e.g. they picked a different one
+        // from the form's journal dropdown), they'd land on /journal still
+        // scoped to the old active journal and the trade they just logged
+        // would be invisible — looking like a silent save failure.
+        //
+        // Sync the active-journal cookie to wherever this trade was saved
+        // before redirecting. If the switch fails, we still redirect — the
+        // worst case is a stale view the user can manually switch out of.
+        const savedJournalId =
+          (result?.data as { journal_id?: string } | undefined)?.journal_id ??
+          journalId;
+        try {
+          await fetch(`/api/journals/${savedJournalId}/activate`, {
+            method: "POST",
+          });
+        } catch {
+          // Non-fatal — the cookie just stays on the previous workspace.
+        }
+
         router.push("/journal");
         router.refresh();
       } catch {
