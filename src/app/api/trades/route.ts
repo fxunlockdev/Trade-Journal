@@ -216,13 +216,69 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
     const computed = computeTradeFields(tradeData);
 
+    // Bulletproof: re-apply user_id + journal_id AFTER computeTradeFields so
+    // they cannot be overwritten by any stray key in the spread chain. These
+    // two fields are what RLS checks against — if either is wrong, the INSERT
+    // fails with "new row violates row-level security policy".
+    const insertPayload = {
+      ...computed,
+      user_id: user.id,
+      journal_id: activeJournal.id,
+    };
+
     const { data, error } = await supabase
       .from("trades")
-      .insert(computed)
+      .insert(insertPayload)
       .select()
       .single();
 
     if (error) {
+      // RLS violations often come back as "42501" or code starting "42".
+      // Run an explicit membership diagnostic so the error message actually
+      // tells the user what's wrong instead of the opaque Supabase default.
+      const isRlsViolation =
+        typeof error.code === "string" &&
+        (error.code === "42501" || error.message.toLowerCase().includes("row-level security"));
+
+      if (isRlsViolation) {
+        const { data: diag } = await supabase
+          .from("journal_members")
+          .select("role")
+          .eq("journal_id", activeJournal.id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (!diag) {
+          console.error("[trades/POST] RLS blocked: user not a member of resolved journal", {
+            user_id: user.id,
+            journal_id: activeJournal.id,
+          });
+          return NextResponse.json(
+            {
+              error:
+                "Cannot log trade — your session isn't a member of the target journal. " +
+                "Try refreshing the page or switching journals.",
+            },
+            { status: 403 },
+          );
+        }
+        if (!["owner", "member"].includes(diag.role)) {
+          return NextResponse.json(
+            { error: `Your role in this journal (${diag.role}) cannot create trades.` },
+            { status: 403 },
+          );
+        }
+      }
+
+      console.error("[trades/POST] insert failed", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        user_id: user.id,
+        journal_id: activeJournal.id,
+      });
+
       return NextResponse.json(
         { error: error.message },
         { status: 500 },

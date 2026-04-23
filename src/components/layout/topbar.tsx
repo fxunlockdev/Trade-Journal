@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Menu, User, Settings, LogOut, Search, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
+import { JournalSwitcher } from "@/components/journals/journal-switcher";
+import type { JournalWithRole } from "@/types/database";
 
 interface UserProfile {
   id: string;
@@ -25,6 +27,8 @@ interface UserProfile {
 
 interface TopbarProps {
   profile: UserProfile;
+  journals: readonly JournalWithRole[];
+  activeJournalId: string;
   onMenuClick: () => void;
 }
 
@@ -60,7 +64,12 @@ function getInitials(name: string | null, email: string): string {
   return email[0]?.toUpperCase() ?? "U";
 }
 
-export function Topbar({ profile, onMenuClick }: TopbarProps) {
+export function Topbar({
+  profile,
+  journals,
+  activeJournalId,
+  onMenuClick,
+}: TopbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -81,7 +90,7 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 md:px-6">
       {/* Left side */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <Button
           variant="ghost"
           size="icon"
@@ -91,7 +100,14 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
         >
           <Menu className="size-5" />
         </Button>
-        <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>
+        <JournalSwitcher
+          journals={journals}
+          activeJournalId={activeJournalId}
+        />
+        <span className="mx-1 hidden h-4 w-px bg-border sm:inline-block" />
+        <h1 className="hidden text-base font-semibold text-foreground sm:block">
+          {pageTitle}
+        </h1>
       </div>
 
       {/* Center: Command-palette trigger. Clicking or Cmd+K opens the

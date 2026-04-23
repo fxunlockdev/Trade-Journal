@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { CommandPalette } from "@/components/layout/command-palette";
+import type { JournalWithRole } from "@/types/database";
 
 interface UserProfile {
   id: string;
@@ -15,10 +16,17 @@ interface UserProfile {
 
 interface AppShellProps {
   profile: UserProfile;
+  journals: readonly JournalWithRole[];
+  activeJournalId: string;
   children: React.ReactNode;
 }
 
-export function AppShell({ profile, children }: AppShellProps) {
+export function AppShell({
+  profile,
+  journals,
+  activeJournalId,
+  children,
+}: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -35,12 +43,12 @@ export function AppShell({ profile, children }: AppShellProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar
           profile={profile}
+          journals={journals}
+          activeJournalId={activeJournalId}
           onMenuClick={() => setSidebarOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
 
       {/* Cmd+K palette — global keyboard shortcut, mounts once per shell */}
