@@ -84,14 +84,15 @@ export async function POST(): Promise<NextResponse> {
     const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
 
     // Cooldown guard — OpenAI calls are expensive. Reject regen attempts
-    // within 5 minutes of the last generation for this user. Without this
-    // a user (or a script hitting /api/insights in a loop) can trigger
-    // unbounded OpenAI cost.
+    // within 5 minutes of the last generation for THIS journal. Scoped to
+    // (user_id, journal_id) so switching workspaces doesn't inherit another
+    // journal's cooldown.
     const COOLDOWN_MS = 5 * 60 * 1000;
     const { data: existingInsights } = await adminDB
       .from("trade_insights")
       .select("generated_at")
       .eq("user_id", user.id)
+      .eq("journal_id", activeJournal.id)
       .maybeSingle();
 
     if (existingInsights?.generated_at) {
