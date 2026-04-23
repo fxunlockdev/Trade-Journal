@@ -223,7 +223,11 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
         split_risk: trade.split_risk ?? false,
         fees: trade.fees,
         notes: trade.notes ?? undefined,
-        tags: [...trade.tags],
+        // Use a comma-separated string so React Hook Form's `register` picks up
+        // the correct initial value. Passing the raw array clashed with the
+        // `defaultValue` prop that was previously on the Input, causing tag
+        // edits in edit-mode to be silently discarded on submit.
+        tags: (trade.tags ?? []).join(", ") as unknown as string[],
         entry_time: trade.entry_time ? toLocalInputValue(trade.entry_time) : "",
         exit_time: trade.exit_time ? toLocalInputValue(trade.exit_time) : undefined,
         source: trade.source,
@@ -459,9 +463,24 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
       if (p.key === "tp4") {
         setValue("tp4_trailing", false, { shouldValidate: true });
       }
-      setVisibleTps((prev) => Math.max(1, prev - 1));
+      // Recalculate visibleTps from the highest still-populated slot so
+      // removing e.g. TP3 from a TP1+TP2+TP3+TP4 form doesn't hide TP4.
+      // Always keep TP1 visible (min = 1).
+      const snapshot = TP_PALETTE.map((slot, i) =>
+        i === index
+          ? null
+          : (watch(slot.key) ??
+              watch(slot.pipsKey) ??
+              watch(slot.resultKey) ??
+              null),
+      );
+      let highest = 1;
+      snapshot.forEach((v, i) => {
+        if (v != null) highest = Math.max(highest, i + 1);
+      });
+      setVisibleTps(highest);
     },
-    [setValue],
+    [setValue, watch],
   );
 
   const onReset = useCallback(() => {
@@ -851,10 +870,10 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                 Order Type
               </FieldLabel>
               <Select
-                defaultValue={defaultValues.order_type}
-                onValueChange={(v) =>
-                  setValue("order_type", v as OrderType, { shouldValidate: true })
-                }
+                value={watch("order_type") ?? "market"}
+                onValueChange={(v) => {
+                  if (v) setValue("order_type", v as OrderType, { shouldValidate: true });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
@@ -1198,7 +1217,6 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
             <Input
               id="tags"
               placeholder="breakout, trend, scalp"
-              defaultValue={trade?.tags.join(", ") ?? ""}
               {...register("tags" as never)}
             />
             <p className="text-xs text-muted-foreground">Separate tags with commas</p>
@@ -1223,9 +1241,11 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   <p
                     className={cn(
                       "text-lg font-semibold tabular-nums",
-                      preview.pnl_absolute !== null && preview.pnl_absolute >= 0
+                      preview.pnl_absolute !== null && preview.pnl_absolute > 0
                         ? "text-emerald-400"
-                        : "text-red-400",
+                        : preview.pnl_absolute !== null && preview.pnl_absolute < 0
+                          ? "text-red-400"
+                          : "text-muted-foreground",
                     )}
                   >
                     {preview.pnl_absolute !== null

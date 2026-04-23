@@ -333,7 +333,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           </p>
           <p className="mt-1 text-base font-bold text-emerald-500">
             {bestDay
-              ? `+$${bestDay.pnl.toFixed(2)}`
+              ? `${bestDay.pnl >= 0 ? "+" : "-"}$${Math.abs(bestDay.pnl).toFixed(2)}`
               : "—"}
           </p>
           {bestDay && (

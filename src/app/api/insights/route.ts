@@ -39,12 +39,17 @@ export async function GET(): Promise<NextResponse> {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Scope to the active journal so switching workspaces shows the correct
+    // cached insights — not whoever happened to regenerate last.
+    const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
+
     const adminDB = createAdminClient();
     const { data: row, error: fetchError } = await adminDB
       .from("trade_insights")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .eq("journal_id", activeJournal.id)
+      .maybeSingle();
 
     if (fetchError && fetchError.code !== "PGRST116") {
       return NextResponse.json(
@@ -77,6 +82,35 @@ export async function POST(): Promise<NextResponse> {
     // Insights are per-active-journal. If the user flips to another workspace
     // and regenerates, the cache is overwritten (user_id-keyed for now).
     const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
+
+    // Cooldown guard — OpenAI calls are expensive. Reject regen attempts
+    // within 5 minutes of the last generation for this user. Without this
+    // a user (or a script hitting /api/insights in a loop) can trigger
+    // unbounded OpenAI cost.
+    const COOLDOWN_MS = 5 * 60 * 1000;
+    const { data: existingInsights } = await adminDB
+      .from("trade_insights")
+      .select("generated_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existingInsights?.generated_at) {
+      const elapsed =
+        Date.now() - new Date(existingInsights.generated_at).getTime();
+      if (elapsed < COOLDOWN_MS) {
+        const secondsLeft = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+        return NextResponse.json(
+          {
+            error: `Insights were just generated. Please wait ${secondsLeft}s before regenerating.`,
+            retry_after_seconds: secondsLeft,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(secondsLeft) },
+          },
+        );
+      }
+    }
 
     const { data: tradesData, error: tradesError } = await adminDB
       .from("trades")
@@ -130,12 +164,13 @@ export async function POST(): Promise<NextResponse> {
       .upsert(
         {
           user_id: user.id,
+          journal_id: activeJournal.id,
           insights: parsedInsights,
           stats_snapshot: stats,
           trades_analyzed: trades.length,
           generated_at: generatedAt,
         },
-        { onConflict: "user_id" }
+        { onConflict: "user_id,journal_id" }
       );
 
     if (upsertError) {

@@ -13,7 +13,6 @@ export const revalidate = 0;
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
-import { PerformanceCalendar } from "@/components/analytics/performance-calendar";
 import { WelcomeCard } from "@/components/dashboard/welcome-card";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/types/database";
@@ -79,13 +78,14 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 p-6">
       <WelcomeCard name={fullName} role={role} tradeCount={trades.length} />
-      {/* DashboardCharts already renders StatsCards with filter-aware trades */}
+      {/* DashboardCharts renders StatsCards + all charts + PerformanceCalendar
+          using filter-aware trades. Don't render PerformanceCalendar here
+          separately — it would ignore the filter bar. */}
       <DashboardCharts
         trades={trades}
         journalName={activeJournal.name}
         journalColor={activeJournal.color}
       />
-      <PerformanceCalendar trades={trades} />
       <RecentTrades trades={trades} />
     </div>
   );
@@ -211,13 +211,15 @@ function RecentTrades({ trades }: { readonly trades: readonly Trade[] }) {
                   "text-sm font-semibold",
                   trade.pnl_absolute === null
                     ? "text-muted-foreground"
-                    : trade.pnl_absolute >= 0
+                    : trade.pnl_absolute > 0
                       ? "text-emerald-500"
-                      : "text-red-400"
+                      : trade.pnl_absolute < 0
+                        ? "text-red-400"
+                        : "text-muted-foreground"
                 )}
               >
                 {trade.pnl_absolute !== null
-                  ? `${trade.pnl_absolute >= 0 ? "+" : ""}${trade.pnl_absolute.toFixed(2)}`
+                  ? `${trade.pnl_absolute > 0 ? "+" : ""}${trade.pnl_absolute.toFixed(2)}`
                   : "Open"}
               </p>
               <p className="text-xs capitalize text-muted-foreground">

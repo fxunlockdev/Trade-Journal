@@ -138,6 +138,20 @@ export async function PATCH(
       updatePatch.take_profit = parsed.data.tp1 ?? parsed.data.take_profit ?? null;
     }
 
+    // Only overwrite the stored exit_price when the patch touches price-related
+    // fields. Writing computed.exit_price unconditionally was causing note-only
+    // or tag-only edits to silently mutate the weighted exit price on multi-TP
+    // trades (because computeTradeFields re-derives it from tp_results on every
+    // call regardless of what changed in the patch).
+    const pricingKeys = new Set([
+      "entry_price", "exit_price", "direction", "quantity", "fees", "stop_loss",
+      "tp1", "tp2", "tp3", "tp4", "tp5", "tp6", "tp7",
+      "tp1_result", "tp2_result", "tp3_result", "tp4_result",
+      "tp5_result", "tp6_result", "tp7_result",
+      "num_positions", "split_risk",
+    ]);
+    const patchTouchesPricing = Object.keys(parsed.data).some((k) => pricingKeys.has(k));
+
     const { data, error } = await admin
       .from("trades")
       .update({
@@ -146,11 +160,8 @@ export async function PATCH(
         pnl_percentage: computed.pnl_percentage,
         risk_reward_ratio: computed.risk_reward_ratio,
         r_multiple: computed.r_multiple,
-        // Persist the computed effective exit_price. For multi-TP trades
-        // this captures the weighted exit derived from tp_results so Pips
-        // column, equity curve, and analytics all work. For legacy trades
-        // this is just the user-entered exit_price round-tripped.
-        exit_price: computed.exit_price,
+        // Only persist the re-derived exit_price when pricing fields changed.
+        ...(patchTouchesPricing ? { exit_price: computed.exit_price } : {}),
       })
       .eq("id", id)
       .select()

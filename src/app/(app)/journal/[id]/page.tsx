@@ -112,8 +112,9 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
     notFound();
   }
 
-  // Verify caller has access to this trade's journal
-  const { data: membership } = await supabase
+  // Verify caller has access to this trade's journal (admin client — SSR
+  // auth is flaky on Vercel and would 404 valid members otherwise).
+  const { data: membership } = await admin
     .from("journal_members")
     .select("role")
     .eq("journal_id", (trade as Trade).journal_id)
@@ -123,6 +124,8 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
   if (!membership) {
     notFound();
   }
+
+  const canEdit = membership.role === "owner" || membership.role === "member";
 
   const t = trade as Trade;
   // Multi-TP trades close via tp_result="hit"/"be"/"sl" and may leave
@@ -137,7 +140,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
     t.tp6_result !== null ||
     t.tp7_result !== null;
   const isOpen = t.pnl_absolute === null && t.exit_price === null && !hasAnyTpResult;
-  const isProfitable = t.pnl_absolute !== null && t.pnl_absolute >= 0;
+  const isProfitable = t.pnl_absolute !== null && t.pnl_absolute > 0;
 
   // Compute which TP slots have any data (price, pips, or result). Falling
   // back to the legacy `take_profit` is only relevant when tp1 is null — all
@@ -192,13 +195,22 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
           </div>
         </div>
         <div className="flex gap-2">
-          <Link
-            href={`/journal/${t.id}/edit`}
-            className="inline-flex h-7 items-center justify-center rounded-md border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
-          >
-            Edit
-          </Link>
-          <TradeDeleteButton tradeId={t.id} instrument={t.instrument} />
+          {canEdit && (
+            <>
+              <Link
+                href={`/journal/${t.id}/edit`}
+                className="inline-flex h-7 items-center justify-center rounded-md border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+              >
+                Edit
+              </Link>
+              <TradeDeleteButton tradeId={t.id} instrument={t.instrument} />
+            </>
+          )}
+          {!canEdit && (
+            <span className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              view-only
+            </span>
+          )}
         </div>
       </div>
 

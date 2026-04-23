@@ -5,6 +5,13 @@ import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
 
+// Hard-coded allowlist — prevents arbitrary column injection via sort_by.
+const SORT_ALLOWLIST = new Set([
+  "entry_time", "exit_time", "instrument", "direction",
+  "pnl_absolute", "pnl_percentage", "entry_price", "exit_price",
+  "risk_reward_ratio", "r_multiple", "quantity",
+] as const);
+
 interface TradeListParams {
   readonly from?: string;
   readonly to?: string;
@@ -21,13 +28,26 @@ interface TradeListParams {
 function parseSearchParams(searchParams: URLSearchParams): TradeListParams {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 50));
-  const sort_by = searchParams.get("sort_by") ?? "entry_time";
+
+  // Validate sort column against the allowlist; fall back to entry_time so
+  // callers cannot inject arbitrary PostgREST expressions via the URL.
+  const rawSort = searchParams.get("sort_by") ?? "entry_time";
+  const sort_by = SORT_ALLOWLIST.has(rawSort as Parameters<typeof SORT_ALLOWLIST.has>[0])
+    ? rawSort
+    : "entry_time";
+
   const rawDir = searchParams.get("sort_dir");
   const sort_dir = rawDir === "asc" ? "asc" : "desc";
 
+  // Extend `to` to end-of-day so trades logged at 14:30 on the selected day
+  // are not dropped. Without this, Postgres coerces "2024-04-23" to midnight
+  // and excludes everything after 00:00 on that date.
+  const rawTo = searchParams.get("to");
+  const to = rawTo ? `${rawTo}T23:59:59.999Z` : undefined;
+
   return {
     from: searchParams.get("from") ?? undefined,
-    to: searchParams.get("to") ?? undefined,
+    to,
     instrument: searchParams.get("instrument") ?? undefined,
     pnl_filter: (searchParams.get("pnl_filter") as TradeListParams["pnl_filter"]) ?? "all",
     tags: searchParams.get("tags") ?? undefined,
