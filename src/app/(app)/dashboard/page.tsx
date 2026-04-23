@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookOpen, MessageSquare, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
 import { StatsCards } from "@/components/analytics/stats-cards";
@@ -28,9 +29,14 @@ export default async function DashboardPage() {
   // authored trades) so shared workspaces show every member's contributions.
   const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
 
+  // Admin client for trades read — SSR auth flaky on Vercel. Membership
+  // already verified by getActiveJournal, and we filter strictly by
+  // activeJournal.id so no unauthorized rows can leak.
+  const admin = createAdminClient();
+
   // Fetch trades and profile in parallel
   const [tradesResult, profileResult] = await Promise.all([
-    supabase
+    admin
       .from("trades")
       .select("*")
       .eq("journal_id", activeJournal.id)

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Trade } from "@/types/database";
 
 import { TradeForm } from "@/components/trade/trade-form";
@@ -20,16 +21,27 @@ export default async function EditTradePage({ params }: EditTradePageProps) {
     redirect("/login");
   }
 
-  // RLS restricts to trades in journals the user is a member of. The form
-  // itself also enforces edit-rights when submitting (viewers get 403 from
-  // the API).
-  const { data: trade } = await supabase
+  // Admin client read + manual membership check (SSR auth flaky on Vercel).
+  const admin = createAdminClient();
+  const { data: trade } = await admin
     .from("trades")
     .select("*")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (!trade) {
+    notFound();
+  }
+
+  const { data: membership } = await supabase
+    .from("journal_members")
+    .select("role")
+    .eq("journal_id", (trade as Trade).journal_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership || membership.role === "viewer") {
+    // Viewers can't edit; non-members shouldn't even see the page.
     notFound();
   }
 

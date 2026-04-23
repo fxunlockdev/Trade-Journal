@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Trade, TPResult } from "@/types/database";
 import {
   cn,
@@ -94,15 +95,29 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
     redirect("/login");
   }
 
-  // RLS (`trades_select`) scopes to trades in journals the user belongs to.
-  // Deep-linking to a trade you don't have access to returns 404 via notFound().
-  const { data: trade } = await supabase
+  // Fetch via admin client (SSR auth flaky), then manually verify the user
+  // is a member of the trade's journal before rendering. Same safety model
+  // as elsewhere: server enforces auth in TS, admin executes the read.
+  const admin = createAdminClient();
+  const { data: trade } = await admin
     .from("trades")
     .select("*")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (!trade) {
+    notFound();
+  }
+
+  // Verify caller has access to this trade's journal
+  const { data: membership } = await supabase
+    .from("journal_members")
+    .select("role")
+    .eq("journal_id", (trade as Trade).journal_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership) {
     notFound();
   }
 

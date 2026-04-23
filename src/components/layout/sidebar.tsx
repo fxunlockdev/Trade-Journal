@@ -18,6 +18,7 @@ import {
   Scale,
   ChevronLeft,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 
 interface UserProfile {
@@ -42,6 +43,11 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   requiredRole?: "trader" | "admin";
   section: "main" | "personal";
+  /**
+   * Parent href — renders this item indented as a child of another nav
+   * entry. Used for "Add Trade" under "Journal".
+   */
+  parentHref?: string;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -52,6 +58,13 @@ const NAV_ITEMS: readonly NavItem[] = [
     section: "main",
   },
   { label: "Journal", href: "/journal", icon: BookOpen, section: "main" },
+  {
+    label: "Add Trade",
+    href: "/journal/new",
+    icon: Plus,
+    section: "main",
+    parentHref: "/journal",
+  },
   {
     label: "Signals",
     href: "/signals",
@@ -151,8 +164,22 @@ function SidebarContent({
             </p>
           )}
           {mainItems.map((item) => {
-            const isActive =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            // For sub-items (parentHref set), match only on exact path so
+            // they don't light up when you're elsewhere under /journal.
+            // For top-level items, match on prefix — BUT exclude pure
+            // matches that belong to a declared sub-item (so /journal/new
+            // highlights only "Add Trade", not "Journal").
+            const isSubItem = Boolean(item.parentHref);
+            const subItemHrefsForThisParent = NAV_ITEMS.filter(
+              (i) => i.parentHref === item.href,
+            ).map((i) => i.href);
+            const isActive = isSubItem
+              ? pathname === item.href
+              : pathname === item.href ||
+                (pathname.startsWith(`${item.href}/`) &&
+                  !subItemHrefsForThisParent.some(
+                    (sub) => pathname === sub,
+                  ));
             const Icon = item.icon;
 
             return (
@@ -166,11 +193,13 @@ function SidebarContent({
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   collapsed && "justify-center px-2",
+                  isSubItem && !collapsed && "ml-4 py-1.5 text-[13px]",
                 )}
               >
                 <Icon
                   className={cn(
                     "size-4 shrink-0",
+                    isSubItem && "size-3.5",
                     isActive ? "text-primary" : "text-muted-foreground",
                   )}
                 />

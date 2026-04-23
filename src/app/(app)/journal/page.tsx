@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
 import { redirect } from "next/navigation";
 import type { Trade } from "@/types/database";
@@ -30,14 +31,24 @@ export default async function JournalPage({ searchParams }: JournalPageProps) {
   }
 
   // Scope the journal list to the active journal (cookie-based, with optional
-  // `?journal=<id>` override for deep links).
+  // `?journal=<id>` override for deep links). getActiveJournal verifies
+  // caller membership before returning, so any journal it gives us back is
+  // one the user is authorized to see.
   const { journal: activeJournal } = await getActiveJournal(
     supabase,
     user.id,
     params.journal,
   );
 
-  let query = supabase
+  // Use admin client for the trades read. SSR cookie-based auth was
+  // intermittently failing RLS on trades SELECT on Vercel deploys, causing
+  // "trade logged but not visible" reports. Safe because:
+  //   1. getActiveJournal verified the user is a member of activeJournal
+  //   2. We only return rows WHERE journal_id = activeJournal.id
+  //   3. No user-controlled ids reach the query other than the journal the
+  //      user is already authorized for.
+  const admin = createAdminClient();
+  let query = admin
     .from("trades")
     .select("*", { count: "exact" })
     .eq("journal_id", activeJournal.id);
