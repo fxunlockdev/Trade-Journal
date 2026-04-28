@@ -89,8 +89,10 @@ interface CfdOverrideRow {
  */
 const CFD_OVERRIDES: Readonly<Record<string, CfdOverrideRow>> = {
   // Crypto USD-quoted CFDs (broker style: BTCUSD, ETHUSD, …)
-  // Same spec as USDT equivalents — 1 coin/lot, $0.01/tick.
-  BTCUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BTC",  quote: "USD" },
+  // BTC: 1 pip = $1 (industry convention — "remove 2 decimal units" vs 0.01).
+  // ETH and others remain at $0.01/pip.
+  BTCUSD:  { pipSize: 1,    tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BTC",  quote: "USD" },
+  BTCUSDT: { pipSize: 1,    tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BTC",  quote: "USDT" },
   ETHUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "ETH",  quote: "USD" },
   BNBUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "BNB",  quote: "USD" },
   SOLUSD:  { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 0.01, contractSize: 1, base: "SOL",  quote: "USD" },
@@ -105,7 +107,9 @@ const CFD_OVERRIDES: Readonly<Record<string, CfdOverrideRow>> = {
   NEARUSD: { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.001, contractSize: 1, base: "NEAR", quote: "USD" },
 
   // Metals
-  XAUUSD: { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 1, contractSize: 100, base: "XAU", quote: "USD" },
+  // XAU: 1 pip = $0.10 ("remove 1 decimal unit" from 0.01 → 0.1).
+  // A $10 gold move = 100 pips, matching standard broker/MT5 pip display.
+  XAUUSD: { pipSize: 0.1,  tickSize: 0.01, tickValuePerLotUSD: 1, contractSize: 100, base: "XAU", quote: "USD" },
   XAGUSD: { pipSize: 0.001, tickSize: 0.001, tickValuePerLotUSD: 0.5, contractSize: 5000, base: "XAG", quote: "USD" },
   XPTUSD: { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 1, contractSize: 100, base: "XPT", quote: "USD" },
   XPDUSD: { pipSize: 0.01, tickSize: 0.01, tickValuePerLotUSD: 1, contractSize: 100, base: "XPD", quote: "USD" },

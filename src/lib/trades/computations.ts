@@ -227,12 +227,36 @@ export function computeTradeFields<T extends TradeForComputation>(
         multi.price,
         trade.direction,
       );
+
+      // For R:R, use the HIGHEST TP that was actually hit — not always TP1.
+      // Scanning from TP7 down so the first match is the highest hit level.
+      // Falls back to primaryTp (TP1 / legacy take_profit) when nothing is hit
+      // yet (e.g. only BE / SL results recorded).
+      const highestHitTp = (() => {
+        const tpPairs: ReadonlyArray<{ result: TPResult | null | undefined; price: number | null | undefined }> = [
+          { result: trade.tp7_result, price: trade.tp7 },
+          { result: trade.tp6_result, price: trade.tp6 },
+          { result: trade.tp5_result, price: trade.tp5 },
+          { result: trade.tp4_result, price: trade.tp4 },
+          { result: trade.tp3_result, price: trade.tp3 },
+          { result: trade.tp2_result, price: trade.tp2 },
+          { result: trade.tp1_result, price: trade.tp1 },
+        ];
+        for (const tp of tpPairs) {
+          if (tp.result === "hit" && tp.price != null && tp.price > 0) {
+            return tp.price;
+          }
+        }
+        return null;
+      })();
+      const rrTp = highestHitTp ?? primaryTp;
+
       const riskRewardRatio =
-        trade.stop_loss !== null && primaryTp !== null
+        trade.stop_loss !== null && rrTp !== null
           ? computeRiskRewardRatio(
               trade.entry_price,
               trade.stop_loss,
-              primaryTp,
+              rrTp,
               trade.direction,
             )
           : null;
