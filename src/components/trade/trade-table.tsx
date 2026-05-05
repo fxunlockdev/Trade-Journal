@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { Trade, TPResult } from "@/types/database";
 import { cn, formatDateTime, formatRR } from "@/lib/utils";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
+import { computeRiskRewardRatio } from "@/lib/trades/computations";
 import { useTradeAuthors } from "@/hooks/use-trade-authors";
 import { useUser } from "@/hooks/use-user";
 
@@ -197,20 +198,73 @@ function formatPrice(n: number): string {
 }
 
 /**
- * Realized pips for a closed trade. Null for open trades (no exit). We look
- * up the per-instrument `pipSize` so forex majors, JPY pairs, XAUUSD, indices,
- * and crypto CFDs all use their correct pip convention.
+ * Return the HIGHEST TP price that has result="hit", scanning from TP7 down.
+ * Returns null when no TP was hit (SL, BE, open, or legacy trade).
+ */
+function highestHitTpPrice(trade: Trade): number | null {
+  const tpPairs: ReadonlyArray<{ result: TPResult | null; price: number | null }> = [
+    { result: trade.tp7_result, price: trade.tp7 },
+    { result: trade.tp6_result, price: trade.tp6 },
+    { result: trade.tp5_result, price: trade.tp5 },
+    { result: trade.tp4_result, price: trade.tp4 },
+    { result: trade.tp3_result, price: trade.tp3 },
+    { result: trade.tp2_result, price: trade.tp2 },
+    { result: trade.tp1_result, price: trade.tp1 },
+  ];
+  for (const tp of tpPairs) {
+    if (tp.result === "hit" && tp.price != null && tp.price > 0) {
+      return tp.price;
+    }
+  }
+  return null;
+}
+
+/**
+ * Realized pips for a closed trade.
  *
- * Sign convention: positive = trade made money, negative = trade lost money.
- * For a buy, (exit − entry) / pipSize; for a sell, flip the sign.
+ * Priority:
+ * 1. If any TP was HIT → use the HIGHEST hit TP price only.
+ *    TP1=400 pips, TP2=700 pips, TP2 hit → shows 700 pips.
+ *    TPs are NOT added: only the single highest level counts.
+ * 2. SL / BE / legacy exit → fall back to exit_price.
+ *    SL calculation is intentionally unchanged.
  */
 function computePips(trade: Trade): number | null {
-  if (trade.exit_price === null) return null;
   const spec = getInstrumentSpec(trade.instrument);
   if (spec.pipSize <= 0) return null;
+
+  const hitTp = highestHitTpPrice(trade);
+  if (hitTp !== null) {
+    const rawMove = hitTp - trade.entry_price;
+    const directional = trade.direction === "buy" ? rawMove : -rawMove;
+    return directional / spec.pipSize;
+  }
+
+  // No TP was hit — fall back to exit_price (SL, BE, legacy, open)
+  if (trade.exit_price === null) return null;
   const rawMove = trade.exit_price - trade.entry_price;
   const directional = trade.direction === "buy" ? rawMove : -rawMove;
   return directional / spec.pipSize;
+}
+
+/**
+ * Compute R:R on-the-fly using the highest hit TP for display.
+ * This fixes existing DB rows where risk_reward_ratio was saved using TP1 only.
+ * Falls back to the stored DB value when there are no TP results yet (open/SL).
+ */
+function computeDisplayRR(trade: Trade): number | null {
+  const hitTp = highestHitTpPrice(trade);
+  const refTp = hitTp ?? trade.tp1 ?? trade.take_profit ?? null;
+  if (trade.stop_loss !== null && refTp !== null) {
+    return computeRiskRewardRatio(
+      trade.entry_price,
+      trade.stop_loss,
+      refTp,
+      trade.direction,
+    );
+  }
+  // No SL or TP defined — keep whatever is stored
+  return trade.risk_reward_ratio;
 }
 
 function formatPips(n: number): string {
@@ -234,7 +288,7 @@ function getSortValue(trade: Trade, key: SortKey): number | string {
   if (key === "entry_price") return trade.entry_price;
   if (key === "stop_loss") return trade.stop_loss ?? -Infinity;
   if (key === "tps_hit_pct") return summarizeTps(trade).pct;
-  if (key === "risk_reward_ratio") return trade.risk_reward_ratio ?? -Infinity;
+  if (key === "risk_reward_ratio") return computeDisplayRR(trade) ?? -Infinity;
   if (key === "pips") return computePips(trade) ?? -Infinity;
   if (key === "status") return deriveStatus(trade, summarizeTps(trade));
   if (key === "source") return trade.source;
@@ -433,9 +487,10 @@ export function TradeTable({ trades }: TradeTableProps) {
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {trade.risk_reward_ratio !== null
-                    ? formatRR(trade.risk_reward_ratio)
-                    : "—"}
+                  {(() => {
+                    const rr = computeDisplayRR(trade);
+                    return rr !== null ? formatRR(rr) : "—";
+                  })()}
                 </TableCell>
                 <TableCell className="text-right">
                   {isOpen || pips === null ? (
