@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { FoldLogo } from "@/components/brand/fold-logo";
 import {
   LayoutDashboard,
   BookOpen,
@@ -125,20 +124,13 @@ function SidebarContent({
     <div className="flex h-full flex-col">
       {/* Brand + Collapse toggle */}
       <div className="flex h-16 shrink-0 items-center justify-between px-4">
-        {collapsed ? (
-          <Link href="/dashboard" className="mx-auto" aria-label="FX Unlock">
-            <FoldLogo size={26} />
-          </Link>
-        ) : (
-          <Link href="/dashboard" className="flex items-center gap-2.5">
-            <FoldLogo size={26} />
-            <span className="flex flex-col leading-none">
-              <span className="font-heading text-lg font-extrabold tracking-tight text-sidebar-accent-foreground">
-                FX Unlock
-              </span>
-              <span className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-leaf">
-                Trade Journal
-              </span>
+        {!collapsed && (
+          <Link href="/dashboard" className="flex flex-col">
+            <span className="text-lg font-bold tracking-tight text-sidebar-accent-foreground">
+              FX Unlock
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-widest text-leaf">
+              Trade Journal
             </span>
           </Link>
         )}

@@ -14,7 +14,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { FoldLogo } from "@/components/brand/fold-logo";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -197,12 +196,11 @@ function LoginContent() {
 
       <div className="relative z-10 w-full max-w-md px-4">
         {/* Brand */}
-        <div className="mb-8 flex flex-col items-center text-center">
-          <FoldLogo size={52} className="drop-shadow-[0_8px_24px_rgba(168,214,66,0.25)]" />
-          <h1 className="mt-4 font-heading text-4xl font-extrabold tracking-tight text-[#f1f5ef]">
+        <div className="mb-8 text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-[#f1f5ef]">
             FX Unlock
           </h1>
-          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.2em] text-[#9fe0ad]">
+          <p className="mt-2 text-sm font-medium uppercase tracking-widest text-[#9fe0ad]">
             Trade Journal
           </p>
         </div>
