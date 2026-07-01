@@ -103,9 +103,9 @@ function TradeConfirmationCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {trade.direction === "buy" ? (
-              <TrendingUp className="h-4 w-4 text-emerald-400" />
+              <TrendingUp className="h-4 w-4 text-pos" />
             ) : (
-              <TrendingDown className="h-4 w-4 text-red-400" />
+              <TrendingDown className="h-4 w-4 text-neg" />
             )}
             <span className="text-sm font-semibold text-foreground">
               {trade.instrument}
@@ -114,8 +114,8 @@ function TradeConfirmationCard({
               variant="outline"
               className={
                 trade.direction === "buy"
-                  ? "border-emerald-500/30 text-emerald-400"
-                  : "border-red-500/30 text-red-400"
+                  ? "border-pos/30 text-pos"
+                  : "border-neg/30 text-neg"
               }
             >
               {trade.direction.toUpperCase()}
@@ -123,7 +123,7 @@ function TradeConfirmationCard({
           </div>
           {trade.pnl_absolute !== null && (
             <span
-              className={`text-sm font-medium ${isProfit ? "text-emerald-400" : "text-red-400"}`}
+              className={`text-sm font-medium ${isProfit ? "text-pos" : "text-neg"}`}
             >
               {isProfit ? "+" : ""}
               {trade.pnl_absolute.toFixed(2)}
@@ -155,7 +155,7 @@ function TradeConfirmationCard({
           </div>
         ) : (
           <div className="mt-2 flex items-center justify-between">
-            <p className="text-xs text-emerald-400/80">✓ Trade logged</p>
+            <p className="text-xs text-pos/80">✓ Trade logged</p>
             <Link
               href={`/journal/${trade.id}`}
               className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"

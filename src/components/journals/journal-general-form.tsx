@@ -125,9 +125,9 @@ export function JournalGeneralForm({
   return (
     <div className="space-y-6">
       {!canManage && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="border-warn/30 bg-warn/5">
           <CardContent className="pt-6">
-            <p className="text-sm text-amber-400">
+            <p className="text-sm text-warn">
               Only journal owners can change these settings. You can still view
               the current configuration here.
             </p>
@@ -203,10 +203,10 @@ export function JournalGeneralForm({
       </Card>
 
       {canManage && (
-        <Card className="border-amber-500/30">
+        <Card className="border-warn/30">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="size-4 text-amber-400" />
+              <AlertTriangle className="size-4 text-warn" />
               {journal.is_archived ? "Archived" : "Archive journal"}
             </CardTitle>
           </CardHeader>
@@ -240,7 +240,7 @@ export function JournalGeneralForm({
                   render={
                     <Button
                       variant="outline"
-                      className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                      className="border-warn/40 text-warn hover:bg-warn/10 hover:text-warn"
                       disabled={archiving}
                     />
                   }
@@ -260,7 +260,7 @@ export function JournalGeneralForm({
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-amber-500 text-white hover:bg-amber-500/90"
+                      className="bg-warn text-white hover:bg-warn/90"
                       onClick={() => void handleArchive(true)}
                     >
                       Archive

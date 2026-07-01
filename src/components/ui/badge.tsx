@@ -19,6 +19,11 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // TradLabs status chips
+        success: "bg-pos/15 text-pos",
+        warning: "bg-warn/15 text-warn",
+        lime: "border-lime/40 bg-lime/20 text-lime-ink",
+        forest: "bg-primary/12 text-primary",
       },
     },
     defaultVariants: {

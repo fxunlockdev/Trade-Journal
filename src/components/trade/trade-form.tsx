@@ -83,9 +83,9 @@ const ORDER_TYPES: readonly { readonly value: OrderType; readonly label: string 
 ] as const;
 
 const TP_RESULTS: readonly { readonly value: TPResult; readonly label: string; readonly className: string }[] = [
-  { value: "hit", label: "Hit", className: "data-[selected=true]:bg-emerald-600 data-[selected=true]:text-white" },
-  { value: "be", label: "BE", className: "data-[selected=true]:bg-amber-500 data-[selected=true]:text-white" },
-  { value: "sl", label: "SL", className: "data-[selected=true]:bg-red-600 data-[selected=true]:text-white" },
+  { value: "hit", label: "Hit", className: "data-[selected=true]:bg-pos data-[selected=true]:text-white" },
+  { value: "be", label: "BE", className: "data-[selected=true]:bg-warn data-[selected=true]:text-white" },
+  { value: "sl", label: "SL", className: "data-[selected=true]:bg-neg data-[selected=true]:text-white" },
 ] as const;
 
 type TpKey = "tp1" | "tp2" | "tp3" | "tp4" | "tp5" | "tp6" | "tp7";
@@ -666,7 +666,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                 onChange={(e) => setPasteText(e.target.value)}
               />
               {pasteWarnings.length > 0 && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-400 space-y-1">
+                <div className="rounded-md border border-warn/30 bg-warn/5 p-3 text-xs text-warn space-y-1">
                   {pasteWarnings.map((w) => (
                     <p key={w}>• {w}</p>
                   ))}
@@ -833,7 +833,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   variant={direction === "buy" ? "default" : "outline"}
                   className={cn(
                     "flex-1 font-semibold",
-                    direction === "buy" && "bg-emerald-600 hover:bg-emerald-700 text-white",
+                    direction === "buy" && "bg-pos hover:bg-pos/90 text-white",
                   )}
                   onClick={() => setValue("direction", "buy", { shouldValidate: true })}
                 >
@@ -844,7 +844,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   variant={direction === "sell" ? "default" : "outline"}
                   className={cn(
                     "flex-1 font-semibold",
-                    direction === "sell" && "bg-red-600 hover:bg-red-700 text-white",
+                    direction === "sell" && "bg-neg hover:bg-neg/90 text-white",
                   )}
                   onClick={() => setValue("direction", "sell", { shouldValidate: true })}
                 >
@@ -1072,9 +1072,9 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                             variant={isSelected ? "default" : "outline"}
                             className={cn(
                               "h-7 px-0 text-[11px] font-semibold",
-                              isSelected && r.value === "hit" && "bg-emerald-600 hover:bg-emerald-700 text-white",
-                              isSelected && r.value === "be" && "bg-amber-500 hover:bg-amber-600 text-white",
-                              isSelected && r.value === "sl" && "bg-red-600 hover:bg-red-700 text-white",
+                              isSelected && r.value === "hit" && "bg-pos hover:bg-pos/90 text-white",
+                              isSelected && r.value === "be" && "bg-warn hover:bg-warn/90 text-white",
+                              isSelected && r.value === "sl" && "bg-neg hover:bg-neg/90 text-white",
                             )}
                             onClick={() => toggleTpResult(tp.resultKey, r.value)}
                           >
@@ -1231,9 +1231,9 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                     className={cn(
                       "text-lg font-semibold tabular-nums",
                       preview.pnl_absolute !== null && preview.pnl_absolute > 0
-                        ? "text-emerald-400"
+                        ? "text-pos"
                         : preview.pnl_absolute !== null && preview.pnl_absolute < 0
-                          ? "text-red-400"
+                          ? "text-neg"
                           : "text-muted-foreground",
                     )}
                   >
@@ -1248,8 +1248,8 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                     className={cn(
                       "text-lg font-semibold tabular-nums",
                       preview.pnl_percentage !== null && preview.pnl_percentage >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400",
+                        ? "text-pos"
+                        : "text-neg",
                     )}
                   >
                     {preview.pnl_percentage !== null
@@ -1271,8 +1271,8 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                     className={cn(
                       "text-lg font-semibold tabular-nums",
                       preview.r_multiple !== null && preview.r_multiple >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400",
+                        ? "text-pos"
+                        : "text-neg",
                     )}
                   >
                     {preview.r_multiple !== null

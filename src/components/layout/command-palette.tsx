@@ -902,8 +902,8 @@ function DirectionCard({
         "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
         active
           ? tone === "positive"
-            ? "border-emerald-500/50 bg-emerald-500/10"
-            : "border-red-500/50 bg-red-500/10"
+            ? "border-pos/50 bg-pos/10"
+            : "border-neg/50 bg-neg/10"
           : "border-border bg-card hover:border-ring/40",
       )}
     >
@@ -912,8 +912,8 @@ function DirectionCard({
           "flex items-center gap-2",
           active
             ? tone === "positive"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-red-600 dark:text-red-400"
+              ? "text-pos"
+              : "text-neg"
             : "text-muted-foreground",
         )}
       >
@@ -974,7 +974,7 @@ function NumberStep({
         }}
       />
       {error && (
-        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-xs text-neg">{error}</p>
       )}
     </div>
   );

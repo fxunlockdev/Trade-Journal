@@ -218,7 +218,7 @@ export function RiskCalculatorClient() {
                 </Button>
               </div>
               {showHighRiskWarning && (
-                <p className="mt-1 text-xs text-amber-500">
+                <p className="mt-1 text-xs text-warn">
                   Warning: Risk exceeds 2% — professional traders risk 1-2% per
                   trade
                 </p>
@@ -271,7 +271,7 @@ export function RiskCalculatorClient() {
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 py-2 text-sm font-medium transition-colors",
                     inputs.direction === "buy"
-                      ? "bg-emerald-500/15 text-emerald-500"
+                      ? "bg-pos/15 text-pos"
                       : "bg-transparent text-muted-foreground hover:bg-muted"
                   )}
                 >
@@ -286,7 +286,7 @@ export function RiskCalculatorClient() {
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 border-l border-border py-2 text-sm font-medium transition-colors",
                     inputs.direction === "sell"
-                      ? "bg-red-500/15 text-red-400"
+                      ? "bg-neg/15 text-neg"
                       : "bg-transparent text-muted-foreground hover:bg-muted"
                   )}
                 >
@@ -417,7 +417,7 @@ export function RiskCalculatorClient() {
                       </div>
                       <Badge
                         variant="outline"
-                        className="border-red-500/30 bg-red-500/10 text-red-400 text-xs"
+                        className="border-neg/30 bg-neg/10 text-neg text-xs"
                       >
                         You risk ${formatNumber(result.dollarRisk)}
                       </Badge>
@@ -438,7 +438,7 @@ export function RiskCalculatorClient() {
                       </div>
                       <Badge
                         variant="outline"
-                        className="border-emerald-500/30 bg-emerald-500/10 text-emerald-500 text-xs"
+                        className="border-pos/30 bg-pos/10 text-pos text-xs"
                       >
                         You gain ${formatNumber(result.rewardAmount)}
                       </Badge>
@@ -506,7 +506,7 @@ export function RiskCalculatorClient() {
                         className={cn(
                           "font-medium",
                           showHighRiskWarning
-                            ? "text-amber-500"
+                            ? "text-warn"
                             : "text-foreground"
                         )}
                       >
@@ -519,8 +519,8 @@ export function RiskCalculatorClient() {
                         className={cn(
                           "font-medium capitalize",
                           inputs.direction === "buy"
-                            ? "text-emerald-500"
-                            : "text-red-400"
+                            ? "text-pos"
+                            : "text-neg"
                         )}
                       >
                         {inputs.direction}

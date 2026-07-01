@@ -20,19 +20,20 @@ export const SIGNAL_STATUS_TRANSITIONS: Readonly<
   CLOSED: [],
 };
 
+// TradLabs status system — forest/lime/functional palette, theme-aware tokens.
 const STATUS_COLORS: Readonly<Record<SignalStatus, string>> = {
-  CREATED: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-  SENT: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  ACTIVE: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  TP_HIT: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  SL_HIT: "bg-red-500/10 text-red-400 border-red-500/20",
-  CLOSED: "bg-zinc-500/10 text-zinc-300 border-zinc-500/20",
+  CREATED: "bg-muted text-muted-foreground border-border",
+  SENT: "bg-primary/10 text-primary border-primary/20",
+  ACTIVE: "bg-warn/15 text-warn border-warn/25",
+  TP_HIT: "bg-pos/15 text-pos border-pos/25",
+  SL_HIT: "bg-neg/15 text-neg border-neg/25",
+  CLOSED: "bg-secondary text-secondary-foreground border-border",
 };
 
 export function getStatusColor(status: string): string {
   return (
     STATUS_COLORS[status as SignalStatus] ??
-    "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+    "bg-muted text-muted-foreground border-border"
   );
 }
 

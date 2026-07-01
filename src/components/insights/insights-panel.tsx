@@ -59,9 +59,9 @@ const RING_RADIUS = 38;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 function scoreColor(score: number): string {
-  if (score >= 70) return "#10b981"; // emerald-500
-  if (score >= 50) return "#f59e0b"; // amber-500
-  return "#ef4444"; // red-500
+  if (score >= 70) return "var(--pos)"; // emerald-500
+  if (score >= 50) return "var(--warn)"; // amber-500
+  return "var(--neg)"; // red-500
 }
 
 function ScoreRing({ score }: { readonly score: number }) {
@@ -121,7 +121,7 @@ function MistakeSeverityBadge({
     return (
       <Badge
         variant="outline"
-        className="border-amber-500/30 bg-amber-500/10 text-amber-400"
+        className="border-warn/30 bg-warn/10 text-warn"
       >
         warning
       </Badge>
@@ -142,7 +142,7 @@ function PriorityBadge({
     return (
       <Badge
         variant="outline"
-        className="border-amber-500/30 bg-amber-500/10 text-amber-400"
+        className="border-warn/30 bg-warn/10 text-warn"
       >
         MED
       </Badge>
@@ -168,7 +168,7 @@ function MistakesCard({
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <AlertTriangle className="size-4 text-amber-400" />
+          <AlertTriangle className="size-4 text-warn" />
           Key Mistakes
         </CardTitle>
       </CardHeader>
@@ -204,7 +204,7 @@ function StrengthsCard({
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <CheckCircle2 className="size-4 text-emerald-400" />
+          <CheckCircle2 className="size-4 text-pos" />
           Strengths
         </CardTitle>
       </CardHeader>
@@ -212,7 +212,7 @@ function StrengthsCard({
         <ul className="space-y-2">
           {strengths.map((s, idx) => (
             <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
-              <span className="mt-0.5 shrink-0 text-emerald-400">•</span>
+              <span className="mt-0.5 shrink-0 text-pos">•</span>
               {s}
             </li>
           ))}
@@ -231,7 +231,7 @@ function SuggestionsCard({
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Lightbulb className="size-4 text-yellow-400" />
+          <Lightbulb className="size-4 text-warn" />
           Suggestions
         </CardTitle>
       </CardHeader>
@@ -517,8 +517,8 @@ export function InsightsPanel({
                 )}
               </p>
               {isStale && (
-                <p className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-500">
-                  <span className="size-1.5 rounded-full bg-amber-500" />
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-xs font-medium text-warn">
+                  <span className="size-1.5 rounded-full bg-warn" />
                   Stale — {newTradesSince} new trade
                   {newTradesSince === 1 ? "" : "s"} since last analysis
                 </p>

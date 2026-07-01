@@ -165,7 +165,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
                 <Button
                   size="sm"
                   onClick={saveEdit}
-                  className="h-7 gap-1 bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+                  className="h-7 gap-1 bg-pos text-xs text-white hover:bg-pos/90"
                 >
                   <Check className="size-3" />
                   Save
@@ -195,7 +195,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
             {formatting ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
-              <Sparkles className="size-3.5 text-amber-400" />
+              <Sparkles className="size-3.5 text-warn" />
             )}
             Format with AI
           </Button>
@@ -206,7 +206,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
                 <Button
                   size="sm"
                   disabled={sending || !message}
-                  className="gap-1.5 bg-blue-600 text-white hover:bg-blue-500"
+                  className="gap-1.5 bg-primary text-white hover:bg-primary/90"
                 >
                   {sending ? (
                     <Loader2 className="size-3.5 animate-spin" />
@@ -233,7 +233,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
                 </AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleSend}
-                  className="bg-blue-600 text-white hover:bg-blue-500"
+                  className="bg-primary text-white hover:bg-primary/90"
                 >
                   Send
                 </AlertDialogAction>
@@ -244,7 +244,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
 
         {/* Telegram config info */}
         <div className="flex items-start gap-2 rounded-lg border border-border bg-card/50 p-3">
-          <Info className="mt-0.5 size-3.5 shrink-0 text-blue-400" />
+          <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
           <p className="text-xs leading-relaxed text-muted-foreground">
             Telegram integration requires{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-muted-foreground">
@@ -263,7 +263,7 @@ export function SignalPreview({ signal, onUpdate }: SignalPreviewProps) {
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className="border-blue-500/20 bg-blue-500/10 text-xs text-blue-400"
+              className="border-primary/20 bg-primary/10 text-xs text-primary"
             >
               Sent
             </Badge>

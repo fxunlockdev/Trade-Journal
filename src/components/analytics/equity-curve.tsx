@@ -43,7 +43,7 @@ function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
           : ""}
       </p>
       <p
-        className={`text-sm font-semibold ${value >= 0 ? "text-emerald-400" : "text-red-400"}`}
+        className={`text-sm font-semibold ${value >= 0 ? "text-pos" : "text-neg"}`}
       >
         {formatCurrency(value)}
       </p>
@@ -82,27 +82,27 @@ export function EquityCurve({ trades }: EquityCurveProps) {
       >
         <defs>
           <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--pos)" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="var(--pos)" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke="#27272a"
+          stroke="var(--border)"
           vertical={false}
         />
         <XAxis
           dataKey="date"
           tickFormatter={formatXAxisDate}
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
           tickFormatter={(v: number) => formatCurrency(v)}
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           width={80}
@@ -111,11 +111,11 @@ export function EquityCurve({ trades }: EquityCurveProps) {
         <Area
           type="monotone"
           dataKey="cumPnl"
-          stroke="#10b981"
+          stroke="var(--pos)"
           strokeWidth={2}
           fill="url(#equityGradient)"
           dot={false}
-          activeDot={{ r: 4, fill: "#10b981", stroke: "#09090b", strokeWidth: 2 }}
+          activeDot={{ r: 4, fill: "var(--pos)", stroke: "var(--card)", strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>

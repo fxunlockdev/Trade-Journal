@@ -66,7 +66,7 @@ export default async function JournalSettingsLayout({
             {role}
           </span>
           {journal.is_archived && (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400 ring-1 ring-amber-500/30">
+            <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn ring-1 ring-warn/30">
               Archived
             </span>
           )}

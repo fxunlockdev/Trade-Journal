@@ -455,7 +455,7 @@ export function LotCalculatorClient() {
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 py-2 text-sm font-medium transition-colors",
                     form.direction === "buy"
-                      ? "bg-emerald-500/15 text-emerald-500"
+                      ? "bg-pos/15 text-pos"
                       : "bg-transparent text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -468,7 +468,7 @@ export function LotCalculatorClient() {
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 border-l border-border py-2 text-sm font-medium transition-colors",
                     form.direction === "sell"
-                      ? "bg-red-500/15 text-red-400"
+                      ? "bg-neg/15 text-neg"
                       : "bg-transparent text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -718,7 +718,7 @@ export function LotCalculatorClient() {
                     </p>
                     <Badge
                       variant="outline"
-                      className="mt-1 border-red-500/30 bg-red-500/10 text-red-400 text-[10px]"
+                      className="mt-1 border-neg/30 bg-neg/10 text-neg text-[10px]"
                     >
                       at {form.riskPercent}% of balance
                     </Badge>
@@ -735,7 +735,7 @@ export function LotCalculatorClient() {
                     </p>
                     <Badge
                       variant="outline"
-                      className="mt-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-500 text-[10px]"
+                      className="mt-1 border-pos/30 bg-pos/10 text-pos text-[10px]"
                     >
                       target {formatNumber(result.targetPrice, 5)}
                     </Badge>
@@ -800,7 +800,7 @@ export function LotCalculatorClient() {
                         className={cn(
                           "text-[10px]",
                           result.marginRequiredAccount > Number(form.accountBalance)
-                            ? "border-red-500/30 bg-red-500/10 text-red-400"
+                            ? "border-neg/30 bg-neg/10 text-neg"
                             : "border-border bg-muted text-muted-foreground",
                         )}
                       >
@@ -826,9 +826,9 @@ export function LotCalculatorClient() {
                       className={cn(
                         "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
                         w.level === "error" &&
-                          "border-red-500/30 bg-red-500/10 text-red-400",
+                          "border-neg/30 bg-neg/10 text-neg",
                         w.level === "warn" &&
-                          "border-amber-500/30 bg-amber-500/10 text-amber-500",
+                          "border-warn/30 bg-warn/10 text-warn",
                         w.level === "info" &&
                           "border-border bg-muted text-muted-foreground",
                       )}

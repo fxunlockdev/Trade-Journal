@@ -66,7 +66,7 @@ function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
             })
           : ""}
       </p>
-      <p className="text-sm font-semibold text-red-400">
+      <p className="text-sm font-semibold text-neg">
         {formatCurrency(Math.abs(value))}
       </p>
     </div>
@@ -97,27 +97,27 @@ export function DrawdownChart({ trades }: DrawdownChartProps) {
       >
         <defs>
           <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity={0} />
-            <stop offset="100%" stopColor="#ef4444" stopOpacity={0.3} />
+            <stop offset="0%" stopColor="var(--neg)" stopOpacity={0} />
+            <stop offset="100%" stopColor="var(--neg)" stopOpacity={0.3} />
           </linearGradient>
         </defs>
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke="#27272a"
+          stroke="var(--border)"
           vertical={false}
         />
         <XAxis
           dataKey="date"
           tickFormatter={formatXAxisDate}
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
           tickFormatter={(v: number) => formatCurrency(Math.abs(v))}
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           width={80}
@@ -126,11 +126,11 @@ export function DrawdownChart({ trades }: DrawdownChartProps) {
         <Area
           type="monotone"
           dataKey="drawdown"
-          stroke="#ef4444"
+          stroke="var(--neg)"
           strokeWidth={2}
           fill="url(#drawdownGradient)"
           dot={false}
-          activeDot={{ r: 4, fill: "#ef4444", stroke: "#09090b", strokeWidth: 2 }}
+          activeDot={{ r: 4, fill: "var(--neg)", stroke: "var(--card)", strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>

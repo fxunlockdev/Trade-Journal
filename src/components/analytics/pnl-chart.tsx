@@ -43,7 +43,7 @@ function ChartTooltip({ active, payload }: CustomTooltipProps) {
     <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-xl">
       <p className="text-xs font-medium text-foreground">{data.period}</p>
       <p
-        className={`text-sm font-semibold ${data.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
+        className={`text-sm font-semibold ${data.pnl >= 0 ? "text-pos" : "text-neg"}`}
       >
         {formatCurrency(data.pnl)}
       </p>
@@ -74,20 +74,20 @@ export function PnlChart({ trades, period }: PnlChartProps) {
       >
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke="#27272a"
+          stroke="var(--border)"
           vertical={false}
         />
         <XAxis
           dataKey="period"
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
           tickFormatter={(v: number) => formatCurrency(v)}
-          stroke="#52525b"
-          tick={{ fill: "#71717a", fontSize: 11 }}
+          stroke="var(--muted-foreground)"
+          tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           width={80}
@@ -97,7 +97,7 @@ export function PnlChart({ trades, period }: PnlChartProps) {
           {data.map((entry) => (
             <Cell
               key={entry.period}
-              fill={entry.pnl >= 0 ? "#10b981" : "#ef4444"}
+              fill={entry.pnl >= 0 ? "var(--pos)" : "var(--neg)"}
               fillOpacity={0.85}
             />
           ))}

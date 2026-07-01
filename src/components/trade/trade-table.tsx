@@ -167,16 +167,16 @@ interface StatusStyle {
 function statusStyle(s: TradeStatus): StatusStyle {
   switch (s) {
     case "win":
-      return { label: "Win", className: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" };
+      return { label: "Win", className: "border-pos/30 text-pos bg-pos/10" };
     case "loss":
-      return { label: "Loss", className: "border-red-500/30 text-red-400 bg-red-500/10" };
+      return { label: "Loss", className: "border-neg/30 text-neg bg-neg/10" };
     case "breakeven":
-      return { label: "BE", className: "border-amber-500/30 text-amber-400 bg-amber-500/10" };
+      return { label: "BE", className: "border-warn/30 text-warn bg-warn/10" };
     case "partial":
-      return { label: "Partial", className: "border-sky-500/30 text-sky-400 bg-sky-500/10" };
+      return { label: "Partial", className: "border-primary/30 text-primary bg-primary/10" };
     case "open":
     default:
-      return { label: "Open", className: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" };
+      return { label: "Open", className: "border-warn/30 text-warn bg-warn/10" };
   }
 }
 
@@ -452,8 +452,8 @@ export function TradeTable({ trades }: TradeTableProps) {
                     className={cn(
                       "text-xs font-semibold uppercase",
                       trade.direction === "buy"
-                        ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-                        : "border-red-500/30 text-red-400 bg-red-500/10",
+                        ? "border-pos/30 text-pos bg-pos/10"
+                        : "border-neg/30 text-neg bg-neg/10",
                     )}
                   >
                     {trade.direction}
@@ -474,9 +474,9 @@ export function TradeTable({ trades }: TradeTableProps) {
                       className={cn(
                         "text-sm font-medium",
                         tps.hit === tps.total && tps.total > 0
-                          ? "text-emerald-400"
+                          ? "text-pos"
                           : tps.hit > 0
-                            ? "text-sky-400"
+                            ? "text-primary"
                             : "text-muted-foreground",
                       )}
                     >
@@ -499,7 +499,7 @@ export function TradeTable({ trades }: TradeTableProps) {
                     <span
                       className={cn(
                         "font-semibold tabular-nums",
-                        pips >= 0 ? "text-emerald-400" : "text-red-400",
+                        pips >= 0 ? "text-pos" : "text-neg",
                       )}
                     >
                       {formatPips(pips)}

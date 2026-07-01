@@ -187,7 +187,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
               ))}
             </datalist>
             {errors.instrument && (
-              <p className="mt-1 text-xs text-red-400">{errors.instrument.message}</p>
+              <p className="mt-1 text-xs text-neg">{errors.instrument.message}</p>
             )}
           </div>
 
@@ -200,7 +200,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-bold uppercase transition-all",
                   watchedDirection === "buy"
-                    ? "border-emerald-500 bg-emerald-500/15 text-emerald-400 shadow-lg shadow-emerald-500/10"
+                    ? "border-pos bg-pos/15 text-pos shadow-lg shadow-pos/10"
                     : "border-border bg-muted text-muted-foreground hover:border-border hover:text-foreground",
                 )}
               >
@@ -213,7 +213,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-bold uppercase transition-all",
                   watchedDirection === "sell"
-                    ? "border-red-500 bg-red-500/15 text-red-400 shadow-lg shadow-red-500/10"
+                    ? "border-neg bg-neg/15 text-neg shadow-lg shadow-neg/10"
                     : "border-border bg-muted text-muted-foreground hover:border-border hover:text-foreground",
                 )}
               >
@@ -222,7 +222,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
               </button>
             </div>
             {errors.direction && (
-              <p className="mt-1 text-xs text-red-400">{errors.direction.message}</p>
+              <p className="mt-1 text-xs text-neg">{errors.direction.message}</p>
             )}
           </div>
         </CardContent>
@@ -250,13 +250,13 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 {...register("entry_price")}
               />
               {errors.entry_price && (
-                <p className="mt-1 text-xs text-red-400">{errors.entry_price.message}</p>
+                <p className="mt-1 text-xs text-neg">{errors.entry_price.message}</p>
               )}
             </div>
             <div>
               <Label htmlFor="stop_loss" className="text-foreground">
                 <span className="flex items-center gap-1.5">
-                  <ShieldAlert className="size-3.5 text-red-400" />
+                  <ShieldAlert className="size-3.5 text-neg" />
                   Stop Loss
                 </span>
               </Label>
@@ -265,11 +265,11 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 type="number"
                 step="any"
                 placeholder="0.00000"
-                className="mt-1.5 border-border bg-muted font-mono text-foreground placeholder:text-muted-foreground focus:border-red-600 focus:ring-red-600/20"
+                className="mt-1.5 border-border bg-muted font-mono text-foreground placeholder:text-muted-foreground focus:border-neg focus:ring-neg/20"
                 {...register("stop_loss")}
               />
               {errors.stop_loss && (
-                <p className="mt-1 text-xs text-red-400">{errors.stop_loss.message}</p>
+                <p className="mt-1 text-xs text-neg">{errors.stop_loss.message}</p>
               )}
             </div>
           </div>
@@ -287,7 +287,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                 <div className="flex items-center">
                   <Label htmlFor={tp.name} className="text-foreground">
                     <span className="flex items-center gap-1.5">
-                      <Target className="size-3.5 text-emerald-400" />
+                      <Target className="size-3.5 text-pos" />
                       {tp.label}
                       {!tp.required && (
                         <span className="text-xs text-muted-foreground">(optional)</span>
@@ -309,7 +309,7 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
                   {...register(tp.name)}
                 />
                 {errors[tp.name] && (
-                  <p className="mt-1 text-xs text-red-400">
+                  <p className="mt-1 text-xs text-neg">
                     {errors[tp.name]?.message}
                   </p>
                 )}
@@ -329,16 +329,16 @@ export function SignalBuilder({ onSignalCreated }: SignalBuilderProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-4">
-              <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-center">
+              <div className="rounded-lg border border-neg/20 bg-neg/5 p-3 text-center">
                 <p className="text-xs uppercase text-muted-foreground">Risk</p>
-                <p className="mt-1 font-mono text-lg font-bold text-red-400">
+                <p className="mt-1 font-mono text-lg font-bold text-neg">
                   {riskSummary.riskPips}
                 </p>
                 <p className="text-xs text-muted-foreground">pips</p>
               </div>
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
+              <div className="rounded-lg border border-pos/20 bg-pos/5 p-3 text-center">
                 <p className="text-xs uppercase text-muted-foreground">Reward TP1</p>
-                <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
+                <p className="mt-1 font-mono text-lg font-bold text-pos">
                   {riskSummary.rewardPips ?? "---"}
                 </p>
                 <p className="text-xs text-muted-foreground">pips</p>

@@ -51,24 +51,24 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
       value: formatCurrency(totalPnl),
       subtitle: `${closedCount} closed trades`,
       icon: DollarSign,
-      colorClass: totalPnl >= 0 ? "text-emerald-400" : "text-red-400",
+      colorClass: totalPnl >= 0 ? "text-pos" : "text-neg",
       bgGradient:
         totalPnl >= 0
-          ? "from-emerald-500/10 to-transparent"
-          : "from-red-500/10 to-transparent",
-      iconBg: totalPnl >= 0 ? "bg-emerald-500/15" : "bg-red-500/15",
+          ? "from-pos/10 to-transparent"
+          : "from-neg/10 to-transparent",
+      iconBg: totalPnl >= 0 ? "bg-pos/15" : "bg-neg/15",
     },
     {
       label: "Win Rate",
       value: formatPercentage(winRate),
       subtitle: `${winCount} / ${closedCount} trades`,
       icon: Target,
-      colorClass: winRate >= 50 ? "text-emerald-400" : "text-amber-400",
+      colorClass: winRate >= 50 ? "text-pos" : "text-warn",
       bgGradient:
         winRate >= 50
-          ? "from-emerald-500/10 to-transparent"
-          : "from-amber-500/10 to-transparent",
-      iconBg: winRate >= 50 ? "bg-emerald-500/15" : "bg-amber-500/15",
+          ? "from-pos/10 to-transparent"
+          : "from-warn/10 to-transparent",
+      iconBg: winRate >= 50 ? "bg-pos/15" : "bg-warn/15",
     },
     {
       label: "Profit Factor",
@@ -85,25 +85,25 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
       icon: TrendingUp,
       colorClass:
         profitFactor !== null && profitFactor > 1
-          ? "text-emerald-400"
-          : "text-red-400",
+          ? "text-pos"
+          : "text-neg",
       bgGradient:
         profitFactor !== null && profitFactor > 1
-          ? "from-emerald-500/10 to-transparent"
-          : "from-red-500/10 to-transparent",
+          ? "from-pos/10 to-transparent"
+          : "from-neg/10 to-transparent",
       iconBg:
         profitFactor !== null && profitFactor > 1
-          ? "bg-emerald-500/15"
-          : "bg-red-500/15",
+          ? "bg-pos/15"
+          : "bg-neg/15",
     },
     {
       label: "Max Drawdown",
       value: formatCurrency(maxDrawdown),
       subtitle: "Peak to trough",
       icon: TrendingDown,
-      colorClass: "text-red-400",
-      bgGradient: "from-red-500/10 to-transparent",
-      iconBg: "bg-red-500/15",
+      colorClass: "text-neg",
+      bgGradient: "from-neg/10 to-transparent",
+      iconBg: "bg-neg/15",
     },
   ];
 }

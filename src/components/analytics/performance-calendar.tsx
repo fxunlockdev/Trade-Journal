@@ -44,14 +44,14 @@ function getPnlTier(absValue: number): PnlTier {
 // Previously used template-literal concatenation (`bg-emerald-500${opacity}`)
 // which got stripped at build time, making the heatmap monochrome in prod.
 const WIN_CLASS: Record<Exclude<PnlTier, 0>, string> = {
-  1: "bg-emerald-500/30",
-  2: "bg-emerald-500/60",
-  3: "bg-emerald-500/90",
+  1: "bg-pos/30",
+  2: "bg-pos/60",
+  3: "bg-pos/90",
 };
 const LOSS_CLASS: Record<Exclude<PnlTier, 0>, string> = {
-  1: "bg-red-500/30",
-  2: "bg-red-500/60",
-  3: "bg-red-500/90",
+  1: "bg-neg/30",
+  2: "bg-neg/60",
+  3: "bg-neg/90",
 };
 
 function getDayColor(pnl: number, tier: PnlTier): string {
@@ -277,16 +277,16 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <span>Less</span>
           <div className="flex gap-0.5">
             <div className="h-3 w-3 rounded-sm bg-muted opacity-40" />
-            <div className="h-3 w-3 rounded-sm bg-emerald-500/30" />
-            <div className="h-3 w-3 rounded-sm bg-emerald-500/60" />
-            <div className="h-3 w-3 rounded-sm bg-emerald-500/90" />
+            <div className="h-3 w-3 rounded-sm bg-pos/30" />
+            <div className="h-3 w-3 rounded-sm bg-pos/60" />
+            <div className="h-3 w-3 rounded-sm bg-pos/90" />
           </div>
           <span>More profit</span>
           <span className="ml-2">Less</span>
           <div className="flex gap-0.5">
-            <div className="h-3 w-3 rounded-sm bg-red-500/30" />
-            <div className="h-3 w-3 rounded-sm bg-red-500/60" />
-            <div className="h-3 w-3 rounded-sm bg-red-500/90" />
+            <div className="h-3 w-3 rounded-sm bg-neg/30" />
+            <div className="h-3 w-3 rounded-sm bg-neg/60" />
+            <div className="h-3 w-3 rounded-sm bg-neg/90" />
           </div>
           <span>More loss</span>
         </div>
@@ -315,7 +315,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
             <p
               className={cn(
                 "font-semibold",
-                tooltip.dayData.pnl >= 0 ? "text-emerald-500" : "text-red-400"
+                tooltip.dayData.pnl >= 0 ? "text-pos" : "text-neg"
               )}
             >
               {tooltip.dayData.pnl >= 0 ? "+" : ""}
@@ -331,7 +331,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             Best Day
           </p>
-          <p className="mt-1 text-base font-bold text-emerald-500">
+          <p className="mt-1 text-base font-bold text-pos">
             {bestDay
               ? `${bestDay.pnl >= 0 ? "+" : "-"}$${Math.abs(bestDay.pnl).toFixed(2)}`
               : "—"}
@@ -351,7 +351,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             Worst Day
           </p>
-          <p className="mt-1 text-base font-bold text-red-400">
+          <p className="mt-1 text-base font-bold text-neg">
             {worstDay
               ? `${worstDay.pnl >= 0 ? "+" : "-"}$${Math.abs(worstDay.pnl).toFixed(2)}`
               : "—"}
@@ -374,7 +374,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <p
             className={cn(
               "mt-1 text-base font-bold",
-              greenDaysPct >= 50 ? "text-emerald-500" : "text-red-400"
+              greenDaysPct >= 50 ? "text-pos" : "text-neg"
             )}
           >
             {greenDaysPct}%

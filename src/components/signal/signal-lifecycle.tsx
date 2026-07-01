@@ -36,22 +36,22 @@ const STATUS_BUTTON_CONFIG: Readonly<
 > = {
   SENT: {
     icon: <Send className="size-3.5" />,
-    color: "bg-blue-600 text-white hover:bg-blue-500",
+    color: "bg-primary text-white hover:bg-primary/90",
     label: "Mark as Sent",
   },
   ACTIVE: {
     icon: <Zap className="size-3.5" />,
-    color: "bg-amber-600 text-white hover:bg-amber-500",
+    color: "bg-warn text-white hover:bg-warn/90",
     label: "Mark Active",
   },
   SL_HIT: {
     icon: <ShieldAlert className="size-3.5" />,
-    color: "bg-red-600 text-white hover:bg-red-500",
+    color: "bg-neg text-white hover:bg-neg/90",
     label: "Stop Loss Hit",
   },
   CLOSED: {
     icon: <XCircle className="size-3.5" />,
-    color: "bg-slate-300 text-white hover:bg-muted",
+    color: "bg-muted text-white hover:bg-muted",
     label: "Close Signal",
   },
 };

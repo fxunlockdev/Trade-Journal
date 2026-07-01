@@ -193,9 +193,9 @@ interface StatusCardProps {
 function StatusCard({ tone, title, description, cta }: StatusCardProps) {
   const toneBorder =
     tone === "error"
-      ? "border-red-500/30 bg-red-500/5"
+      ? "border-neg/30 bg-neg/5"
       : tone === "warn"
-        ? "border-amber-500/30 bg-amber-500/5"
+        ? "border-warn/30 bg-warn/5"
         : "border-border bg-card";
   return (
     <div className={cn("rounded-xl border p-6", toneBorder)}>

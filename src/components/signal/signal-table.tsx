@@ -73,8 +73,8 @@ export function SignalTable({ signals }: SignalTableProps) {
                   className={cn(
                     "text-xs font-semibold uppercase",
                     signal.direction === "buy"
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border-red-500/30 bg-red-500/10 text-red-400",
+                      ? "border-pos/30 bg-pos/10 text-pos"
+                      : "border-neg/30 bg-neg/10 text-neg",
                   )}
                 >
                   {signal.direction}

@@ -19,7 +19,7 @@ export default function SignalsError({
       </p>
       <Button
         onClick={reset}
-        className="bg-emerald-600 text-white hover:bg-emerald-500"
+        className="bg-pos text-white hover:bg-pos/90"
       >
         Try again
       </Button>

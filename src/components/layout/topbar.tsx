@@ -186,7 +186,7 @@ export function Topbar({
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem
-              className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+              className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"
               onClick={handleLogout}
             >
               <LogOut className="mr-2 size-4" />

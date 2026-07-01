@@ -285,7 +285,7 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                            className="text-neg hover:bg-neg/10 hover:text-neg"
                           />
                         }
                       >
@@ -303,7 +303,7 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
-                            className="bg-red-500 text-white hover:bg-red-500/90"
+                            className="bg-neg text-white hover:bg-neg/90"
                             onClick={() => void handleRevoke(inv.id)}
                           >
                             Revoke

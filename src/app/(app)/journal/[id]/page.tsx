@@ -78,8 +78,8 @@ const TP_RESULT_LABEL: Readonly<Record<TPResult, string>> = {
 
 function tpResultStyle(result: TPResult): string {
   if (result === "hit")
-    return "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30";
-  if (result === "sl") return "bg-red-500/15 text-red-400 ring-1 ring-red-500/30";
+    return "bg-pos/15 text-pos ring-1 ring-pos/30";
+  if (result === "sl") return "bg-neg/15 text-neg ring-1 ring-neg/30";
   return "bg-muted text-muted-foreground ring-1 ring-border/40";
 }
 
@@ -175,8 +175,8 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
               className={cn(
                 "text-xs font-semibold uppercase",
                 t.direction === "buy"
-                  ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-                  : "border-red-500/30 text-red-400 bg-red-500/10",
+                  ? "border-pos/30 text-pos bg-pos/10"
+                  : "border-neg/30 text-neg bg-neg/10",
               )}
             >
               {t.direction}
@@ -186,7 +186,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
               className={cn(
                 "text-xs",
                 isOpen
-                  ? "border-yellow-500/30 text-yellow-400 bg-yellow-500/10"
+                  ? "border-warn/30 text-warn bg-warn/10"
                   : "border-border/40 text-muted-foreground",
               )}
             >
@@ -238,7 +238,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Stop Loss</p>
-                <p className="text-lg font-semibold tabular-nums text-red-400">
+                <p className="text-lg font-semibold tabular-nums text-neg">
                   {t.stop_loss !== null ? formatTpPrice(t.stop_loss) : "---"}
                   {t.sl_pips !== null && (
                     <span className="ml-1.5 text-xs font-normal text-muted-foreground">
@@ -268,8 +268,8 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                     t.pnl_absolute === null
                       ? "text-muted-foreground"
                       : isProfitable
-                        ? "text-emerald-400"
-                        : "text-red-400",
+                        ? "text-pos"
+                        : "text-neg",
                   )}
                 >
                   {t.pnl_absolute !== null
@@ -285,8 +285,8 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                     t.pnl_percentage === null
                       ? "text-muted-foreground"
                       : t.pnl_percentage >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400",
+                        ? "text-pos"
+                        : "text-neg",
                   )}
                 >
                   {t.pnl_percentage !== null
@@ -310,8 +310,8 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                     t.r_multiple === null
                       ? "text-muted-foreground"
                       : t.r_multiple >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400",
+                        ? "text-pos"
+                        : "text-neg",
                   )}
                 >
                   {t.r_multiple !== null
@@ -341,11 +341,11 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
         </CardHeader>
         <CardContent>
           {legacyTpOnly && (
-            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
+            <div className="rounded-md border border-pos/30 bg-pos/5 p-4">
               <p className="text-xs text-muted-foreground mb-1">
                 Take Profit (legacy)
               </p>
-              <p className="text-lg font-semibold tabular-nums text-emerald-400">
+              <p className="text-lg font-semibold tabular-nums text-pos">
                 {formatTpPrice(t.take_profit as number)}
               </p>
             </div>

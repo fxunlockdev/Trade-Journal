@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { FoldLogo } from "@/components/brand/fold-logo";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -177,30 +178,31 @@ function LoginContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-muted to-primary/5">
-      {/* Subtle gradient background */}
+    <div className="bg-hero-forest relative flex min-h-screen items-center justify-center overflow-hidden">
+      {/* Ambient lime glows */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-1/2 left-1/2 h-[800px] w-[800px] -translate-x-1/2 rounded-full bg-primary/[0.06] blur-3xl" />
-        <div className="absolute -bottom-1/2 left-1/4 h-[600px] w-[600px] rounded-full bg-primary/[0.04] blur-3xl" />
+        <div className="glow-lime absolute -top-40 right-[-60px] h-[360px] w-[420px] opacity-20" />
+        <div className="glow-lime absolute -bottom-48 left-[10%] h-[320px] w-[380px] opacity-[0.14]" />
       </div>
 
       {/* Grid pattern overlay */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.02]"
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
         style={{
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)`,
           backgroundSize: "64px 64px",
         }}
       />
 
       <div className="relative z-10 w-full max-w-md px-4">
         {/* Brand */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <FoldLogo size={52} className="drop-shadow-[0_8px_24px_rgba(168,214,66,0.25)]" />
+          <h1 className="mt-4 font-heading text-4xl font-extrabold tracking-tight text-[#f1f5ef]">
             FX Unlock
           </h1>
-          <p className="mt-2 text-sm font-medium tracking-widest uppercase text-muted-foreground">
+          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.2em] text-[#9fe0ad]">
             Trade Journal
           </p>
         </div>
@@ -267,7 +269,7 @@ function LoginContent() {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/30"
@@ -286,7 +288,7 @@ function LoginContent() {
                   <Input
                     id="confirm-password"
                     type="password"
-                    placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                    placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/30"
@@ -298,7 +300,9 @@ function LoginContent() {
 
               <Button
                 type="submit"
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                variant="lime"
+                size="lg"
+                className="w-full"
                 disabled={loading || googleLoading}
               >
                 {loading ? (
@@ -328,7 +332,7 @@ function LoginContent() {
         </Card>
 
         {/* Footer */}
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-xs text-[#b3c4b8]">
           Secure, encrypted, and private by design.
         </p>
       </div>

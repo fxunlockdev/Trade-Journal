@@ -98,8 +98,8 @@ export default async function SignalDetailPage({ params }: PageProps) {
             className={cn(
               "text-sm font-bold uppercase",
               typedSignal.direction === "buy"
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                : "border-red-500/30 bg-red-500/10 text-red-400",
+                ? "border-pos/30 bg-pos/10 text-pos"
+                : "border-neg/30 bg-neg/10 text-neg",
             )}
           >
             {typedSignal.direction}
@@ -135,15 +135,15 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     {typedSignal.entry_price}
                   </span>
                 </div>
-                <div className="flex items-center justify-between rounded-lg bg-red-500/5 px-3 py-2">
-                  <span className="text-sm text-red-400">Stop Loss</span>
+                <div className="flex items-center justify-between rounded-lg bg-neg/5 px-3 py-2">
+                  <span className="text-sm text-neg">Stop Loss</span>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-red-400">
+                    <span className="font-mono text-sm font-semibold text-neg">
                       {typedSignal.stop_loss}
                     </span>
                     <Badge
                       variant="outline"
-                      className="border-red-500/20 text-xs text-red-400"
+                      className="border-neg/20 text-xs text-neg"
                     >
                       {computePipsDifference(
                         typedSignal.entry_price,
@@ -160,18 +160,18 @@ export default async function SignalDetailPage({ params }: PageProps) {
                     tp.value !== null && (
                       <div
                         key={tp.label}
-                        className="flex items-center justify-between rounded-lg bg-emerald-500/5 px-3 py-2"
+                        className="flex items-center justify-between rounded-lg bg-pos/5 px-3 py-2"
                       >
-                        <span className="text-sm text-emerald-400">
+                        <span className="text-sm text-pos">
                           {tp.label}
                         </span>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-emerald-400">
+                          <span className="font-mono text-sm font-semibold text-pos">
                             {tp.value}
                           </span>
                           <Badge
                             variant="outline"
-                            className="border-emerald-500/20 text-xs text-emerald-400"
+                            className="border-pos/20 text-xs text-pos"
                           >
                             {computePipsDifference(
                               typedSignal.entry_price,

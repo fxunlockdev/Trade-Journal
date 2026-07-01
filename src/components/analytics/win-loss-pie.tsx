@@ -66,10 +66,10 @@ export function WinLossPie({ trades }: WinLossPieProps) {
   }
 
   const data: readonly PieSlice[] = [
-    { name: "Wins", value: wins, color: "#10b981" },
-    { name: "Losses", value: losses, color: "#ef4444" },
+    { name: "Wins", value: wins, color: "var(--pos)" },
+    { name: "Losses", value: losses, color: "var(--neg)" },
     ...(breakeven > 0
-      ? [{ name: "Break-even", value: breakeven, color: "#71717a" }]
+      ? [{ name: "Break-even", value: breakeven, color: "var(--muted-foreground)" }]
       : []),
   ];
 

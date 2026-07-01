@@ -40,7 +40,7 @@ export function JournalPicker({
 
   if (writable.length === 0) {
     return (
-      <p className="text-xs text-amber-400">
+      <p className="text-xs text-warn">
         You don&apos;t have edit rights in any active journal. Ask an owner to
         promote you, or create a new journal of your own.
       </p>

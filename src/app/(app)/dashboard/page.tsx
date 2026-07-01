@@ -193,7 +193,7 @@ function RecentTrades({ trades }: { readonly trades: readonly Trade[] }) {
               <div
                 className={cn(
                   "size-2 rounded-full",
-                  trade.direction === "buy" ? "bg-emerald-400" : "bg-red-400"
+                  trade.direction === "buy" ? "bg-pos" : "bg-neg"
                 )}
               />
               <div>
@@ -212,9 +212,9 @@ function RecentTrades({ trades }: { readonly trades: readonly Trade[] }) {
                   trade.pnl_absolute === null
                     ? "text-muted-foreground"
                     : trade.pnl_absolute > 0
-                      ? "text-emerald-500"
+                      ? "text-pos"
                       : trade.pnl_absolute < 0
-                        ? "text-red-400"
+                        ? "text-neg"
                         : "text-muted-foreground"
                 )}
               >

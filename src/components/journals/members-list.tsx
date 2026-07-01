@@ -167,8 +167,8 @@ export function MembersList({
 
   if (error) {
     return (
-      <Card className="border-red-500/30 bg-red-500/5">
-        <CardContent className="pt-6 text-sm text-red-400">{error}</CardContent>
+      <Card className="border-neg/30 bg-neg/5">
+        <CardContent className="pt-6 text-sm text-neg">{error}</CardContent>
       </Card>
     );
   }
@@ -250,7 +250,7 @@ export function MembersList({
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-8 px-2 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                            className="h-8 px-2 text-neg hover:bg-neg/10 hover:text-neg/80"
                           />
                         }
                       >
@@ -268,7 +268,7 @@ export function MembersList({
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
-                            className="bg-red-500 text-white hover:bg-red-500/90"
+                            className="bg-neg text-white hover:bg-neg/90"
                             onClick={() => void handleRemove(m.user_id, false)}
                           >
                             Remove
@@ -304,7 +304,7 @@ export function MembersList({
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
-                            className="bg-red-500 text-white hover:bg-red-500/90"
+                            className="bg-neg text-white hover:bg-neg/90"
                             onClick={() => void handleRemove(m.user_id, true)}
                           >
                             Leave

@@ -77,9 +77,9 @@ function describeAction(entry: AuditEntry): string {
 }
 
 function actionDotColor(action: TradeAuditAction): string {
-  if (action === "created") return "bg-emerald-500";
-  if (action === "deleted") return "bg-red-500";
-  return "bg-sky-500";
+  if (action === "created") return "bg-pos";
+  if (action === "deleted") return "bg-neg";
+  return "bg-primary";
 }
 
 export function ActivityFeed({
@@ -131,7 +131,7 @@ export function ActivityFeed({
 
   if (error) {
     return (
-      <p className="text-sm text-red-400">{error}</p>
+      <p className="text-sm text-neg">{error}</p>
     );
   }
 

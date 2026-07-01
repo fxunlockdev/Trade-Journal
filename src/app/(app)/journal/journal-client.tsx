@@ -61,8 +61,8 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
             pnlNeutral
               ? "text-muted-foreground"
               : pnlPositive
-                ? "text-emerald-500"
-                : "text-red-400",
+                ? "text-pos"
+                : "text-neg",
           )}
         >
           {stats.totalPnl >= 0 ? "+" : ""}
@@ -79,9 +79,9 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
           Wins / Losses
         </p>
         <p className="mt-1 text-lg font-bold">
-          <span className="text-emerald-500">{stats.wins}</span>
+          <span className="text-pos">{stats.wins}</span>
           <span className="text-muted-foreground mx-1">/</span>
-          <span className="text-red-400">{stats.losses}</span>
+          <span className="text-neg">{stats.losses}</span>
         </p>
         <p className="text-[10px] text-muted-foreground">closed trades</p>
       </div>
@@ -94,7 +94,7 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
         <p
           className={cn(
             "mt-1 text-lg font-bold",
-            stats.winRate >= 50 ? "text-emerald-500" : "text-red-400",
+            stats.winRate >= 50 ? "text-pos" : "text-neg",
           )}
         >
           {stats.winRate.toFixed(1)}%
@@ -118,7 +118,7 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Open
         </p>
-        <p className="mt-1 text-lg font-bold text-yellow-400">
+        <p className="mt-1 text-lg font-bold text-warn">
           {trades.length - stats.closed}
         </p>
         <p className="text-[10px] text-muted-foreground">

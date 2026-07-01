@@ -29,8 +29,8 @@ export function TradeCard({ trade }: TradeCardProps) {
               className={cn(
                 "text-[10px] font-semibold uppercase",
                 trade.direction === "buy"
-                  ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-                  : "border-red-500/30 text-red-400 bg-red-500/10",
+                  ? "border-pos/30 text-pos bg-pos/10"
+                  : "border-neg/30 text-neg bg-neg/10",
               )}
             >
               {trade.direction}
@@ -39,7 +39,7 @@ export function TradeCard({ trade }: TradeCardProps) {
           {isOpen ? (
             <Badge
               variant="outline"
-              className="text-[10px] border-yellow-500/30 text-yellow-400 bg-yellow-500/10"
+              className="text-[10px] border-warn/30 text-warn bg-warn/10"
             >
               Open
             </Badge>
@@ -47,7 +47,7 @@ export function TradeCard({ trade }: TradeCardProps) {
             <span
               className={cn(
                 "text-sm font-semibold tabular-nums",
-                isProfitable ? "text-emerald-400" : "text-red-400",
+                isProfitable ? "text-pos" : "text-neg",
               )}
             >
               {isProfitable ? "+" : ""}
