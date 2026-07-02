@@ -34,23 +34,24 @@ export type EmotionState = (typeof EMOTION_VALUES)[number];
 export interface EmotionOption {
   readonly value: EmotionState;
   readonly label: string;
+  readonly emoji: string;
   readonly tone: EmotionTone;
 }
 
-/** Display metadata (label + chip tone) for each emotion, in picker order. */
+/** Display metadata (emoji + label + chip tone) for each emotion, in picker order. */
 export const EMOTIONS: readonly EmotionOption[] = [
-  { value: "calm", label: "Calm", tone: "pos" },
-  { value: "confident", label: "Confident", tone: "pos" },
-  { value: "disciplined", label: "Disciplined", tone: "pos" },
-  { value: "neutral", label: "Neutral", tone: "muted" },
-  { value: "excited", label: "Excited", tone: "warn" },
-  { value: "overconfident", label: "Overconfident", tone: "warn" },
-  { value: "anxious", label: "Anxious", tone: "neg" },
-  { value: "fearful", label: "Fearful", tone: "neg" },
-  { value: "greedy", label: "Greedy", tone: "neg" },
-  { value: "fomo", label: "FOMO", tone: "neg" },
-  { value: "revenge", label: "Revenge", tone: "neg" },
-  { value: "frustrated", label: "Frustrated", tone: "neg" },
+  { value: "calm", label: "Calm", emoji: "😌", tone: "pos" },
+  { value: "confident", label: "Confident", emoji: "😎", tone: "pos" },
+  { value: "disciplined", label: "Disciplined", emoji: "🧘", tone: "pos" },
+  { value: "neutral", label: "Neutral", emoji: "😐", tone: "muted" },
+  { value: "excited", label: "Excited", emoji: "🤩", tone: "warn" },
+  { value: "overconfident", label: "Overconfident", emoji: "😏", tone: "warn" },
+  { value: "anxious", label: "Anxious", emoji: "😟", tone: "neg" },
+  { value: "fearful", label: "Fearful", emoji: "😨", tone: "neg" },
+  { value: "greedy", label: "Greedy", emoji: "🤑", tone: "neg" },
+  { value: "fomo", label: "FOMO", emoji: "🏃", tone: "neg" },
+  { value: "revenge", label: "Revenge", emoji: "😡", tone: "neg" },
+  { value: "frustrated", label: "Frustrated", emoji: "😤", tone: "neg" },
 ] as const;
 
 /** value → option lookup for O(1) label/tone resolution when rendering. */

@@ -307,7 +307,7 @@ export function TradeFiltersBar({ onFilterChange }: TradeFiltersProps) {
               <SelectItem value="all">All emotions</SelectItem>
               {EMOTIONS.map((e) => (
                 <SelectItem key={e.value} value={e.value}>
-                  {e.label}
+                  {e.emoji} {e.label}
                 </SelectItem>
               ))}
             </SelectContent>

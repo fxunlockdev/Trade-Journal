@@ -1219,7 +1219,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   <SelectItem value="none">None</SelectItem>
                   {EMOTIONS.map((e) => (
                     <SelectItem key={e.value} value={e.value}>
-                      {e.label}
+                      {e.emoji} {e.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1246,7 +1246,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   <SelectItem value="none">None</SelectItem>
                   {EMOTIONS.map((e) => (
                     <SelectItem key={e.value} value={e.value}>
-                      {e.label}
+                      {e.emoji} {e.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

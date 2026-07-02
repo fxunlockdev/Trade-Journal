@@ -460,7 +460,7 @@ export function TradeTable({ trades }: TradeTableProps) {
                           className="px-1.5 py-0 text-[10px]"
                           title={`Emotion when trading: ${e.label}`}
                         >
-                          {e.label}
+                          {e.emoji} {e.label}
                         </Badge>
                       );
                     })()}

@@ -499,7 +499,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                           variant={EMOTION_TONE_BADGE[entry.tone]}
                           className="text-xs"
                         >
-                          {entry.label}
+                          {entry.emoji} {entry.label}
                         </Badge>
                       </div>
                     )}
@@ -512,7 +512,7 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                           variant={EMOTION_TONE_BADGE[post.tone]}
                           className="text-xs"
                         >
-                          {post.label}
+                          {post.emoji} {post.label}
                         </Badge>
                       </div>
                     )}
