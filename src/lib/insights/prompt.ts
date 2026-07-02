@@ -100,20 +100,6 @@ function buildStatsBlock(stats: TradingStats): string {
     `BUY:  ${stats.by_direction.buy.trades} trades, ${formatPct(stats.by_direction.buy.win_rate)} win rate, PnL ${formatUsd(stats.by_direction.buy.pnl)}`,
     `SELL: ${stats.by_direction.sell.trades} trades, ${formatPct(stats.by_direction.sell.win_rate)} win rate, PnL ${formatUsd(stats.by_direction.sell.pnl)}`,
     "",
-    "=== EMOTIONAL STATE (tagged trades only) ===",
-    ...(stats.by_emotion.length > 0
-      ? stats.by_emotion.map(
-          (s) =>
-            `When trading — ${s.emotion}: ${s.trades} trades, ${formatPct(s.win_rate)} win rate, PnL ${formatUsd(s.pnl)}`
-        )
-      : ["When trading: no emotions tagged yet."]),
-    ...(stats.by_emotion_post.length > 0
-      ? stats.by_emotion_post.map(
-          (s) =>
-            `After trade — ${s.emotion}: ${s.trades} trades, ${formatPct(s.win_rate)} win rate, PnL ${formatUsd(s.pnl)}`
-        )
-      : ["After trade: no emotions tagged yet."]),
-    "",
     "=== TIME ANALYSIS ===",
     stats.best_hour !== null
       ? `Best Hour (UTC): ${stats.best_hour.hour}:00 — ${stats.best_hour.trades} trades, ${formatPct(stats.best_hour.win_rate)} win rate, PnL ${formatUsd(stats.best_hour.pnl)}`
@@ -194,7 +180,6 @@ export function buildInsightsUserPrompt(stats: TradingStats): string {
     "- mistakes: 2-5 items; severity must be one of: critical, warning, info",
     "- suggestions: 3-5 items; priority must be one of: high, medium, low",
     "- patterns: 2-3 items",
-    "- If emotional-state data is present, surface at least one pattern or mistake correlating an emotion (e.g. FOMO, Revenge, Greedy) with win rate or PnL, citing the exact numbers.",
     "- score: integer 0-100",
     "- Output raw JSON only. No markdown, no fences, no extra text.",
   ].join("\n");

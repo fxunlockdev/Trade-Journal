@@ -1,5 +1,4 @@
 import type { Trade } from "@/types/database";
-import { EMOTION_MAP, type EmotionState } from "@/lib/constants/emotions";
 
 export interface InstrumentStat {
   readonly instrument: string;
@@ -26,15 +25,6 @@ export interface HourStat {
 export interface DayStat {
   readonly day: string;
   readonly trades: number;
-  readonly win_rate: number;
-  readonly pnl: number;
-}
-
-export interface EmotionStat {
-  /** Human label (e.g. "FOMO"). */
-  readonly emotion: string;
-  readonly trades: number;
-  readonly wins: number;
   readonly win_rate: number;
   readonly pnl: number;
 }
@@ -71,10 +61,6 @@ export interface TradingStats {
   readonly max_consecutive_wins: number;
   readonly recent_losing_streak: number;
   readonly recent_trades_text: string;
-  /** Win/PnL breakdown by entry ("when trading") emotion. */
-  readonly by_emotion: readonly EmotionStat[];
-  /** Win/PnL breakdown by post-trade emotion. */
-  readonly by_emotion_post: readonly EmotionStat[];
 }
 
 const DAYS_OF_WEEK = [
@@ -201,39 +187,6 @@ function computeByInstrument(
     }))
     .sort((a, b) => b.trades - a.trades)
     .slice(0, 8);
-}
-
-/**
- * Win/PnL breakdown keyed by an emotion field (entry or post-trade). Skips
- * trades with no emotion recorded so the breakdown only reflects tagged trades.
- */
-function computeByEmotion(
-  closedTrades: readonly Trade[],
-  field: "emotion" | "emotion_post",
-): readonly EmotionStat[] {
-  const map = new Map<EmotionState, { wins: number; count: number; pnl: number }>();
-
-  for (const trade of closedTrades) {
-    const value = trade[field];
-    if (!value) continue;
-    const existing = map.get(value) ?? { wins: 0, count: 0, pnl: 0 };
-    const isWin = (trade.pnl_absolute ?? 0) > 0;
-    map.set(value, {
-      wins: existing.wins + (isWin ? 1 : 0),
-      count: existing.count + 1,
-      pnl: existing.pnl + (trade.pnl_absolute ?? 0),
-    });
-  }
-
-  return Array.from(map.entries())
-    .map(([emotion, { wins, count, pnl }]) => ({
-      emotion: EMOTION_MAP[emotion]?.label ?? emotion,
-      trades: count,
-      wins,
-      win_rate: count > 0 ? (wins / count) * 100 : 0,
-      pnl,
-    }))
-    .sort((a, b) => b.trades - a.trades);
 }
 
 interface HourAccumulator {
@@ -439,8 +392,6 @@ export function computeTradingStats(
   // systematically under-reported: trades with null pnl_absolute counted
   // toward the denominator but never the numerator.
   const byInstrument = computeByInstrument(scoredClosed);
-  const byEmotion = computeByEmotion(scoredClosed, "emotion");
-  const byEmotionPost = computeByEmotion(scoredClosed, "emotion_post");
 
   const byDirection = {
     buy: computeDirectionStat(trades, "buy"),
@@ -476,7 +427,5 @@ export function computeTradingStats(
     max_consecutive_wins: maxWins,
     recent_losing_streak: recentLosingStreak,
     recent_trades_text: recentTradesText,
-    by_emotion: byEmotion,
-    by_emotion_post: byEmotionPost,
   };
 }
