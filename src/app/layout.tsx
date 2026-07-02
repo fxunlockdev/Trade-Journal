@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Hanken_Grotesk, Manrope } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToasterProvider } from "@/components/toaster-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 // Manrope — body, data & UI labels (legible, balanced).
@@ -43,7 +44,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          {/* Global tooltip provider — snappy 200ms open (Base UI defaults to
+              600ms with no provider, which reads as "no tooltip") and groups
+              adjacent help icons so moving between them is instant. */}
+          <TooltipProvider delay={200} closeDelay={0}>
+            {children}
+          </TooltipProvider>
           <ToasterProvider />
         </ThemeProvider>
       </body>
