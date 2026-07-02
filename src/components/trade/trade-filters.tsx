@@ -14,6 +14,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { EMOTIONS, type EmotionState } from "@/lib/constants/emotions";
 
 export interface TradeFilters {
   readonly from?: string;
@@ -21,6 +29,8 @@ export interface TradeFilters {
   readonly instrument?: string;
   readonly pnl_filter?: "profit" | "loss" | "all";
   readonly tags?: string;
+  /** Filters on the entry ("when trading") emotion. */
+  readonly emotion?: EmotionState;
 }
 
 interface TradeFiltersProps {
@@ -137,6 +147,7 @@ export function TradeFiltersBar({ onFilterChange }: TradeFiltersProps) {
       filters.to ||
       filters.instrument ||
       filters.tags ||
+      filters.emotion ||
       (filters.pnl_filter && filters.pnl_filter !== "all"),
   );
 
@@ -276,6 +287,31 @@ export function TradeFiltersBar({ onFilterChange }: TradeFiltersProps) {
               updateFilter({ tags: e.target.value || undefined })
             }
           />
+        </div>
+
+        {/* Emotion (entry) */}
+        <div className="space-y-1.5 w-full sm:w-auto">
+          <Label className="text-xs text-muted-foreground">Emotion</Label>
+          <Select
+            value={filters.emotion ?? "all"}
+            onValueChange={(v) =>
+              updateFilter({
+                emotion: v === "all" ? undefined : (v as EmotionState),
+              })
+            }
+          >
+            <SelectTrigger className="h-9 w-full text-sm sm:w-[150px]">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All emotions</SelectItem>
+              {EMOTIONS.map((e) => (
+                <SelectItem key={e.value} value={e.value}>
+                  {e.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Clear */}
