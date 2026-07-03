@@ -28,15 +28,105 @@ export interface TradeInsightsResult {
   readonly focus_next_week: string;
 }
 
+/**
+ * Strict JSON Schema for OpenAI structured outputs. Guarantees the model
+ * returns parseable JSON matching TradeInsightsResult — no fences, no prose,
+ * no malformed output. Keep in sync with the TradeInsightsResult interface.
+ */
+export const INSIGHTS_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "summary",
+    "score",
+    "strengths",
+    "mistakes",
+    "suggestions",
+    "patterns",
+    "focus_next_week",
+  ],
+  properties: {
+    summary: {
+      type: "string",
+      description: "2-3 sentence plain-English assessment of overall performance",
+    },
+    score: {
+      type: "integer",
+      description: "0-100 overall trading quality score",
+    },
+    strengths: {
+      type: "array",
+      description: "2-4 strengths, each citing exact numbers from the data",
+      items: { type: "string" },
+    },
+    mistakes: {
+      type: "array",
+      description: "2-5 mistakes ordered most severe first",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "description", "severity", "fix"],
+        properties: {
+          title: { type: "string" },
+          description: { type: "string", description: "specific, with numbers" },
+          severity: { type: "string", enum: ["critical", "warning", "info"] },
+          fix: { type: "string", description: "concrete actionable fix" },
+        },
+      },
+    },
+    suggestions: {
+      type: "array",
+      description: "3-5 suggestions ordered highest priority first",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "action", "priority"],
+        properties: {
+          title: { type: "string" },
+          action: { type: "string", description: "specific measurable action" },
+          priority: { type: "string", enum: ["high", "medium", "low"] },
+        },
+      },
+    },
+    patterns: {
+      type: "array",
+      description: "2-3 non-obvious patterns found in the data",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "insight"],
+        properties: {
+          title: { type: "string" },
+          insight: { type: "string", description: "what it means and why it matters" },
+        },
+      },
+    },
+    focus_next_week: {
+      type: "string",
+      description: "one specific, measurable improvement goal for next week",
+    },
+  },
+} as const;
+
 export function buildInsightsSystemPrompt(): string {
-  return (
-    "You are an expert trading coach and performance analyst for FX Unlock Trade Journal. " +
-    "Analyze trading data and provide brutally honest, specific, actionable feedback. " +
-    "You identify patterns humans miss. Be direct and specific — no generic advice. " +
-    "Always reference specific numbers from the data. " +
-    "Respond with a single JSON object matching the exact schema provided in the user message. " +
-    "Output raw JSON only — no markdown, no code fences, no extra commentary."
-  );
+  return [
+    "You are an elite trading performance coach for FX Unlock Trade Journal.",
+    "You analyze a trader's aggregated statistics and return structured JSON insights.",
+    "",
+    "Principles:",
+    "- Be brutally honest and specific. Never give generic advice that could apply to any trader.",
+    "- Every claim must cite exact numbers from the supplied data (win rates, PnL, counts, hours, instruments).",
+    "- Surface non-obvious patterns: instrument/direction asymmetries, time-of-day or day-of-week edges, discipline gaps (missing SL/TP), streak behavior, risk-reward imbalances.",
+    "- Fixes and suggestions must be concrete and measurable (e.g. 'set a hard SL on every XAUUSD trade', not 'manage risk better').",
+    "- If sample sizes are small (<10 closed trades or <5 per slice), say so and lower confidence rather than overclaiming.",
+    "",
+    "Scoring rubric (0-100, integer):",
+    "- 40 pts profitability: profit factor, total PnL, avg win vs avg loss",
+    "- 25 pts consistency: win rate vs RR balance, streaks, variance across instruments",
+    "- 25 pts discipline: SL usage, TP usage, hold-time sanity",
+    "- 10 pts sample quality: enough closed trades to judge",
+    "Typical struggling trader: 30-50. Solid: 60-75. Only exceptional, disciplined, profitable records score 80+.",
+  ].join("\n");
 }
 
 function formatPct(value: number): string {
@@ -121,66 +211,15 @@ function buildStatsBlock(stats: TradingStats): string {
   return lines.join("\n");
 }
 
-function buildResponseSchema(): string {
-  return JSON.stringify(
-    {
-      summary: "2-3 sentence plain-English assessment of overall performance",
-      score:
-        "0-100 integer: overall trading quality based on win rate, profit factor, RR ratio, and discipline (SL/TP usage)",
-      strengths: [
-        "specific strength with exact numbers, e.g. 'Win rate on BTCUSDT is 71% across 14 trades'",
-        "... (2-4 items)",
-      ],
-      mistakes: [
-        {
-          title: "short title",
-          description: "specific description with numbers",
-          severity: "critical | warning | info",
-          fix: "concrete actionable fix",
-        },
-      ],
-      suggestions: [
-        {
-          title: "short title",
-          action: "specific measurable action",
-          priority: "high | medium | low",
-        },
-      ],
-      patterns: [
-        {
-          title: "short pattern title",
-          insight: "what the pattern means and why it matters",
-        },
-      ],
-      focus_next_week:
-        "one specific, measurable improvement goal for next week",
-    },
-    null,
-    2
-  );
-}
-
 export function buildInsightsUserPrompt(stats: TradingStats): string {
-  const statsBlock = buildStatsBlock(stats);
-  const schema = buildResponseSchema();
-
+  // The response shape is enforced by structured outputs (INSIGHTS_JSON_SCHEMA)
+  // — no need to burn tokens restating the schema here. Only the data and the
+  // item-count rules the schema can't express.
   return [
-    "Here is the trader's performance data:",
+    "Trader's performance data:",
     "",
-    statsBlock,
+    buildStatsBlock(stats),
     "",
-    "---",
-    "",
-    "Analyze this data and respond with a JSON object that matches EXACTLY this schema:",
-    "",
-    schema,
-    "",
-    "Rules:",
-    "- strengths: 2-4 items, each must cite specific numbers from the data above",
-    "- mistakes: 2-5 items; severity must be one of: critical, warning, info",
-    "- suggestions: 3-5 items; priority must be one of: high, medium, low",
-    "- patterns: 2-3 items",
-    "- score: integer 0-100",
-    "- Output raw JSON only. No markdown, no fences, no extra text.",
+    "Analyze the data above. Item counts: strengths 2-4, mistakes 2-5, suggestions 3-5, patterns 2-3.",
   ].join("\n");
 }

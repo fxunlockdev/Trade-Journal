@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
-import { buildSystemPrompt } from "@/lib/chat/system-prompt";
+import {
+  TRADE_CHAT_SYSTEM_PROMPT,
+  buildTurnContext,
+} from "@/lib/chat/system-prompt";
 import { parseTradeAction, getTradeParseErrors } from "@/lib/chat/parse-action";
 import type { Trade, ChatMessage } from "@/types/database";
 
@@ -20,6 +23,18 @@ function isValidChatRequest(body: unknown): body is ChatRequestBody {
 
 type AdminDB = ReturnType<typeof createAdminClient>;
 
+// History is only needed for short-range context (follow-ups like "add SL
+// 76500" or "actually that was a sell"). 12 messages covers that; each is
+// capped so a pasted multi-signal wall doesn't get re-billed on every
+// subsequent turn.
+const HISTORY_LIMIT = 12;
+const HISTORY_MESSAGE_MAX_CHARS = 2000;
+
+function capHistoryContent(content: string): string {
+  if (content.length <= HISTORY_MESSAGE_MAX_CHARS) return content;
+  return `${content.slice(0, HISTORY_MESSAGE_MAX_CHARS)}\n[...truncated]`;
+}
+
 async function loadChatHistory(
   adminDB: AdminDB,
   userId: string,
@@ -30,7 +45,7 @@ async function loadChatHistory(
     .eq("user_id", userId)
     .in("role", ["user", "assistant"])
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(HISTORY_LIMIT);
 
   if (error) {
     console.error("[chat] loadChatHistory error:", error.message);
@@ -42,7 +57,7 @@ async function loadChatHistory(
     .reverse()
     .map((msg: { role: string; content: string }) => ({
       role: msg.role as "user" | "assistant",
-      content: msg.content,
+      content: capHistoryContent(msg.content),
     }));
 }
 
@@ -183,21 +198,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
     }
 
     // All DB operations use admin client to bypass RLS
     const adminDB = createAdminClient();
-    const client = new OpenAI({ apiKey });
+    const client = getOpenAIClient();
     const currentDatetime = new Date().toISOString();
 
     // Load memory (previous messages)
     const previousMessages = await loadChatHistory(adminDB, user.id);
 
-    // Build conversation input for Responses API
+    // Build conversation input for the Responses API. The datetime rides as
+    // a per-turn system message so `instructions` stays byte-identical and
+    // prompt-cacheable across every request.
     const inputMessages = [
+      { role: "system" as const, content: buildTurnContext(currentDatetime) },
       ...previousMessages.map((msg) => ({
         role: msg.role as "user" | "assistant",
         content: msg.content,
@@ -208,15 +225,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Save user message to memory BEFORE AI call
     await saveChatMessage(adminDB, user.id, "user", body.message);
 
-    // Call OpenAI Responses API — gpt-5.4
+    // GPT-5.4-mini (reasoning model): no `temperature` — the API rejects it.
+    // Low reasoning effort keeps trade logging fast and cheap; extraction is
+    // pattern-matching, not deep reasoning. max_output_tokens covers
+    // reasoning tokens + the JSON block + confirmation line.
     let aiContent = "";
     try {
       const response = await client.responses.create({
-        model: "gpt-5.4",
-        instructions: buildSystemPrompt(currentDatetime),
+        model: OPENAI_MODEL,
+        instructions: TRADE_CHAT_SYSTEM_PROMPT,
         input: inputMessages,
-        temperature: 0.2,
-        max_output_tokens: 2048,
+        reasoning: { effort: "low" },
+        max_output_tokens: 3000,
       });
       aiContent = response.output_text ?? "";
     } catch (openaiErr: unknown) {

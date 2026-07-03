@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
+import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
 import { computeTradingStats } from "@/lib/insights/analyzer";
 import {
   buildInsightsSystemPrompt,
   buildInsightsUserPrompt,
+  INSIGHTS_JSON_SCHEMA,
 } from "@/lib/insights/prompt";
 import type { TradeInsightsResult } from "@/lib/insights/prompt";
 import type { Trade } from "@/types/database";
@@ -137,14 +138,27 @@ export async function POST(): Promise<NextResponse> {
 
     const stats = computeTradingStats(trades);
 
-    const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const openaiClient = getOpenAIClient();
 
+    // GPT-5.4-mini is a reasoning model: no `temperature` (the API rejects
+    // it), steer with `reasoning.effort` instead. max_output_tokens must
+    // cover reasoning tokens + the JSON payload, so it's well above the
+    // ~800-token final answer. Structured outputs (json_schema, strict)
+    // guarantee a parseable TradeInsightsResult in a single call.
     const response = await openaiClient.responses.create({
-      model: "gpt-5.4-mini",
+      model: OPENAI_MODEL,
       instructions: buildInsightsSystemPrompt(),
       input: buildInsightsUserPrompt(stats),
-      temperature: 0.3,
-      max_output_tokens: 1500,
+      reasoning: { effort: "medium" },
+      max_output_tokens: 5000,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "trade_insights",
+          strict: true,
+          schema: INSIGHTS_JSON_SCHEMA as unknown as Record<string, unknown>,
+        },
+      },
     });
 
     const rawText = response.output_text ?? "";
