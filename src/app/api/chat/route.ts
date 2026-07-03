@@ -231,13 +231,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // reasoning tokens + the JSON block + confirmation line.
     let aiContent = "";
     try {
-      const response = await client.responses.create({
-        model: OPENAI_MODEL,
-        instructions: TRADE_CHAT_SYSTEM_PROMPT,
-        input: inputMessages,
-        reasoning: { effort: "low" },
-        max_output_tokens: 3000,
-      });
+      const response = await client.responses.create(
+        {
+          model: OPENAI_MODEL,
+          instructions: TRADE_CHAT_SYSTEM_PROMPT,
+          input: inputMessages,
+          reasoning: { effort: "low" },
+          max_output_tokens: 3000,
+        },
+        { timeout: 30_000 },
+      );
       aiContent = response.output_text ?? "";
     } catch (openaiErr: unknown) {
       const msg = openaiErr instanceof Error ? openaiErr.message : "OpenAI error";

@@ -145,30 +145,60 @@ export async function POST(): Promise<NextResponse> {
     // cover reasoning tokens + the JSON payload, so it's well above the
     // ~800-token final answer. Structured outputs (json_schema, strict)
     // guarantee a parseable TradeInsightsResult in a single call.
-    const response = await openaiClient.responses.create({
-      model: OPENAI_MODEL,
-      instructions: buildInsightsSystemPrompt(),
-      input: buildInsightsUserPrompt(stats),
-      reasoning: { effort: "medium" },
-      max_output_tokens: 5000,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "trade_insights",
-          strict: true,
-          schema: INSIGHTS_JSON_SCHEMA as unknown as Record<string, unknown>,
+    //
+    // Hard 45s timeout: a stuck/slow generation must surface as an error the
+    // UI can show, never an infinite loading skeleton.
+    let response;
+    try {
+      response = await openaiClient.responses.create(
+        {
+          model: OPENAI_MODEL,
+          instructions: buildInsightsSystemPrompt(),
+          input: buildInsightsUserPrompt(stats),
+          reasoning: { effort: "medium" },
+          max_output_tokens: 5000,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "trade_insights",
+              strict: true,
+              schema: INSIGHTS_JSON_SCHEMA as unknown as Record<string, unknown>,
+            },
+          },
         },
-      },
-    });
+        { timeout: 45_000 },
+      );
+    } catch (openaiErr: unknown) {
+      const detail =
+        openaiErr instanceof Error ? openaiErr.message : "unknown error";
+      console.error("[insights] OpenAI call failed:", detail);
+      return NextResponse.json(
+        { error: `AI request failed: ${detail}` },
+        { status: 502 },
+      );
+    }
 
     const rawText = response.output_text ?? "";
 
     const parsedInsights = parseInsightsJson(rawText);
 
     if (!parsedInsights) {
+      // Empty output usually means the reasoning model spent the whole token
+      // budget thinking and hit the cap before emitting JSON (status
+      // "incomplete"), or the model id is invalid. Surface both signals.
+      const status =
+        (response as { status?: string }).status ?? "unknown";
+      console.error(
+        `[insights] unparseable AI output (status=${status}, len=${rawText.length})`,
+      );
       return NextResponse.json(
-        { error: "Failed to parse AI response as JSON" },
-        { status: 500 }
+        {
+          error:
+            rawText.length === 0
+              ? `AI returned no output (status: ${status}). Check the model id "${OPENAI_MODEL}" and token budget.`
+              : "AI returned malformed JSON. Please try again.",
+        },
+        { status: 502 }
       );
     }
 
