@@ -471,7 +471,7 @@ export function InsightsPanel({
                 AI Trade Coach
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Powered by GPT-5.4 — analyze your {tradeCount} trades for
+                AI-powered analysis of your {tradeCount} trades for
                 personalized insights
               </p>
             </div>
@@ -508,7 +508,7 @@ export function InsightsPanel({
                 AI Trade Coach
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Powered by GPT-5.4
+                AI-powered
                 {formattedDate && (
                   <> · Last analyzed: {formattedDate}</>
                 )}

@@ -28,8 +28,10 @@ export default async function InsightsPage() {
 
   // Insights are scoped to the active journal. Trade count + cached results
   // both filter by `journal_id` so switching workspaces shows journal-specific
-  // analysis, not a global one. NOTE: `trade_insights` cache is still keyed
-  // by user_id for now — Phase 10 will re-key by (user_id, journal_id).
+  // analysis, not a global one. The cache is keyed by (user_id, journal_id),
+  // so we MUST filter by both and use maybeSingle() — filtering by user_id
+  // alone (with .single()) errors the moment a user has insights for a second
+  // journal.
   const { journal: activeJournal } = await getActiveJournal(supabase, user.id);
 
   const adminDB = createAdminClient();
@@ -43,7 +45,8 @@ export default async function InsightsPage() {
       .from("trade_insights")
       .select("*")
       .eq("user_id", user.id)
-      .single(),
+      .eq("journal_id", activeJournal.id)
+      .maybeSingle(),
   ]);
 
   const tradeCount = countResult.count ?? 0;
