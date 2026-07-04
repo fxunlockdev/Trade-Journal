@@ -1,10 +1,10 @@
 import type { Signal } from "@/types/database";
-import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
+import { getOpenAIClient, OPENAI_MODEL, modelTuning } from "@/lib/openai/client";
 import { generateSignalMessage } from "./templates";
 
 // Reasoning models need headroom over pure-text models; low effort keeps
 // this well under the timeout in practice.
-const AI_TIMEOUT_MS = 15_000;
+const AI_TIMEOUT_MS = 20_000;
 
 const FORMATTER_SYSTEM_PROMPT = [
   "You polish trading signal messages for a Telegram channel.",
@@ -53,8 +53,8 @@ export async function formatSignalWithAI(signal: Signal): Promise<string> {
             notes: signal.notes,
           }),
         ].join("\n"),
-        reasoning: { effort: "low" },
-        max_output_tokens: 1200,
+        ...modelTuning({ effort: "low", temperature: 0.3 }),
+        max_output_tokens: 1500,
       },
       { signal: controller.signal },
     );

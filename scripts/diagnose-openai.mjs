@@ -11,7 +11,7 @@
 import OpenAI from "openai";
 
 const apiKey = process.env.OPENAI_API_KEY;
-const model = process.env.OPENAI_MODEL?.trim() || "gpt-5.4-mini";
+const model = process.env.OPENAI_MODEL?.trim() || "o4-mini";
 
 if (!apiKey) {
   console.error("❌ OPENAI_API_KEY is not set. Run:");
@@ -21,7 +21,16 @@ if (!apiKey) {
 
 const client = new OpenAI({ apiKey, timeout: 45_000, maxRetries: 0 });
 
-console.log(`\n🔎 Testing model "${model}" via the Responses API...\n`);
+// Match the app: reasoning models take reasoning.effort, standard chat models
+// take temperature.
+const isReasoning = /^(gpt-5|o1|o3|o4)/i.test(model);
+const tuning = isReasoning
+  ? { reasoning: { effort: "low" } }
+  : { temperature: 0.2 };
+
+console.log(
+  `\n🔎 Testing model "${model}" (${isReasoning ? "reasoning" : "standard"}) via the Responses API...\n`,
+);
 
 const started = Date.now();
 try {
@@ -30,7 +39,7 @@ try {
       model,
       instructions: "You are a precise assistant. Reply with strict JSON only.",
       input: "Return a JSON object: {\"ok\": true, \"model_echo\": \"<the model name you are>\"}",
-      reasoning: { effort: "low" },
+      ...tuning,
       max_output_tokens: 2000,
       text: {
         format: {

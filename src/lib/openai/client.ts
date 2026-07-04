@@ -2,14 +2,17 @@ import OpenAI from "openai";
 
 /**
  * Single model for every AI surface (chat logging, insights, signal
- * formatting). GPT-5.4-mini is a reasoning model on the Responses API:
- * it does NOT accept `temperature` / `top_p` — send `reasoning.effort`
- * instead, and budget `max_output_tokens` to cover reasoning + output.
+ * formatting). Overridable via env so the model can be swapped (or rolled
+ * back to a known-good one like `gpt-4o-mini`) without a code change.
  *
- * Overridable via env so the model can be swapped (or rolled back to a
- * known-good one like `gpt-4o-mini`) without a code change / redeploy.
+ * Two model families are supported transparently — see `modelTuning`:
+ *  - Reasoning models (gpt-5.x, o1/o3/o4): use `reasoning.effort`, reject
+ *    `temperature`, and need a larger `max_output_tokens` (reasoning tokens
+ *    count against it).
+ *  - Standard models (gpt-4o, gpt-4o-mini, gpt-4.1): use `temperature`,
+ *    reject `reasoning`.
  */
-export const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4-mini";
+export const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "o4-mini";
 
 /**
  * The SDK default request timeout is 10 MINUTES with 2 automatic retries.
@@ -19,6 +22,39 @@ export const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4-mini";
  */
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 1;
+
+/**
+ * Reasoning models take `reasoning.effort` and reject `temperature`; standard
+ * chat models are the opposite. Detect by id so the same call site works for
+ * whatever `OPENAI_MODEL` is set to.
+ */
+export function isReasoningModel(model: string = OPENAI_MODEL): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.startsWith("gpt-5") ||
+    m.startsWith("o1") ||
+    m.startsWith("o3") ||
+    m.startsWith("o4")
+  );
+}
+
+type ReasoningEffort = "low" | "medium" | "high";
+
+/**
+ * Returns the model-appropriate tuning params to spread into a
+ * `responses.create` call. Send an `effort` (used by reasoning models) AND a
+ * `temperature` (used by standard models); only the relevant one is emitted.
+ */
+export function modelTuning(opts: {
+  readonly effort: ReasoningEffort;
+  readonly temperature: number;
+  readonly model?: string;
+}): { reasoning: { effort: ReasoningEffort } } | { temperature: number } {
+  if (isReasoningModel(opts.model)) {
+    return { reasoning: { effort: opts.effort } };
+  }
+  return { temperature: opts.temperature };
+}
 
 export function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;

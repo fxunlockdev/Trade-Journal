@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
-import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
+import { getOpenAIClient, OPENAI_MODEL, modelTuning } from "@/lib/openai/client";
 import { computeTradingStats } from "@/lib/insights/analyzer";
 import {
   buildInsightsSystemPrompt,
@@ -140,11 +140,12 @@ export async function POST(): Promise<NextResponse> {
 
     const openaiClient = getOpenAIClient();
 
-    // GPT-5.4-mini is a reasoning model: no `temperature` (the API rejects
-    // it), steer with `reasoning.effort` instead. max_output_tokens must
-    // cover reasoning tokens + the JSON payload, so it's well above the
-    // ~800-token final answer. Structured outputs (json_schema, strict)
-    // guarantee a parseable TradeInsightsResult in a single call.
+    // `modelTuning` emits `reasoning.effort` for reasoning models (o4-mini,
+    // gpt-5.x) or `temperature` for standard chat models (gpt-4o-mini) — the
+    // same call works for whatever OPENAI_MODEL is set to. Medium effort:
+    // insights are worth a bit more thinking. max_output_tokens must cover
+    // reasoning tokens + the JSON payload (well above the ~800-token answer).
+    // Structured outputs (json_schema, strict) guarantee parseable JSON.
     //
     // Hard 45s timeout: a stuck/slow generation must surface as an error the
     // UI can show, never an infinite loading skeleton.
@@ -155,7 +156,7 @@ export async function POST(): Promise<NextResponse> {
           model: OPENAI_MODEL,
           instructions: buildInsightsSystemPrompt(),
           input: buildInsightsUserPrompt(stats),
-          reasoning: { effort: "medium" },
+          ...modelTuning({ effort: "medium", temperature: 0.3 }),
           max_output_tokens: 5000,
           text: {
             format: {

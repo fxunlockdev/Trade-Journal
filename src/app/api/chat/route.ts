@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
+import { getOpenAIClient, OPENAI_MODEL, modelTuning } from "@/lib/openai/client";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import {
@@ -225,10 +225,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Save user message to memory BEFORE AI call
     await saveChatMessage(adminDB, user.id, "user", body.message);
 
-    // GPT-5.4-mini (reasoning model): no `temperature` — the API rejects it.
-    // Low reasoning effort keeps trade logging fast and cheap; extraction is
-    // pattern-matching, not deep reasoning. max_output_tokens covers
-    // reasoning tokens + the JSON block + confirmation line.
+    // Trade extraction is pattern-matching, not deep reasoning: low effort
+    // (reasoning models) / low temperature (standard models) keeps logging
+    // fast, cheap, and deterministic. max_output_tokens covers reasoning
+    // tokens + the JSON block + confirmation line.
     let aiContent = "";
     try {
       const response = await client.responses.create(
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           model: OPENAI_MODEL,
           instructions: TRADE_CHAT_SYSTEM_PROMPT,
           input: inputMessages,
-          reasoning: { effort: "low" },
+          ...modelTuning({ effort: "low", temperature: 0.2 }),
           max_output_tokens: 3000,
         },
         { timeout: 30_000 },
