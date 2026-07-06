@@ -204,8 +204,31 @@ export interface Trade {
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
   readonly source: TradeSource;
+  /** MT5 source account as "{server}:{login}". Set only by the connector. */
+  readonly mt5_account: string | null;
+  /** MT5 position identifier — dedupe key for the connector. */
+  readonly mt5_ticket: number | null;
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+/**
+ * One "Connect MT5" link: a connector token bound to a user + target journal.
+ * The plaintext token is never stored — only its sha256 hash + a display
+ * prefix. Revocation is a soft delete via revoked_at.
+ */
+export interface Mt5Connection {
+  readonly id: string;
+  readonly user_id: string;
+  readonly journal_id: string;
+  readonly label: string | null;
+  readonly token_hash: string;
+  readonly token_prefix: string;
+  readonly account_login: string | null;
+  readonly broker: string | null;
+  readonly last_sync_at: string | null;
+  readonly revoked_at: string | null;
+  readonly created_at: string;
 }
 
 export interface Signal {
