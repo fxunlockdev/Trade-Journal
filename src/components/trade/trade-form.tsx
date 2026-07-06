@@ -13,6 +13,7 @@ import { useJournals } from "@/hooks/use-journals";
 import { JournalPicker } from "@/components/trade/journal-picker";
 
 import { createTradeFormSchema } from "@/lib/validators/trade";
+import { EMOTIONS } from "@/lib/constants/emotions";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { parseSignalText } from "@/lib/trades/signal-parser";
 import {
@@ -29,6 +30,7 @@ import type {
   AssetType,
   OrderType,
   TPResult,
+  EmotionState,
 } from "@/types/database";
 
 import { Button } from "@/components/ui/button";
@@ -222,6 +224,8 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
         num_positions: trade.num_positions ?? 1,
         split_risk: trade.split_risk ?? false,
         fees: trade.fees,
+        emotion: trade.emotion ?? undefined,
+        emotion_post: trade.emotion_post ?? undefined,
         notes: trade.notes ?? undefined,
         // Use a comma-separated string so React Hook Form's `register` picks up
         // the correct initial value. Passing the raw array clashed with the
@@ -574,6 +578,8 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
           tp7_result: data.tp7_result ?? null,
           entry_price_high: data.entry_price_high || null,
           notes: data.notes || null,
+          emotion: data.emotion || null,
+          emotion_post: data.emotion_post || null,
         };
 
         const url = isEditMode ? `/api/trades/${trade.id}` : "/api/trades";
@@ -1188,6 +1194,65 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Emotion — how you felt entering the trade, and after it closed.
+              Optional single-selects; leave on "None" to skip. Surfaces tilt /
+              FOMO / revenge patterns in the AI insights. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <FieldLabel help="How did you feel taking this trade? Used to spot tilt / FOMO patterns.">
+                Emotion — when trading
+              </FieldLabel>
+              <Select
+                value={watch("emotion") ?? "none"}
+                onValueChange={(v) =>
+                  setValue(
+                    "emotion",
+                    v === "none" ? null : (v as EmotionState),
+                    { shouldValidate: true },
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {EMOTIONS.map((e) => (
+                    <SelectItem key={e.value} value={e.value}>
+                      {e.emoji} {e.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <FieldLabel help="How did you feel after the trade closed / on review? Reveals regret, relief and post-loss tilt.">
+                Emotion — after the trade
+              </FieldLabel>
+              <Select
+                value={watch("emotion_post") ?? "none"}
+                onValueChange={(v) =>
+                  setValue(
+                    "emotion_post",
+                    v === "none" ? null : (v as EmotionState),
+                    { shouldValidate: true },
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {EMOTIONS.map((e) => (
+                    <SelectItem key={e.value} value={e.value}>
+                      {e.emoji} {e.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="space-y-2">
             <FieldLabel htmlFor="notes" help="Rationale, setup, emotions. Optional — notes turn one trade into a lesson.">
               Trade Notes

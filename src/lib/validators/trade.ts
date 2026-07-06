@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EMOTION_VALUES } from "@/lib/constants/emotions";
 
 const assetTypes = [
   "forex",
@@ -201,6 +202,9 @@ const createTradeObjectSchema = z.object({
   fees: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(5000).nullable().optional(),
   tags: z.array(z.string().trim()).default([]),
+  // Psychology — optional single-select at two stages. Same vocabulary.
+  emotion: z.enum(EMOTION_VALUES).nullable().optional(),
+  emotion_post: z.enum(EMOTION_VALUES).nullable().optional(),
   entry_time: z.string().trim().min(1),
   exit_time: z.string().trim().nullable().optional(),
   source: z.enum(sources).default("manual"),

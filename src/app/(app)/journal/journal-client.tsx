@@ -202,6 +202,10 @@ export function JournalClient({ trades }: JournalClientProps) {
       }
     }
 
+    if (filters.emotion) {
+      result = result.filter((t) => t.emotion === filters.emotion);
+    }
+
     return result;
   }, [trades, filters]);
 

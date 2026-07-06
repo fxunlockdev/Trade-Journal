@@ -56,7 +56,7 @@ export function FieldLabel({
         >
           <HelpCircle className="h-3.5 w-3.5" />
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
+        <TooltipContent side="top" className="max-w-[16rem] text-xs leading-relaxed">
           {help}
         </TooltipContent>
       </Tooltip>

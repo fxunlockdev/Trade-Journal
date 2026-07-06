@@ -17,6 +17,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  EMOTION_MAP,
+  EMOTION_TONE_BADGE,
+  type EmotionState,
+} from "@/lib/constants/emotions";
 import { TradeDeleteButton } from "./trade-delete-button";
 import { ActivityFeed } from "@/components/journals/activity-feed";
 
@@ -472,6 +477,49 @@ export default async function TradeDetailPage({ params }: TradeDetailPageProps) 
                 No notes recorded.
               </p>
             )}
+
+            {(() => {
+              const entry = t.emotion
+                ? EMOTION_MAP[t.emotion as EmotionState]
+                : null;
+              const post = t.emotion_post
+                ? EMOTION_MAP[t.emotion_post as EmotionState]
+                : null;
+              if (!entry && !post) return null;
+              return (
+                <>
+                  <Separator className="border-border/40" />
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                    {entry && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                          When trading
+                        </span>
+                        <Badge
+                          variant={EMOTION_TONE_BADGE[entry.tone]}
+                          className="text-xs"
+                        >
+                          {entry.emoji} {entry.label}
+                        </Badge>
+                      </div>
+                    )}
+                    {post && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                          After the trade
+                        </span>
+                        <Badge
+                          variant={EMOTION_TONE_BADGE[post.tone]}
+                          className="text-xs"
+                        >
+                          {post.emoji} {post.label}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {t.tags.length > 0 && (
               <>

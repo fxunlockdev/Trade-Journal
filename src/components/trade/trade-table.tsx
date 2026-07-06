@@ -6,6 +6,11 @@ import { toast } from "sonner";
 
 import type { Trade, TPResult } from "@/types/database";
 import { cn, formatDateTime, formatRR } from "@/lib/utils";
+import {
+  EMOTION_MAP,
+  EMOTION_TONE_BADGE,
+  type EmotionState,
+} from "@/lib/constants/emotions";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 import { computeRiskRewardRatio } from "@/lib/trades/computations";
 import { useTradeAuthors } from "@/hooks/use-trade-authors";
@@ -444,6 +449,21 @@ export function TradeTable({ trades }: TradeTableProps) {
                         }
                       />
                     )}
+                    {(() => {
+                      const e = trade.emotion
+                        ? EMOTION_MAP[trade.emotion as EmotionState]
+                        : null;
+                      if (!e) return null;
+                      return (
+                        <Badge
+                          variant={EMOTION_TONE_BADGE[e.tone]}
+                          className="px-1.5 py-0 text-[10px]"
+                          title={`Emotion when trading: ${e.label}`}
+                        >
+                          {e.emoji} {e.label}
+                        </Badge>
+                      );
+                    })()}
                   </div>
                 </TableCell>
                 <TableCell>

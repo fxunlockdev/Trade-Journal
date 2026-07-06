@@ -1,3 +1,8 @@
+import type { EmotionState } from "@/lib/constants/emotions";
+
+// Re-exported so consumers can keep importing trade-shape types from one hub.
+export type { EmotionState };
+
 export type UserRole = "user" | "trader" | "admin";
 export type AssetType =
   | "forex"
@@ -188,6 +193,10 @@ export interface Trade {
   readonly fees: number;
   readonly notes: string | null;
   readonly tags: readonly string[];
+  /** Emotion felt when taking the trade (entry). Nullable — optional field. */
+  readonly emotion: EmotionState | null;
+  /** Emotion felt after the trade closed / on review (post-trade). Nullable. */
+  readonly emotion_post: EmotionState | null;
   readonly entry_time: string;
   readonly exit_time: string | null;
   readonly pnl_absolute: number | null;
