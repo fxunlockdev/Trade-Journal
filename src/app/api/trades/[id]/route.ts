@@ -152,16 +152,29 @@ export async function PATCH(
     ]);
     const patchTouchesPricing = Object.keys(parsed.data).some((k) => pricingKeys.has(k));
 
+    // MT5-synced trades carry the broker's REAL money PnL (profit + commission
+    // + swap), which price×quantity math cannot reproduce (lot-denominated
+    // volumes, quote-currency conversion), plus risk fields written with a
+    // trailed-SL guard. Never overwrite those from an app-side edit —
+    // otherwise a note-only edit silently corrupts the P&L.
+    const isMt5Trade = existing.source === "mt5_webhook";
+
     const { data, error } = await admin
       .from("trades")
       .update({
         ...updatePatch,
-        pnl_absolute: computed.pnl_absolute,
-        pnl_percentage: computed.pnl_percentage,
-        risk_reward_ratio: computed.risk_reward_ratio,
-        r_multiple: computed.r_multiple,
+        pnl_absolute: isMt5Trade ? existing.pnl_absolute : computed.pnl_absolute,
+        pnl_percentage: isMt5Trade
+          ? existing.pnl_percentage
+          : computed.pnl_percentage,
+        risk_reward_ratio: isMt5Trade
+          ? existing.risk_reward_ratio
+          : computed.risk_reward_ratio,
+        r_multiple: isMt5Trade ? existing.r_multiple : computed.r_multiple,
         // Only persist the re-derived exit_price when pricing fields changed.
-        ...(patchTouchesPricing ? { exit_price: computed.exit_price } : {}),
+        ...(patchTouchesPricing && !isMt5Trade
+          ? { exit_price: computed.exit_price }
+          : {}),
       })
       .eq("id", id)
       .select()

@@ -39,7 +39,9 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Cable,
 } from "lucide-react";
+import { Mt5SyncTab } from "@/components/settings/mt5-sync-tab";
 
 type SortField = "full_name" | "email" | "role" | "trade_count";
 type SortDir = "asc" | "desc";
@@ -355,6 +357,10 @@ export default function SettingsPage() {
             <UserIcon className="h-3.5 w-3.5" />
             Profile
           </TabsTrigger>
+          <TabsTrigger value="mt5" className="flex items-center gap-1.5">
+            <Cable className="h-3.5 w-3.5" />
+            MT5 Sync
+          </TabsTrigger>
           {isUserAdmin && (
             <TabsTrigger value="members" className="flex items-center gap-1.5">
               <Shield className="h-3.5 w-3.5" />
@@ -612,6 +618,11 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── MT5 Sync tab ── */}
+        <TabsContent value="mt5">
+          <Mt5SyncTab />
         </TabsContent>
 
         {/* ── Members tab (admin only) ── */}
