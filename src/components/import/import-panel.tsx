@@ -141,13 +141,16 @@ export function ImportPanel() {
           <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">Export from MT5:</span>{" "}
             Toolbox → History tab → right-click → Period: <em>All History</em> →
-            Report → <em>HTML</em>. (MT4: Account History → <em>Save as
-            Report</em>.) Export in <span className="font-medium text-foreground">English</span>.
+            <strong> Report → HTML</strong>. (MT4: Account History → <em>Save as
+            Report</em>.) Export in{" "}
+            <span className="font-medium text-foreground">English</span>.
             <br />
             <span className="text-xs">
-              Accepts <strong>.html</strong> (most reliable) and{" "}
-              <strong>.pdf</strong> (e.g. the MT5 mobile app&apos;s “Save as
-              PDF”). You&apos;ll preview before anything imports.
+              Use the <strong>HTML</strong> export — it has the per-trade table.
+              A <strong>PDF</strong> works only if it contains that table (e.g.
+              the HTML printed to PDF); MT5&apos;s built-in “Reports” <em>PDF</em>
+              {" "}is a performance summary with no individual trades. You&apos;ll
+              preview before anything imports.
             </span>
           </div>
 

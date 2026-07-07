@@ -377,8 +377,22 @@ export function parseReportRows(
     /closed transactions/i.test(plainText);
 
   if (!isMt5 && !isMt4) {
+    // Distinguish the very common mistake of uploading MT5's *analytics*
+    // report (the visual "Reports" / broker "Signals" summary) — it has
+    // Gain / Profit Factor / Drawdown but NO per-trade rows, so there's
+    // nothing to import. Steer the user to the detailed history export.
+    const looksLikeSummary =
+      /profit\s*factor|sharp[e]?\s*ratio|gross\s*(profit|loss)|max\.?\s*drawdown|recovery\s*factor|trades\s*per\s*week/i.test(
+        plainText,
+      );
+    if (looksLikeSummary) {
+      throw new ReportParseError(
+        "That's a performance summary (Gain, Profit Factor, Drawdown…) — it doesn't list individual trades, so there's nothing to import. Export the detailed history instead: MT5 → History tab → right-click → Report → HTML. Upload that HTML here (or print it to PDF).",
+        "not_a_report",
+      );
+    }
     throw new ReportParseError(
-      "Couldn't recognize this report. Make sure it's the MT5 'Report → HTML' (or MT4 'Save as Report') file, exported in English.",
+      "Couldn't recognize this report. Upload the MT5 'History → right-click → Report → HTML' file (or MT4 'Save as Report'), exported in English. MT5's built-in PDF 'Reports' are summaries without individual trades — use the HTML export.",
       "not_a_report",
     );
   }
