@@ -20,11 +20,6 @@ import type { Mt5Event } from "@/lib/validators/mt5";
  *   negative overall; net PnL stays exact regardless.
  */
 
-/** "{server}:{login}" — logins are only unique per broker server. */
-export function buildAccountKey(login: string, server: string): string {
-  return server ? `${server}:${login}` : login;
-}
-
 function toIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString();
 }

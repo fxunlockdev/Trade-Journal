@@ -40,6 +40,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/risk-calculator": "Risk Calculator",
   "/ai-chat": "AI Chat",
   "/import": "Import",
+  "/mt5-sync": "MT5 Sync",
   "/settings": "Settings",
 };
 
