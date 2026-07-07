@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Plus,
   FileUp,
+  Cable,
 } from "lucide-react";
 
 interface UserProfile {
@@ -72,6 +73,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: FileUp,
     section: "main",
     parentHref: "/journal",
+  },
+  {
+    label: "MT5 Sync",
+    href: "/mt5-sync",
+    icon: Cable,
+    section: "main",
   },
   {
     label: "Signals",

@@ -213,25 +213,6 @@ export interface Trade {
 }
 
 /**
- * One "Connect MT5" link: a connector token bound to a user + target journal.
- * The plaintext token is never stored — only its sha256 hash + a display
- * prefix. Revocation is a soft delete via revoked_at.
- */
-export interface Mt5Connection {
-  readonly id: string;
-  readonly user_id: string;
-  readonly journal_id: string;
-  readonly label: string | null;
-  readonly token_hash: string;
-  readonly token_prefix: string;
-  readonly account_login: string | null;
-  readonly broker: string | null;
-  readonly last_sync_at: string | null;
-  readonly revoked_at: string | null;
-  readonly created_at: string;
-}
-
-/**
  * A Myfxbook-linked MT4/MT5 account (free auto-sync bridge). Credentials are
  * AES-256-GCM encrypted app-side; the cached session token is IP-bound on
  * Myfxbook's end and re-established from credentials when it dies.
