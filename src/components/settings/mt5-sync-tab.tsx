@@ -14,6 +14,7 @@ import {
 import { cn, formatDateTime } from "@/lib/utils";
 import { useJournals } from "@/hooks/use-journals";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
+import { MyfxbookConnectCard } from "@/components/myfxbook/myfxbook-connect-card";
 import type { JournalColor } from "@/types/database";
 
 import { Badge } from "@/components/ui/badge";
@@ -158,18 +159,22 @@ export function Mt5SyncTab() {
 
   return (
     <div className="space-y-6">
-      {/* ── Connect a new MT5 account ── */}
+      {/* ── Recommended: free cloud sync via Myfxbook ── */}
+      <MyfxbookConnectCard />
+
+      {/* ── Advanced: run the connector EA in your own MT5 terminal ── */}
       <Card className="border-border bg-card">
         <CardContent className="pt-6 space-y-4">
           <div>
             <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Cable className="h-4 w-4 text-primary" />
-              Connect MetaTrader 5
+              Advanced: run our EA in your MT5 terminal
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Trades placed in MT5 appear here automatically — opens, SL/TP
-              changes, and closes with your broker&apos;s real P&amp;L. One
-              token per MT5 account.
+              Real-time sync while your MT5 desktop terminal runs — opens,
+              SL/TP changes, and closes with your broker&apos;s real P&amp;L.
+              One token per MT5 account. Prefer zero setup? Use the Myfxbook
+              option above.
             </p>
           </div>
 

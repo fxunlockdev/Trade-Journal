@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { CommandPalette } from "@/components/layout/command-palette";
+import { MyfxbookAutoSync } from "@/components/myfxbook/auto-sync";
 import type { JournalWithRole } from "@/types/database";
 
 interface UserProfile {
@@ -53,6 +54,9 @@ export function AppShell({
 
       {/* Cmd+K palette — global keyboard shortcut, mounts once per shell */}
       <CommandPalette role={profile.role} />
+
+      {/* Background freshness for Myfxbook-linked accounts (no-op without connections) */}
+      <MyfxbookAutoSync />
     </div>
   );
 }

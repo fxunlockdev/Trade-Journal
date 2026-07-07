@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  FileUp,
 } from "lucide-react";
 
 interface UserProfile {
@@ -62,6 +63,13 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Add Trade",
     href: "/journal/new",
     icon: Plus,
+    section: "main",
+    parentHref: "/journal",
+  },
+  {
+    label: "Import",
+    href: "/import",
+    icon: FileUp,
     section: "main",
     parentHref: "/journal",
   },

@@ -231,6 +231,29 @@ export interface Mt5Connection {
   readonly created_at: string;
 }
 
+/**
+ * A Myfxbook-linked MT4/MT5 account (free auto-sync bridge). Credentials are
+ * AES-256-GCM encrypted app-side; the cached session token is IP-bound on
+ * Myfxbook's end and re-established from credentials when it dies.
+ */
+export interface MyfxbookConnection {
+  readonly id: string;
+  readonly user_id: string;
+  readonly journal_id: string;
+  readonly email_encrypted: string;
+  readonly password_encrypted: string;
+  readonly session_token: string | null;
+  readonly myfxbook_account_id: string;
+  readonly account_name: string | null;
+  readonly broker: string | null;
+  /** Myfxbook reports broker-local times; offset converts them to UTC. */
+  readonly broker_utc_offset_minutes: number;
+  readonly last_sync_at: string | null;
+  readonly last_error: string | null;
+  readonly revoked_at: string | null;
+  readonly created_at: string;
+}
+
 export interface Signal {
   readonly id: string;
   readonly trader_id: string;
