@@ -130,7 +130,14 @@ export function MyfxbookConnectCard() {
           }),
         });
         const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Connection failed");
+        if (!res.ok) {
+          // Include Myfxbook's verbatim reply (detail) when present — turns
+          // "it failed" screenshots into diagnosable reports.
+          const message = json.detail
+            ? `${json.error ?? "Connection failed"} [${json.detail}]`
+            : (json.error ?? "Connection failed");
+          throw new Error(message);
+        }
 
         if (!accountId) {
           const list = json.data.accounts as readonly MyfxbookAccountOption[];

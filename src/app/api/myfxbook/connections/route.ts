@@ -9,6 +9,7 @@ import {
 import {
   MyfxbookApiError,
   myfxbookLoginAndGetAccounts,
+  packSession,
 } from "@/lib/myfxbook/client";
 import { syncMyfxbookConnection } from "@/lib/myfxbook/sync";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
@@ -167,7 +168,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         journal_id: journal.id,
         email_encrypted: encryptSecret(input.email),
         password_encrypted: encryptSecret(input.password),
-        session_token: session,
+        // Session + its Cloudflare affinity cookies persist together.
+        session_token: packSession(session),
         myfxbook_account_id: String(account.id),
         account_name: account.name ?? String(account.accountId),
         broker: account.server?.name ?? account.broker ?? null,

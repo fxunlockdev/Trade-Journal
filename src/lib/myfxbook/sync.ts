@@ -6,6 +6,8 @@ import {
   myfxbookGetHistory,
   myfxbookGetOpenTrades,
   myfxbookLogin,
+  packSession,
+  unpackSession,
   withSessionRetry,
 } from "@/lib/myfxbook/client";
 import { mapHistoryRow, mapOpenTrade } from "@/lib/myfxbook/map";
@@ -59,9 +61,11 @@ export async function syncMyfxbookConnection(
     const password = decryptSecret(connection.password_encrypted);
     const relogin = () => myfxbookLogin(email, password);
 
-    // Start from the cached session; re-login on demand. withSessionRetry
-    // rolls past IP-bound "Invalid session" rejections (serverless egress).
-    const startSession = connection.session_token ?? (await relogin());
+    // Start from the cached session+cookies (unpackSession hydrates the
+    // Cloudflare affinity cookies the session is bound to); re-login on
+    // demand. withSessionRetry rolls past "Invalid session" rejections.
+    const startSession =
+      unpackSession(connection.session_token) ?? (await relogin());
     const { session, value: events } = await withSessionRetry(
       startSession,
       relogin,
@@ -82,7 +86,8 @@ export async function syncMyfxbookConnection(
     await admin
       .from("myfxbook_connections")
       .update({
-        session_token: session,
+        // Session + its affinity cookies persist together.
+        session_token: packSession(session),
         last_sync_at: new Date().toISOString(),
         last_error: null,
       })

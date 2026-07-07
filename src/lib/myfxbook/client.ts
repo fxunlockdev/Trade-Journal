@@ -205,6 +205,80 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let lastRequestAt = 0;
 
+/**
+ * Cookie jar — the missing half of Myfxbook's session binding.
+ *
+ * Myfxbook runs behind a Cloudflare load balancer that issues an affinity
+ * cookie (`__cflb`) plus `sts`/XSRF cookies on login. Browsers replay them,
+ * so their next call lands on the SAME backend that minted the session; a
+ * cookie-less server call can land on a different backend → "Invalid
+ * session" even from a pinned IP. We absorb Set-Cookie from every response
+ * and replay the jar on every request.
+ *
+ * Module-level by design: batch sync is sequential, and these cookies carry
+ * routing affinity (the session itself rides in the query string), so
+ * cross-request mixing within one lambda instance is harmless.
+ */
+const cookieJar = new Map<string, string>();
+
+function cookieHeader(): string | undefined {
+  if (cookieJar.size === 0) return undefined;
+  return [...cookieJar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+function absorbSetCookies(headers: {
+  getSetCookie?: () => string[];
+}): void {
+  const setCookies =
+    typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+  for (const raw of setCookies) {
+    const pair = raw.split(";")[0] ?? "";
+    const eq = pair.indexOf("=");
+    if (eq > 0) {
+      cookieJar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    }
+  }
+}
+
+/** Serialize the jar so it can be persisted next to a cached session. */
+export function exportMyfxbookCookies(): string {
+  return cookieHeader() ?? "";
+}
+
+/** Restore a persisted jar before reusing a cached session. */
+export function importMyfxbookCookies(cookies: string | null | undefined): void {
+  if (!cookies) return;
+  for (const pair of cookies.split(";")) {
+    const eq = pair.indexOf("=");
+    if (eq > 0) {
+      cookieJar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    }
+  }
+}
+
+/**
+ * Session + cookies persist together (the session is only valid alongside
+ * its affinity cookies). Packed as JSON into the existing session_token
+ * column; unpack tolerates legacy bare-session values.
+ */
+export function packSession(session: string): string {
+  return JSON.stringify({ s: session, c: exportMyfxbookCookies() });
+}
+
+export function unpackSession(stored: string | null): string | null {
+  if (!stored) return null;
+  try {
+    const parsed = JSON.parse(stored) as { s?: unknown; c?: unknown };
+    if (typeof parsed.s === "string") {
+      if (typeof parsed.c === "string") importMyfxbookCookies(parsed.c);
+      return parsed.s;
+    }
+  } catch {
+    // Legacy value: a bare session string from before cookie support.
+  }
+  return stored;
+}
+
 async function apiGet<T>(
   method: string,
   params: Record<string, string>,
@@ -215,13 +289,20 @@ async function apiGet<T>(
   lastRequestAt = Date.now();
 
   const qs = new URLSearchParams(params).toString();
-  // Use undici's fetch so we can pin every request to the static-IP proxy
-  // (when configured) — the definitive fix for IP-bound sessions on Vercel.
+  // undici's fetch: pins requests to the static-IP proxy (when configured)
+  // AND lets us replay the cookie jar — sessions need BOTH the same IP and
+  // the same Cloudflare backend affinity to survive.
+  const cookies = cookieHeader();
   const res = await undiciFetch(`${BASE_URL}/${method}.json?${qs}`, {
     // Myfxbook has no auth header — session rides in the query string.
-    headers: { accept: "application/json" },
+    headers: {
+      accept: "application/json",
+      "user-agent": "FXUnlockJournal/1.0",
+      ...(cookies ? { cookie: cookies } : {}),
+    },
     dispatcher: getDispatcher(),
   });
+  absorbSetCookies(res.headers);
   if (!res.ok) {
     throw new MyfxbookApiError(`Myfxbook HTTP ${res.status}`, "api_error");
   }
