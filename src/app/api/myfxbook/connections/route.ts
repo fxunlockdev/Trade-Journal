@@ -91,16 +91,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return NextResponse.json(
             {
               error:
-                "Myfxbook temporarily locked API logins for this account after repeated attempts. Wait a few minutes and try again — or use the report import below, which always works.",
+                "Myfxbook temporarily locked API logins for this account after repeated attempts. Wait ~30–60 minutes, then try ONCE — or use the report import below, which always works.",
+              detail: err.message,
             },
             { status: 429 },
           );
         }
-        // invalid_session after retries / rate_limited / api_error.
+        if (err.kind === "rate_limited") {
+          return NextResponse.json(
+            {
+              error:
+                "Myfxbook's API request limit was hit (their free tier allows ~100 requests per day). It resets within 24h — try again later, or use the report import below, which doesn't use their API at all.",
+              detail: err.message,
+            },
+            { status: 429 },
+          );
+        }
+        // invalid_session after retries / api_error — include what Myfxbook
+        // actually said so failures are diagnosable from the browser.
         return NextResponse.json(
           {
             error:
-              "Couldn't reach Myfxbook reliably just now (their session service can be flaky). Please try again in a moment — or use the report import below, which works instantly.",
+              "Couldn't reach Myfxbook reliably just now. Please try again in a minute — or use the report import below, which works instantly.",
+            detail: `${err.kind}: ${err.message}`,
           },
           { status: 502 },
         );

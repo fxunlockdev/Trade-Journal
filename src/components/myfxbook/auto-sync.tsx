@@ -11,8 +11,11 @@ import { useEffect } from "react";
  */
 
 const THROTTLE_KEY = "trdr:myfxbook-auto-sync-at";
-const THROTTLE_MS = 15 * 60 * 1000;
-const STALE_MS = 10 * 60 * 1000;
+// Myfxbook's free API tier allows only ~100 requests per DAY and their
+// account data refreshes every few hours anyway — sync sparingly. One sync
+// pass costs ~2-3 API requests per connection.
+const THROTTLE_MS = 30 * 60 * 1000;
+const STALE_MS = 60 * 60 * 1000;
 
 interface ConnectionRow {
   readonly id: string;
