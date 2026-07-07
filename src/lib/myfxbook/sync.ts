@@ -6,6 +6,7 @@ import {
   myfxbookGetHistory,
   myfxbookGetOpenTrades,
   myfxbookLogin,
+  withSessionRetry,
 } from "@/lib/myfxbook/client";
 import { mapHistoryRow, mapOpenTrade } from "@/lib/myfxbook/map";
 import { processEvents, type IngestResult } from "@/lib/mt5/ingest-db";
@@ -25,18 +26,6 @@ export interface SyncOutcome {
   readonly ok: boolean;
   readonly result?: IngestResult;
   readonly error?: string;
-}
-
-async function ensureSession(
-  connection: MyfxbookConnection,
-): Promise<{ session: string; fresh: boolean }> {
-  if (connection.session_token) {
-    return { session: connection.session_token, fresh: false };
-  }
-  const email = decryptSecret(connection.email_encrypted);
-  const password = decryptSecret(connection.password_encrypted);
-  const session = await myfxbookLogin(email, password);
-  return { session, fresh: true };
 }
 
 async function fetchEvents(
@@ -66,28 +55,18 @@ export async function syncMyfxbookConnection(
   connection: MyfxbookConnection,
 ): Promise<SyncOutcome> {
   try {
-    let { session, fresh } = await ensureSession(connection);
-    let events: readonly Mt5Event[];
+    const email = decryptSecret(connection.email_encrypted);
+    const password = decryptSecret(connection.password_encrypted);
+    const relogin = () => myfxbookLogin(email, password);
 
-    try {
-      events = await fetchEvents(connection, session);
-    } catch (err: unknown) {
-      // IP-bound sessions die whenever the serverless egress IP rotates —
-      // re-login once with the stored credentials and retry.
-      if (
-        err instanceof MyfxbookApiError &&
-        err.kind === "invalid_session" &&
-        !fresh
-      ) {
-        const email = decryptSecret(connection.email_encrypted);
-        const password = decryptSecret(connection.password_encrypted);
-        session = await myfxbookLogin(email, password);
-        fresh = true;
-        events = await fetchEvents(connection, session);
-      } else {
-        throw err;
-      }
-    }
+    // Start from the cached session; re-login on demand. withSessionRetry
+    // rolls past IP-bound "Invalid session" rejections (serverless egress).
+    const startSession = connection.session_token ?? (await relogin());
+    const { session, value: events } = await withSessionRetry(
+      startSession,
+      relogin,
+      (s) => fetchEvents(connection, s),
+    );
 
     const result = await processEvents(
       admin,

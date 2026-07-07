@@ -16,6 +16,14 @@
 const BASE_URL = "https://www.myfxbook.com/api";
 /** Community-derived safe spacing between consecutive API calls. */
 const REQUEST_SPACING_MS = 1300;
+/**
+ * Myfxbook binds each session to the IP that logged in. On serverless hosts
+ * (Vercel) the egress IP can differ between the login call and the very next
+ * data call, so a freshly-minted session is sometimes rejected as "Invalid
+ * session". We retry the login→read sequence a few times; back-to-back calls
+ * reuse the keep-alive connection, which usually lands both on one IP.
+ */
+const SESSION_RETRIES = 3;
 
 export interface MyfxbookAccount {
   /** Myfxbook entity id — used as `?id=` in data calls. */
@@ -178,4 +186,64 @@ export async function myfxbookGetOpenTrades(
     { session, id: accountId },
   );
   return data.openTrades ?? [];
+}
+
+/**
+ * Log in and fetch the account list, retrying the whole pair on IP-bound
+ * "Invalid session" rejections. `invalid_credentials` / `login_locked` are
+ * NOT retried — they won't get better by trying again.
+ */
+export async function myfxbookLoginAndGetAccounts(
+  email: string,
+  password: string,
+): Promise<{ session: string; accounts: readonly MyfxbookAccount[] }> {
+  let lastError: MyfxbookApiError | null = null;
+  for (let attempt = 0; attempt < SESSION_RETRIES; attempt += 1) {
+    const session = await myfxbookLogin(email, password);
+    try {
+      const accounts = await myfxbookGetAccounts(session);
+      return { session, accounts };
+    } catch (err: unknown) {
+      if (err instanceof MyfxbookApiError && err.kind === "invalid_session") {
+        lastError = err;
+        continue; // fresh login + fresh read on the next lap
+      }
+      throw err;
+    }
+  }
+  throw (
+    lastError ??
+    new MyfxbookApiError("Could not establish a Myfxbook session", "invalid_session")
+  );
+}
+
+/**
+ * Run a session-consuming read against an existing session; on "Invalid
+ * session" it re-logs-in (via `relogin`) and retries. Used by the sync path
+ * where a cached session may have been minted from a different IP.
+ */
+export async function withSessionRetry<T>(
+  initialSession: string,
+  relogin: () => Promise<string>,
+  read: (session: string) => Promise<T>,
+): Promise<{ session: string; value: T }> {
+  let session = initialSession;
+  let lastError: MyfxbookApiError | null = null;
+  for (let attempt = 0; attempt < SESSION_RETRIES; attempt += 1) {
+    try {
+      const value = await read(session);
+      return { session, value };
+    } catch (err: unknown) {
+      if (err instanceof MyfxbookApiError && err.kind === "invalid_session") {
+        lastError = err;
+        session = await relogin();
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw (
+    lastError ??
+    new MyfxbookApiError("Session kept expiring", "invalid_session")
+  );
 }
