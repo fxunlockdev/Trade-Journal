@@ -60,7 +60,12 @@ function stripTags(html: string): string {
     .trim();
 }
 
-interface Row {
+/**
+ * A logical table row of cell strings. Produced from HTML `<tr>`s or, for PDF
+ * imports, reconstructed from positioned text (see pdf-report.ts) — the row
+ * parser below is format-agnostic.
+ */
+export interface Row {
   readonly cells: readonly string[];
   readonly cellCount: number;
 }
@@ -349,18 +354,45 @@ export function parseTradeReport(
 
   const rows = extractRows(html);
   const plainText = stripTags(html.slice(0, 4000));
+  return parseReportRows(rows, plainText, utcOffsetMinutes);
+}
+
+/**
+ * Format-agnostic core: given reconstructed table rows + a plain-text sample
+ * (for header/account detection), detect MT5 vs MT4 and parse closed trades.
+ * Shared by the HTML parser and the PDF parser (pdf-report.ts).
+ */
+export function parseReportRows(
+  rows: readonly Row[],
+  plainText: string,
+  utcOffsetMinutes: number,
+): ParsedReport {
   const warnings: string[] = [];
 
   const isMt5 =
     /Trade History Report/i.test(plainText) ||
     rows.some((r) => rowIsSectionBanner(r, "Positions"));
-  const isMt4 = rows.some((r) =>
-    r.cells.some((c) => /^closed transactions:?$/i.test(c)),
-  );
+  const isMt4 =
+    rows.some((r) => r.cells.some((c) => /^closed transactions:?$/i.test(c))) ||
+    /closed transactions/i.test(plainText);
 
   if (!isMt5 && !isMt4) {
+    // Distinguish the very common mistake of uploading MT5's *analytics*
+    // report (the visual "Reports" / broker "Signals" summary) — it has
+    // Gain / Profit Factor / Drawdown but NO per-trade rows, so there's
+    // nothing to import. Steer the user to the detailed history export.
+    const looksLikeSummary =
+      /profit\s*factor|sharp[e]?\s*ratio|gross\s*(profit|loss)|max\.?\s*drawdown|recovery\s*factor|trades\s*per\s*week/i.test(
+        plainText,
+      );
+    if (looksLikeSummary) {
+      throw new ReportParseError(
+        "That's a performance summary (Gain, Profit Factor, Drawdown…) — it doesn't list individual trades, so there's nothing to import. Export the detailed history instead: MT5 → History tab → right-click → Report → HTML. Upload that HTML here (or print it to PDF).",
+        "not_a_report",
+      );
+    }
     throw new ReportParseError(
-      "Couldn't recognize this report. Make sure it's the MT5 'Report → HTML' (or MT4 'Save as Report') file, exported in English.",
+      "Couldn't recognize this report. Upload the MT5 'History → right-click → Report → HTML' file (or MT4 'Save as Report'), exported in English. MT5's built-in PDF 'Reports' are summaries without individual trades — use the HTML export.",
       "not_a_report",
     );
   }

@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
-import { parseTradeReport, ReportParseError } from "@/lib/import/mt5-report";
+import {
+  parseTradeReport,
+  ReportParseError,
+  type ParsedReport,
+} from "@/lib/import/mt5-report";
+import { parsePdfReport } from "@/lib/import/pdf-report";
 import { processEvents } from "@/lib/mt5/ingest-db";
 
 /**
@@ -67,11 +72,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const html = await file.text();
+    const isPdf =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
 
-    let parsed;
+    let parsed: ParsedReport;
     try {
-      parsed = parseTradeReport(html, utcOffset);
+      if (isPdf) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        parsed = await parsePdfReport(bytes, utcOffset);
+      } else {
+        parsed = parseTradeReport(await file.text(), utcOffset);
+      }
     } catch (err: unknown) {
       if (err instanceof ReportParseError) {
         return NextResponse.json(
