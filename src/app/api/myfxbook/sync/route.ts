@@ -18,7 +18,9 @@ import type { MyfxbookConnection } from "@/types/database";
 export const maxDuration = 60;
 
 const MAX_CONNECTIONS_PER_RUN = 6;
-const STALE_MINUTES = 5;
+// Myfxbook free API tier ≈ 100 requests/day and their data only refreshes
+// every few hours — schedule the external cron at 30-60 min, not minutes.
+const STALE_MINUTES = 45;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {

@@ -96,7 +96,9 @@ export async function syncMyfxbookConnection(
           ? "Myfxbook rejected the stored credentials — reconnect with your current password."
           : err.kind === "login_locked"
             ? "Myfxbook temporarily locked API logins for this account — it clears on its own; try again later."
-            : err.message
+            : err.kind === "rate_limited"
+              ? "Myfxbook's daily API request limit was hit (~100/day on their free tier) — sync resumes automatically once it resets."
+              : err.message
         : err instanceof Error
           ? err.message
           : "Sync failed";
