@@ -8,8 +8,7 @@ import {
 } from "@/lib/crypto/secretbox";
 import {
   MyfxbookApiError,
-  myfxbookGetAccounts,
-  myfxbookLogin,
+  myfxbookLoginAndGetAccounts,
 } from "@/lib/myfxbook/client";
 import { syncMyfxbookConnection } from "@/lib/myfxbook/sync";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
@@ -71,27 +70,44 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Live-validate the credentials — Myfxbook classifies wrong email/password.
+    // Live-validate the credentials + pull the account list, retrying past
+    // Myfxbook's IP-bound "Invalid session" rejections on serverless egress.
     let session: string;
+    let accounts;
     try {
-      session = await myfxbookLogin(input.email, input.password);
+      ({ session, accounts } = await myfxbookLoginAndGetAccounts(
+        input.email,
+        input.password,
+      ));
     } catch (err: unknown) {
       if (err instanceof MyfxbookApiError) {
-        const status = err.kind === "invalid_credentials" ? 401 : 502;
+        if (err.kind === "invalid_credentials") {
+          return NextResponse.json(
+            { error: "Myfxbook rejected that email/password." },
+            { status: 401 },
+          );
+        }
+        if (err.kind === "login_locked") {
+          return NextResponse.json(
+            {
+              error:
+                "Myfxbook temporarily locked API logins for this account after repeated attempts. Wait a few minutes and try again — or use the report import below, which always works.",
+            },
+            { status: 429 },
+          );
+        }
+        // invalid_session after retries / rate_limited / api_error.
         return NextResponse.json(
           {
             error:
-              err.kind === "invalid_credentials"
-                ? "Myfxbook rejected that email/password."
-                : `Myfxbook error: ${err.message}`,
+              "Couldn't reach Myfxbook reliably just now (their session service can be flaky). Please try again in a moment — or use the report import below, which works instantly.",
           },
-          { status },
+          { status: 502 },
         );
       }
       throw err;
     }
 
-    const accounts = await myfxbookGetAccounts(session);
     if (accounts.length === 0) {
       return NextResponse.json(
         {
