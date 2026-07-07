@@ -48,6 +48,77 @@ export function myfxbookProxyConfigured(): boolean {
   return Boolean(process.env.MYFXBOOK_PROXY_URL?.trim());
 }
 
+export interface MyfxbookDiagnostics {
+  /** Does THIS running server see MYFXBOOK_PROXY_URL? */
+  readonly proxy_configured: boolean;
+  /** Non-secret hint of the configured proxy host (helps spot typos). */
+  readonly proxy_host: string | null;
+  /** The exit IP Myfxbook actually sees for our requests. */
+  readonly exit_ip: string | null;
+  readonly exit_ip_error: string | null;
+  /** Result of a Myfxbook API probe THROUGH the same path. */
+  readonly myfxbook_reachable: boolean;
+  readonly myfxbook_error: string | null;
+  /** Vercel region of this lambda, if any. */
+  readonly region: string | null;
+}
+
+/**
+ * One-shot health check for the whole Myfxbook path, run inside the deployed
+ * server (not from a laptop) — answers definitively: is the env var applied,
+ * which exit IP do we present, and can we reach Myfxbook through it.
+ */
+export async function myfxbookDiagnostics(): Promise<MyfxbookDiagnostics> {
+  const configured = myfxbookProxyConfigured();
+  let proxyHost: string | null = null;
+  if (configured) {
+    try {
+      proxyHost = new URL(process.env.MYFXBOOK_PROXY_URL!.trim()).host;
+    } catch {
+      proxyHost = "<unparseable MYFXBOOK_PROXY_URL>";
+    }
+  }
+
+  let exitIp: string | null = null;
+  let exitIpError: string | null = null;
+  try {
+    const res = await undiciFetch("https://ipv4.webshare.io/", {
+      dispatcher: getDispatcher(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    exitIp = (await res.text()).trim().slice(0, 64);
+  } catch (err: unknown) {
+    exitIpError =
+      err instanceof Error ? `${err.name}: ${err.message}` : "unknown";
+  }
+
+  let reachable = false;
+  let myfxbookError: string | null = null;
+  try {
+    // Deliberately-wrong credentials: a classified "Wrong email/password"
+    // response PROVES end-to-end reachability without touching real accounts.
+    await myfxbookLogin("diag-probe@example.com", "wrong-password");
+    myfxbookError = "probe unexpectedly succeeded";
+  } catch (err: unknown) {
+    if (err instanceof MyfxbookApiError && err.kind === "invalid_credentials") {
+      reachable = true;
+    } else {
+      myfxbookError =
+        err instanceof Error ? `${err.name}: ${err.message}` : "unknown";
+    }
+  }
+
+  return {
+    proxy_configured: configured,
+    proxy_host: proxyHost,
+    exit_ip: exitIp,
+    exit_ip_error: exitIpError,
+    myfxbook_reachable: reachable,
+    myfxbook_error: myfxbookError,
+    region: process.env.VERCEL_REGION ?? null,
+  };
+}
+
 export interface MyfxbookAccount {
   /** Myfxbook entity id — used as `?id=` in data calls. */
   readonly id: number;
