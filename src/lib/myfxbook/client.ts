@@ -13,6 +13,8 @@
  *   backfill is the report import's job, not the bridge's.
  */
 
+import { fetch as undiciFetch, ProxyAgent, type Dispatcher } from "undici";
+
 const BASE_URL = "https://www.myfxbook.com/api";
 /** Community-derived safe spacing between consecutive API calls. */
 const REQUEST_SPACING_MS = 1300;
@@ -24,6 +26,27 @@ const REQUEST_SPACING_MS = 1300;
  * reuse the keep-alive connection, which usually lands both on one IP.
  */
 const SESSION_RETRIES = 3;
+
+/**
+ * The real fix for the IP-bound-session problem: route every Myfxbook request
+ * through a STATIC-IP HTTP proxy (set MYFXBOOK_PROXY_URL, e.g. a QuotaGuard
+ * Static URL). Then login and all data calls exit from one fixed IP, so
+ * sessions never rotate away. Built once per lambda instance; unset → direct
+ * (fine from a fixed-IP host, flaky on Vercel).
+ */
+let proxyDispatcher: Dispatcher | null | undefined;
+function getDispatcher(): Dispatcher | undefined {
+  if (proxyDispatcher === undefined) {
+    const url = process.env.MYFXBOOK_PROXY_URL?.trim();
+    proxyDispatcher = url ? new ProxyAgent(url) : null;
+  }
+  return proxyDispatcher ?? undefined;
+}
+
+/** True when a static-IP proxy is configured (for diagnostics/UI). */
+export function myfxbookProxyConfigured(): boolean {
+  return Boolean(process.env.MYFXBOOK_PROXY_URL?.trim());
+}
 
 export interface MyfxbookAccount {
   /** Myfxbook entity id — used as `?id=` in data calls. */
@@ -121,10 +144,12 @@ async function apiGet<T>(
   lastRequestAt = Date.now();
 
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE_URL}/${method}.json?${qs}`, {
+  // Use undici's fetch so we can pin every request to the static-IP proxy
+  // (when configured) — the definitive fix for IP-bound sessions on Vercel.
+  const res = await undiciFetch(`${BASE_URL}/${method}.json?${qs}`, {
     // Myfxbook has no auth header — session rides in the query string.
     headers: { accept: "application/json" },
-    cache: "no-store",
+    dispatcher: getDispatcher(),
   });
   if (!res.ok) {
     throw new MyfxbookApiError(`Myfxbook HTTP ${res.status}`, "api_error");
