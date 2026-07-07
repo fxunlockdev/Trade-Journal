@@ -90,7 +90,7 @@ export function ImportPanel() {
   const runRequest = useCallback(
     async (mode: "preview" | "commit") => {
       if (!file) {
-        toast.error("Choose your MT5/MT4 HTML report first.");
+        toast.error("Choose your MT5/MT4 report file (.html or .pdf) first.");
         return;
       }
       if (!journalId) {
@@ -143,6 +143,12 @@ export function ImportPanel() {
             Toolbox → History tab → right-click → Period: <em>All History</em> →
             Report → <em>HTML</em>. (MT4: Account History → <em>Save as
             Report</em>.) Export in <span className="font-medium text-foreground">English</span>.
+            <br />
+            <span className="text-xs">
+              Accepts <strong>.html</strong> (most reliable) and{" "}
+              <strong>.pdf</strong> (e.g. the MT5 mobile app&apos;s “Save as
+              PDF”). You&apos;ll preview before anything imports.
+            </span>
           </div>
 
           {/* Controls */}
@@ -201,7 +207,7 @@ export function ImportPanel() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".html,.htm"
+                accept=".html,.htm,.pdf"
                 className="block w-full cursor-pointer rounded-lg border border-input bg-transparent text-sm text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-l-lg file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
                 onChange={(e) => {
                   setFile(e.target.files?.[0] ?? null);

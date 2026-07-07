@@ -60,7 +60,12 @@ function stripTags(html: string): string {
     .trim();
 }
 
-interface Row {
+/**
+ * A logical table row of cell strings. Produced from HTML `<tr>`s or, for PDF
+ * imports, reconstructed from positioned text (see pdf-report.ts) — the row
+ * parser below is format-agnostic.
+ */
+export interface Row {
   readonly cells: readonly string[];
   readonly cellCount: number;
 }
@@ -349,14 +354,27 @@ export function parseTradeReport(
 
   const rows = extractRows(html);
   const plainText = stripTags(html.slice(0, 4000));
+  return parseReportRows(rows, plainText, utcOffsetMinutes);
+}
+
+/**
+ * Format-agnostic core: given reconstructed table rows + a plain-text sample
+ * (for header/account detection), detect MT5 vs MT4 and parse closed trades.
+ * Shared by the HTML parser and the PDF parser (pdf-report.ts).
+ */
+export function parseReportRows(
+  rows: readonly Row[],
+  plainText: string,
+  utcOffsetMinutes: number,
+): ParsedReport {
   const warnings: string[] = [];
 
   const isMt5 =
     /Trade History Report/i.test(plainText) ||
     rows.some((r) => rowIsSectionBanner(r, "Positions"));
-  const isMt4 = rows.some((r) =>
-    r.cells.some((c) => /^closed transactions:?$/i.test(c)),
-  );
+  const isMt4 =
+    rows.some((r) => r.cells.some((c) => /^closed transactions:?$/i.test(c))) ||
+    /closed transactions/i.test(plainText);
 
   if (!isMt5 && !isMt4) {
     throw new ReportParseError(
