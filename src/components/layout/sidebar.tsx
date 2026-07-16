@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   LayoutDashboard,
   BookOpen,
+  CalendarDays,
   Radio,
   Settings,
   MessageSquare,
@@ -73,6 +74,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: FileUp,
     section: "main",
     parentHref: "/journal",
+  },
+  {
+    label: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+    section: "main",
   },
   {
     label: "MT5 Sync",
