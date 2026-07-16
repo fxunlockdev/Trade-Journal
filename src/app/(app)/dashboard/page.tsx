@@ -11,9 +11,11 @@ import { getActiveJournal } from "@/lib/journals/active-journal";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 import { DashboardCharts } from "@/components/analytics/dashboard-charts";
+import { MonthlyPnlCalendar } from "@/components/analytics/monthly-pnl-calendar";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { OnboardingPrompt } from "@/components/chat/onboarding-prompt";
 import { WelcomeCard } from "@/components/dashboard/welcome-card";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/types/database";
 
@@ -86,6 +88,16 @@ export default async function DashboardPage() {
         journalName={activeJournal.name}
         journalColor={activeJournal.color}
       />
+      {/* Compact monthly P&L calendar — self-contained (own month nav), so it
+          intentionally ignores the charts' Range filter above and always
+          reflects the full active-journal history. */}
+      <Card className="border-border bg-card">
+        {/* Tight padding on mobile so the 7-column grid keeps its width; full
+            padding from sm up. */}
+        <CardContent className="p-2 sm:p-6">
+          <MonthlyPnlCalendar trades={trades} compact viewAllHref="/calendar" />
+        </CardContent>
+      </Card>
       <RecentTrades trades={trades} />
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -14,6 +15,13 @@ import type { Trade } from "@/types/database";
 
 interface MonthlyPnlCalendarProps {
   readonly trades: readonly Trade[];
+  /**
+   * Dashboard-widget mode: shorter day cells and an inline one-line summary
+   * instead of the four stat pills. Pair with `viewAllHref`.
+   */
+  readonly compact?: boolean;
+  /** When set, renders a "Full calendar →" link in the header. */
+  readonly viewAllHref?: string;
 }
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -31,7 +39,13 @@ function compactSigned(value: number): string {
   return `${sign}$${abs.toFixed(2)}`;
 }
 
-function DayCell({ cell }: { readonly cell: CalendarCell }) {
+function DayCell({
+  cell,
+  compact,
+}: {
+  readonly cell: CalendarCell;
+  readonly compact?: boolean;
+}) {
   const { inMonth, isToday, day } = cell;
   // Spill-over days (previous/next month) show only a faded number — their
   // P&L belongs to a different month and is excluded from this month's totals.
@@ -54,8 +68,10 @@ function DayCell({ cell }: { readonly cell: CalendarCell }) {
     <div
       title={title}
       className={cn(
-        "flex min-h-[56px] flex-col rounded-lg border p-1 sm:min-h-[84px] sm:p-2",
-        "transition-colors",
+        "flex flex-col rounded-lg border p-1 transition-colors sm:p-2",
+        compact
+          ? "min-h-[44px] sm:min-h-[62px]"
+          : "min-h-[56px] sm:min-h-[84px]",
         !inMonth && "opacity-40",
         tone === "pos" && "border-pos/25 bg-pos/10 dark:bg-pos/15",
         tone === "neg" && "border-neg/25 bg-neg/10 dark:bg-neg/15",
@@ -118,7 +134,11 @@ function SummaryPill({
   );
 }
 
-export function MonthlyPnlCalendar({ trades }: MonthlyPnlCalendarProps) {
+export function MonthlyPnlCalendar({
+  trades,
+  compact = false,
+  viewAllHref,
+}: MonthlyPnlCalendarProps) {
   const [{ year, month }, setYm] = useState(() => initialMonth(trades));
 
   const view = useMemo(
@@ -135,6 +155,14 @@ export function MonthlyPnlCalendar({ trades }: MonthlyPnlCalendarProps) {
   const go = (delta: number) => setYm((cur) => addMonths(cur.year, cur.month, delta));
   const goToday = () =>
     setYm({ year: now.getUTCFullYear(), month: now.getUTCMonth() });
+
+  const netStr = `${view.monthPnl >= 0 ? "+" : ""}${formatCurrency(view.monthPnl)}`;
+  const netClass =
+    view.monthPnl > 0
+      ? "text-pos"
+      : view.monthPnl < 0
+        ? "text-neg"
+        : "text-muted-foreground";
 
   return (
     <section className="space-y-4">
@@ -175,28 +203,52 @@ export function MonthlyPnlCalendar({ trades }: MonthlyPnlCalendarProps) {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <SummaryPill
-            label="Net P&L"
-            value={`${view.monthPnl >= 0 ? "+" : ""}${formatCurrency(view.monthPnl)}`}
-            valueClass={
-              view.monthPnl > 0
-                ? "text-pos"
-                : view.monthPnl < 0
-                  ? "text-neg"
-                  : "text-muted-foreground"
-            }
-          />
-          <SummaryPill
-            label="Win Rate"
-            value={view.totalTrades > 0 ? `${Math.round(view.winRate)}%` : "—"}
-          />
-          <SummaryPill
-            label="Days"
-            value={`${view.greenDays}G / ${view.redDays}R`}
-          />
-          <SummaryPill label="Trades" value={String(view.totalTrades)} />
-        </div>
+        {compact ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span>
+              <span className="text-muted-foreground">Net </span>
+              <span className={cn("font-bold tabular-nums", netClass)}>
+                {netStr}
+              </span>
+            </span>
+            <span className="text-muted-foreground">
+              {view.totalTrades > 0
+                ? `${Math.round(view.winRate)}% win · ${view.totalTrades} trade${
+                    view.totalTrades === 1 ? "" : "s"
+                  }`
+                : "no trades"}
+            </span>
+            {viewAllHref && (
+              <Link
+                href={viewAllHref}
+                className="font-medium text-primary hover:text-primary/80"
+              >
+                Full calendar →
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <SummaryPill label="Net P&L" value={netStr} valueClass={netClass} />
+            <SummaryPill
+              label="Win Rate"
+              value={view.totalTrades > 0 ? `${Math.round(view.winRate)}%` : "—"}
+            />
+            <SummaryPill
+              label="Days"
+              value={`${view.greenDays}G / ${view.redDays}R`}
+            />
+            <SummaryPill label="Trades" value={String(view.totalTrades)} />
+            {viewAllHref && (
+              <Link
+                href={viewAllHref}
+                className="ml-1 text-sm font-medium text-primary hover:text-primary/80"
+              >
+                Full calendar →
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Weekday header */}
@@ -220,7 +272,7 @@ export function MonthlyPnlCalendar({ trades }: MonthlyPnlCalendarProps) {
         {view.weeks.map((week, wi) => (
           <div key={wi} className="grid grid-cols-7 gap-0.5 sm:gap-2">
             {week.cells.map((cell) => (
-              <DayCell key={cell.iso} cell={cell} />
+              <DayCell key={cell.iso} cell={cell} compact={compact} />
             ))}
           </div>
         ))}
