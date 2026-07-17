@@ -28,7 +28,17 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** SL must sit on the LOSING side of entry for risk math to mean anything. */
+/**
+ * SL must sit on the LOSING side of entry, TP on the WINNING side — the same
+ * geometry the trades table enforces (a CHECK the manual form mirrors in
+ * `refineTradeGeometry`). Live MT5 data legitimately violates this: a stop
+ * moved to break-even sits AT entry, a trailed stop can sit PAST it. Persisting
+ * such a value makes the INSERT fail the constraint, and the whole trade — its
+ * real P&L included — silently vanishes. So the ingest stores SL/TP only when
+ * geometrically valid, and nulls them otherwise. The trade always lands; only
+ * the unusable risk marker is dropped (risk math already guards on the same
+ * predicate, so nothing downstream regresses).
+ */
 function isSlValid(
   direction: "buy" | "sell",
   entryPrice: number,
@@ -36,6 +46,26 @@ function isSlValid(
 ): stopLoss is number {
   if (stopLoss == null || stopLoss <= 0) return false;
   return direction === "buy" ? stopLoss < entryPrice : stopLoss > entryPrice;
+}
+
+function isTpValid(
+  direction: "buy" | "sell",
+  entryPrice: number,
+  takeProfit: number | null | undefined,
+): takeProfit is number {
+  if (takeProfit == null || takeProfit <= 0) return false;
+  return direction === "buy" ? takeProfit > entryPrice : takeProfit < entryPrice;
+}
+
+/** Keep SL/TP only when on the geometrically valid side of entry; else null. */
+function sanitizeSlTp(event: Mt5Event): {
+  readonly sl: number | null;
+  readonly tp: number | null;
+} {
+  return {
+    sl: isSlValid(event.direction, event.entry_price, event.sl) ? event.sl : null,
+    tp: isTpValid(event.direction, event.entry_price, event.tp) ? event.tp : null,
+  };
 }
 
 interface PipFields {
@@ -76,8 +106,7 @@ export function buildTradeRow(
 ): Record<string, unknown> {
   const { instrument, assetType } = normalizeMt5Symbol(event.symbol);
   const spec = getInstrumentSpec(instrument);
-  const sl = event.sl ?? null;
-  const tp = event.tp ?? null;
+  const { sl, tp } = sanitizeSlTp(event);
   const pips = computePipFields(instrument, event.entry_price, sl, tp);
 
   return {
@@ -155,8 +184,7 @@ export function buildOpenUpdatePatch(event: Mt5Event): Record<string, unknown> {
 /** SL/TP patch for `update` events (and non-final close snapshots). */
 export function buildSlTpPatch(event: Mt5Event): Record<string, unknown> {
   const { instrument } = normalizeMt5Symbol(event.symbol);
-  const sl = event.sl ?? null;
-  const tp = event.tp ?? null;
+  const { sl, tp } = sanitizeSlTp(event);
   const pips = computePipFields(instrument, event.entry_price, sl, tp);
   return {
     stop_loss: sl,
