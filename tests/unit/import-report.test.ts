@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parseXlsxReport, columnToIndex } from "@/lib/import/xlsx-report";
 import { parseTradeReport, ReportParseError } from "@/lib/import/mt5-report";
 import { decodeReportText, sniffFileKind } from "@/lib/import/decode-text";
+import { buildTradeRow, buildSlTpPatch } from "@/lib/mt5/ingest";
 
 /**
  * Regression suite for the report importer.
@@ -196,6 +197,84 @@ describe("XLSX — real MT5 French export", () => {
     const shifted = parseXlsxReport(xlsxBytes, 180); // GMT+3 broker
     const e = shifted.events.find((x) => x.ticket === 73684852)!;
     expect(e.open_time).toBe(utc(2026, 7, 7, 19, 57, 29) - 180 * 60);
+  });
+});
+
+describe("ingest mapping — every parsed trade produces an insertable row", () => {
+  // Regression for the 10→8 drop: the trades table rejects an SL on the wrong
+  // side of entry (break-even / trailed stops), and processEvents swallowed the
+  // rejection, so those trades silently vanished with their P&L. buildTradeRow
+  // must now sanitise SL/TP so the constraint is always satisfied.
+  const report = parseXlsxReport(xlsxBytes, 0);
+  const rows = report.events.map((e) =>
+    buildTradeRow(e, "statement:99999999", "user-1", "journal-1"),
+  );
+
+  const slSideValid = (row: Record<string, unknown>) => {
+    const sl = row.stop_loss as number | null;
+    if (sl === null) return true;
+    return row.direction === "buy"
+      ? sl < (row.entry_price as number)
+      : sl > (row.entry_price as number);
+  };
+  const tpSideValid = (row: Record<string, unknown>) => {
+    const tp = row.take_profit as number | null;
+    if (tp === null) return true;
+    return row.direction === "buy"
+      ? tp > (row.entry_price as number)
+      : tp < (row.entry_price as number);
+  };
+
+  it("maps all 10 trades to rows (none dropped in mapping)", () => {
+    expect(rows).toHaveLength(10);
+  });
+
+  it("never emits an SL/TP on the wrong side of entry (the constraint the DB enforces)", () => {
+    for (const row of rows) {
+      expect(slSideValid(row)).toBe(true);
+      expect(tpSideValid(row)).toBe(true);
+    }
+  });
+
+  const rowFor = (ticket: number) =>
+    rows.find((r) => r.mt5_ticket === ticket)!;
+
+  it("the break-even-SL buy (74348594) survives: SL nulled, valid TP kept", () => {
+    const row = rowFor(74348594);
+    expect(row).toBeDefined();
+    expect(row.entry_price).toBe(1.13979);
+    expect(row.stop_loss).toBeNull(); // SL == entry → not a real stop
+    expect(row.take_profit).toBe(1.1415); // TP above entry → valid, kept
+    expect(row.tp1).toBe(1.1415);
+    expect(row.direction).toBe("buy");
+  });
+
+  it("the trailed-SL buy (77943462) survives: SL nulled, valid TP kept", () => {
+    const row = rowFor(77943462);
+    expect(row).toBeDefined();
+    expect(row.entry_price).toBe(1.14367);
+    expect(row.stop_loss).toBeNull(); // SL 1.14368 > entry → invalid for a buy
+    expect(row.take_profit).toBe(1.1455);
+  });
+
+  it("keeps a genuinely valid SL untouched (74381111, JPY sell)", () => {
+    const row = rowFor(74381111);
+    expect(row.direction).toBe("sell");
+    expect(row.stop_loss).toBe(162.58); // above entry → valid for a sell
+    expect(slSideValid(row)).toBe(true);
+  });
+
+  it("keeps a valid buy SL untouched (73684852)", () => {
+    const row = rowFor(73684852);
+    expect(row.stop_loss).toBe(1.141); // below entry 1.14231 → valid
+    expect(row.take_profit).toBe(1.143);
+  });
+
+  it("buildSlTpPatch applies the same sanitisation", () => {
+    const badBuy = report.events.find((e) => e.ticket === 77943462)!;
+    const patch = buildSlTpPatch(badBuy);
+    expect(patch.stop_loss).toBeNull();
+    expect(patch.take_profit).toBe(1.1455);
   });
 });
 

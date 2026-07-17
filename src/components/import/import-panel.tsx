@@ -115,10 +115,23 @@ export function ImportPanel() {
         if (mode === "preview") {
           setPreview(json.data as PreviewData);
         } else {
-          const d = json.data as { imported: number; skipped: number };
-          toast.success(
-            `Imported ${d.imported} trade${d.imported === 1 ? "" : "s"}.`,
-          );
+          const d = json.data as {
+            imported: number;
+            skipped: number;
+            errors?: readonly { ticket: number; message: string }[];
+          };
+          const failed = d.errors?.length ?? 0;
+          if (failed > 0) {
+            // Never let rows fail silently again — surface count + first reason.
+            toast.warning(
+              `Imported ${d.imported}, but ${failed} row${failed === 1 ? "" : "s"} could not be saved (e.g. ticket ${d.errors![0].ticket}: ${d.errors![0].message}). Please report this file.`,
+              { duration: 12000 },
+            );
+          } else {
+            toast.success(
+              `Imported ${d.imported} trade${d.imported === 1 ? "" : "s"}.`,
+            );
+          }
           setPreview(null);
           setFile(null);
           if (fileInputRef.current) fileInputRef.current.value = "";
