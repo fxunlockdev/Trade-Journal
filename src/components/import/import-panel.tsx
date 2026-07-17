@@ -90,7 +90,7 @@ export function ImportPanel() {
   const runRequest = useCallback(
     async (mode: "preview" | "commit") => {
       if (!file) {
-        toast.error("Choose your MT5/MT4 report file (.html or .pdf) first.");
+        toast.error("Choose your MT5/MT4 report file (.xlsx, .html or .pdf) first.");
         return;
       }
       if (!journalId) {
@@ -141,16 +141,16 @@ export function ImportPanel() {
           <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">Export from MT5:</span>{" "}
             Toolbox → History tab → right-click → Period: <em>All History</em> →
-            <strong> Report → HTML</strong>. (MT4: Account History → <em>Save as
-            Report</em>.) Export in{" "}
-            <span className="font-medium text-foreground">English</span>.
+            <strong> Report → XLSX</strong> (or HTML). (MT4: Account History →{" "}
+            <em>Save as Report</em>.) Any report language works — English isn&apos;t
+            required.
             <br />
             <span className="text-xs">
-              Use the <strong>HTML</strong> export — it has the per-trade table.
-              A <strong>PDF</strong> works only if it contains that table (e.g.
-              the HTML printed to PDF); MT5&apos;s built-in “Reports” <em>PDF</em>
-              {" "}is a performance summary with no individual trades. You&apos;ll
-              preview before anything imports.
+              <strong>XLSX</strong> and <strong>HTML</strong> both carry the
+              per-trade table. A <strong>PDF</strong> works only if it contains
+              that table (e.g. the HTML printed to PDF); MT5&apos;s built-in
+              “Reports” <em>PDF</em> is a performance summary with no individual
+              trades. You&apos;ll preview before anything imports.
             </span>
           </div>
 
@@ -210,7 +210,8 @@ export function ImportPanel() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".html,.htm,.pdf"
+                data-testid="import-file"
+                accept=".xlsx,.html,.htm,.pdf"
                 className="block w-full cursor-pointer rounded-lg border border-input bg-transparent text-sm text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-l-lg file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
                 onChange={(e) => {
                   setFile(e.target.files?.[0] ?? null);
@@ -220,6 +221,7 @@ export function ImportPanel() {
             </div>
 
             <Button
+              data-testid="import-preview"
               onClick={() => void runRequest("preview")}
               disabled={busy !== null || !file}
             >
@@ -236,14 +238,14 @@ export function ImportPanel() {
 
       {/* Preview */}
       {preview && (
-        <Card className="border-border bg-card">
+        <Card className="border-border bg-card" data-testid="import-preview-card">
           <CardContent className="pt-6 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="uppercase">
+              <Badge variant="outline" className="uppercase" data-testid="import-platform">
                 {preview.platform}
               </Badge>
               {preview.account_login && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-muted-foreground" data-testid="import-account">
                   Account {preview.account_login}
                 </span>
               )}
@@ -286,7 +288,11 @@ export function ImportPanel() {
                 </TableHeader>
                 <TableBody>
                   {preview.trades.map((t) => (
-                    <TableRow key={t.ticket} className={cn(t.status === "duplicate" && "opacity-50")}>
+                    <TableRow
+                      key={t.ticket}
+                      data-testid="import-row"
+                      className={cn(t.status === "duplicate" && "opacity-50")}
+                    >
                       <TableCell className="tabular-nums text-xs text-muted-foreground">
                         {t.ticket}
                       </TableCell>
@@ -342,6 +348,7 @@ export function ImportPanel() {
                 Cancel
               </Button>
               <Button
+                data-testid="import-commit"
                 onClick={() => void runRequest("commit")}
                 disabled={busy !== null || preview.new_count === 0}
               >
