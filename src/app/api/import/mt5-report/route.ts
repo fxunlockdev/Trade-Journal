@@ -8,11 +8,13 @@ import {
   type ParsedReport,
 } from "@/lib/import/mt5-report";
 import { parsePdfReport } from "@/lib/import/pdf-report";
+import { parseXlsxReport } from "@/lib/import/xlsx-report";
+import { decodeReportText, sniffFileKind } from "@/lib/import/decode-text";
 import { processEvents } from "@/lib/mt5/ingest-db";
 
 /**
  * Manual MT4/MT5 report import (multipart form):
- *   file          – the HTML report
+ *   file          – the report (XLSX, HTML or PDF)
  *   journal_id    – target journal
  *   utc_offset    – broker timezone offset in MINUTES (report times are broker-local)
  *   mode          – "preview" (parse + dedupe check, writes nothing) | "commit"
@@ -72,17 +74,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const isPdf =
-      file.type === "application/pdf" ||
-      file.name.toLowerCase().endsWith(".pdf");
+    // Dispatch on MAGIC BYTES, never the filename/mime — MetaTrader and its
+    // white-labels mislabel exports (HTML served as .xls, xlsx as .zip, and
+    // browsers send an empty mime for unknown extensions).
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const kind = sniffFileKind(bytes);
 
     let parsed: ParsedReport;
     try {
-      if (isPdf) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
+      if (kind === "pdf") {
         parsed = await parsePdfReport(bytes, utcOffset);
+      } else if (kind === "zip") {
+        parsed = parseXlsxReport(bytes, utcOffset);
+      } else if (kind === "ole2") {
+        // Legacy BIFF .xls (Excel 97-2003) — a completely different container.
+        return NextResponse.json(
+          {
+            error:
+              "That's a legacy Excel file (.xls). Open it in Excel and 'Save As' .xlsx, or re-export from MT5 (History → right-click → Report → XLSX), then upload again.",
+            reason: "not_a_report",
+          },
+          { status: 422 },
+        );
       } else {
-        parsed = parseTradeReport(await file.text(), utcOffset);
+        // HTML/text — decoded BOM-aware because MT5 writes UTF-16.
+        parsed = parseTradeReport(decodeReportText(bytes), utcOffset);
       }
     } catch (err: unknown) {
       if (err instanceof ReportParseError) {
