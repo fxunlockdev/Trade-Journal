@@ -351,7 +351,27 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
       split_risk: watched.split_risk ?? false,
     };
 
-    return computeTradeFields(tradeData);
+    const computed = computeTradeFields(tradeData);
+
+    // Broker-sourced trades (report import / MT5 sync) carry the broker's REAL
+    // money P&L; price×qty math can't reproduce it (lot-denominated / non-USD
+    // quote instruments) and the server never saves a recomputed value for them.
+    // Preview the STORED figures so editing an imported trade shows the truth.
+    if (
+      isEditMode &&
+      trade &&
+      (trade.source === "csv" || trade.source === "mt5_webhook")
+    ) {
+      return {
+        ...computed,
+        pnl_absolute: trade.pnl_absolute,
+        pnl_percentage: trade.pnl_percentage,
+        risk_reward_ratio: trade.risk_reward_ratio,
+        r_multiple: trade.r_multiple,
+      };
+    }
+
+    return computed;
   }, [
     watched.entry_price,
     watched.exit_price,
@@ -376,6 +396,8 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
     watched.num_positions,
     watched.split_risk,
     direction,
+    isEditMode,
+    trade,
   ]);
 
   const applyParsedSignal = useCallback(() => {
