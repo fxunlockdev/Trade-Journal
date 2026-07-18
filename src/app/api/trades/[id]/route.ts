@@ -130,13 +130,33 @@ export async function PATCH(
       );
     }
 
-    const merged = { ...existing, ...parsed.data };
+    // Zod's `.partial()` still re-applies every field's `.default()`, so
+    // `parsed.data` carries source:"manual", fees:0, tags:[], num_positions:1,
+    // … for keys the client never sent. Persisting those verbatim would flip a
+    // broker (csv / mt5_webhook) trade's provenance — disarming the P&L guard
+    // below on the NEXT edit — and wipe its fees/tags on a note-only edit. So
+    // act ONLY on the fields actually present in the request body.
+    const bodyKeys =
+      body !== null && typeof body === "object"
+        ? new Set(Object.keys(body as Record<string, unknown>))
+        : new Set<string>();
+    const sentData = Object.fromEntries(
+      Object.entries(parsed.data).filter(([k]) => bodyKeys.has(k)),
+    );
+
+    const merged = { ...existing, ...sentData };
     const computed = computeTradeFields(merged);
 
-    const updatePatch: Record<string, unknown> = { ...parsed.data };
-    if ("tp1" in parsed.data) {
-      updatePatch.take_profit = parsed.data.tp1 ?? parsed.data.take_profit ?? null;
+    const updatePatch: Record<string, unknown> = { ...sentData };
+    if ("tp1" in sentData) {
+      updatePatch.take_profit = sentData.tp1 ?? sentData.take_profit ?? null;
     }
+
+    // `source` is provenance — how the trade entered the system (manual / csv
+    // import / mt5_webhook). It is immutable after creation: an edit must never
+    // rewrite it, or a raw PATCH `{"source":"manual"}` could strip a broker
+    // trade's provenance and disarm the P&L guard below on the next edit.
+    delete updatePatch.source;
 
     // Only overwrite the stored exit_price when the patch touches price-related
     // fields. Writing computed.exit_price unconditionally was causing note-only
@@ -150,29 +170,35 @@ export async function PATCH(
       "tp5_result", "tp6_result", "tp7_result",
       "num_positions", "split_risk",
     ]);
-    const patchTouchesPricing = Object.keys(parsed.data).some((k) => pricingKeys.has(k));
+    const patchTouchesPricing = Object.keys(sentData).some((k) => pricingKeys.has(k));
 
-    // MT5-synced trades carry the broker's REAL money PnL (profit + commission
-    // + swap), which price×quantity math cannot reproduce (lot-denominated
-    // volumes, quote-currency conversion), plus risk fields written with a
-    // trailed-SL guard. Never overwrite those from an app-side edit —
-    // otherwise a note-only edit silently corrupts the P&L.
-    const isMt5Trade = existing.source === "mt5_webhook";
+    // Broker-sourced trades — the MT5 webhook AND report imports ("csv") —
+    // carry the broker's REAL money PnL (profit + commission + swap), which
+    // price×quantity math cannot reproduce (lot-denominated volumes,
+    // quote-currency conversion), plus a stamped TP/SL-hit result and risk
+    // fields written with a trailed-SL guard. Never recompute those from an
+    // app-side edit: a note-only edit must not silently corrupt the P&L, and a
+    // stamped tp1_result must not flip computeTradeFields into re-deriving P&L
+    // from the TP price.
+    const isBrokerSourced =
+      existing.source === "mt5_webhook" || existing.source === "csv";
 
     const { data, error } = await admin
       .from("trades")
       .update({
         ...updatePatch,
-        pnl_absolute: isMt5Trade ? existing.pnl_absolute : computed.pnl_absolute,
-        pnl_percentage: isMt5Trade
+        pnl_absolute: isBrokerSourced
+          ? existing.pnl_absolute
+          : computed.pnl_absolute,
+        pnl_percentage: isBrokerSourced
           ? existing.pnl_percentage
           : computed.pnl_percentage,
-        risk_reward_ratio: isMt5Trade
+        risk_reward_ratio: isBrokerSourced
           ? existing.risk_reward_ratio
           : computed.risk_reward_ratio,
-        r_multiple: isMt5Trade ? existing.r_multiple : computed.r_multiple,
+        r_multiple: isBrokerSourced ? existing.r_multiple : computed.r_multiple,
         // Only persist the re-derived exit_price when pricing fields changed.
-        ...(patchTouchesPricing && !isMt5Trade
+        ...(patchTouchesPricing && !isBrokerSourced
           ? { exit_price: computed.exit_price }
           : {}),
       })

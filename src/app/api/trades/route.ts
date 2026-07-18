@@ -245,6 +245,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...computed,
       user_id: user.id,
       journal_id: activeJournal.id,
+      // Broker provenance ("csv" / "mt5_webhook") is written ONLY by the import
+      // and sync ingest, never by this public create endpoint. Force manual so a
+      // client can't mint a fake broker-sourced trade that would then bypass the
+      // P&L recompute guard on later edits.
+      source: "manual" as const,
     };
 
     // Admin client — we've verified user auth + journal membership + role

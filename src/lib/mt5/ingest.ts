@@ -6,6 +6,7 @@ import {
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 import { normalizeMt5Symbol } from "@/lib/mt5/normalize-symbol";
 import type { Mt5Event } from "@/lib/validators/mt5";
+import type { TPResult } from "@/types/database";
 
 /**
  * Pure MT5-event → trade-row mapping. Kept free of I/O so the whole mapping
@@ -66,6 +67,62 @@ function sanitizeSlTp(event: Mt5Event): {
     sl: isSlValid(event.direction, event.entry_price, event.sl) ? event.sl : null,
     tp: isTpValid(event.direction, event.entry_price, event.tp) ? event.tp : null,
   };
+}
+
+/**
+ * Which level, if any, closed the position — so the journal can show a trade
+ * as "TP hit" / "SL hit" instead of a bare exit.
+ *
+ * MT5 reports don't state the close reason on the position row, but the fill
+ * geometry is unambiguous: a TP is a LIMIT that fills at its price or better,
+ * an SL is a STOP that fills at its price or worse (and occasionally a hair
+ * better). So the position closed at TP when the exit reached the TP side of
+ * it, and at SL when it reached the SL side — with a small tolerance for
+ * rounding and stop slippage. A manual close lands short of the level and
+ * stays null. Only the geometrically valid (persisted) SL/TP are considered,
+ * so a break-even/trailed stop that we dropped can't be mislabelled as hit.
+ *
+ * `tp1_result` is the single-position marker; multi-TP splits aren't inferred
+ * from a report (there's one closing price per position). It never changes the
+ * stored P&L — the broker's number stays authoritative (see buildCloseFields).
+ *
+ * Tolerance is deliberately tight (1 pip). A TP limit fills at its price or
+ * better, an SL stop at its price or a touch worse, so a real hit sits within
+ * ~1 pip. A position closed 2+ pips short of its TP (e.g. a partial manual
+ * close whose averaged exit lands near the target) must NOT be read as a hit.
+ */
+const EXIT_MATCH_PIPS = 1;
+
+function detectCloseResult(
+  event: Mt5Event,
+  sl: number | null,
+  tp: number | null,
+  netPnl: number,
+): TPResult | null {
+  const exit = event.exit_price;
+  if (exit == null) return null;
+
+  const buy = event.direction === "buy";
+  const { instrument } = normalizeMt5Symbol(event.symbol);
+  const spec = getInstrumentSpec(instrument);
+  const tol = spec.pipSize > 0 ? spec.pipSize * EXIT_MATCH_PIPS : 0;
+
+  // TP fills at its price or better; SL at its price or worse.
+  const reachedTp = tp != null && (buy ? exit >= tp - tol : exit <= tp + tol);
+  const reachedSl = sl != null && (buy ? exit <= sl + tol : exit >= sl - tol);
+  // Which side of entry the exit actually landed on (strict — a flat/break-even
+  // close belongs to neither, so it is never mislabelled).
+  const priceWon = buy ? exit > event.entry_price : exit < event.entry_price;
+  const priceLost = buy ? exit < event.entry_price : exit > event.entry_price;
+
+  // A TP hit is a win and an SL hit is a loss, so require BOTH the price side
+  // and the net P&L to agree. This keeps the marker consistent with the money
+  // (the table status derived from it can't contradict win-rate analytics) and,
+  // when a tight scalp's TP and SL tolerance bands overlap, prevents a losing
+  // stop-out from being read as a "hit".
+  if (reachedTp && priceWon && netPnl > 0) return "hit";
+  if (reachedSl && priceLost && netPnl < 0) return "sl";
+  return null;
 }
 
 interface PipFields {
@@ -207,7 +264,9 @@ export function buildCloseFields(event: Mt5Event): Record<string, unknown> {
   const netPnl = (event.profit ?? 0) + commission + swap;
   const costs = commission + swap;
 
-  const slValid = isSlValid(event.direction, event.entry_price, event.sl);
+  // Use the persisted (geometrically valid) SL/TP for every derivation, so the
+  // close-reason, R:R and R-multiple all agree with what the row actually holds.
+  const { sl, tp } = sanitizeSlTp(event);
 
   return {
     exit_price: exitPrice,
@@ -219,24 +278,18 @@ export function buildCloseFields(event: Mt5Event): Record<string, unknown> {
       event.direction,
     ),
     fees: Math.max(0, -costs),
+    // Mark whether the exit hit TP or SL — drives the journal's TP/SL-hit
+    // display. Purely a label: pnl_absolute above stays the broker's number.
+    tp1_result: detectCloseResult(event, sl, tp, netPnl),
     // Risk math only when the SL is on the losing side — a trailed SL past
     // entry (common on live MT5) would otherwise produce nonsense R values.
     risk_reward_ratio:
-      slValid && event.tp != null && event.tp > 0
-        ? computeRiskRewardRatio(
-            event.entry_price,
-            event.sl as number,
-            event.tp,
-            event.direction,
-          )
+      sl != null && tp != null
+        ? computeRiskRewardRatio(event.entry_price, sl, tp, event.direction)
         : null,
-    r_multiple: slValid
-      ? computeRMultiple(
-          event.entry_price,
-          exitPrice,
-          event.sl as number,
-          event.direction,
-        )
-      : null,
+    r_multiple:
+      sl != null
+        ? computeRMultiple(event.entry_price, exitPrice, sl, event.direction)
+        : null,
   };
 }

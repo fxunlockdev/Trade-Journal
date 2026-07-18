@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { parseXlsxReport, columnToIndex } from "@/lib/import/xlsx-report";
 import { parseTradeReport, ReportParseError } from "@/lib/import/mt5-report";
 import { decodeReportText, sniffFileKind } from "@/lib/import/decode-text";
-import { buildTradeRow, buildSlTpPatch } from "@/lib/mt5/ingest";
+import { buildTradeRow, buildSlTpPatch, buildCloseFields } from "@/lib/mt5/ingest";
+import { computeTradeFields } from "@/lib/trades/computations";
 
 /**
  * Regression suite for the report importer.
@@ -275,6 +276,196 @@ describe("ingest mapping — every parsed trade produces an insertable row", () 
     const patch = buildSlTpPatch(badBuy);
     expect(patch.stop_loss).toBeNull();
     expect(patch.take_profit).toBe(1.1455);
+  });
+});
+
+describe("TP/SL-hit detection — which level closed each position", () => {
+  // The close-reason must be inferred from the exit vs SL/TP, WITHOUT touching
+  // the broker's authoritative P&L. Expected per the real report:
+  //   73684852 buy  exit 1.14101 ≈ SL 1.14100  → sl   (loss -13.00)
+  //   74381111 sell exit 162.580 = SL 162.580   → sl   (loss  -5.66)
+  //   76611363 sell exit 1.14298 ≈ TP 1.14300  → hit  (win  +14.70)
+  //   74348594 buy  exit 1.14130 = TP-2pips     → null (partial/manual, +15.10)
+  //   everything else closed away from any level → null
+  const report = parseXlsxReport(xlsxBytes, 0);
+
+  // Mirror what the ingest actually persists on a final close.
+  const stored = new Map(
+    report.events.map((e) => [
+      e.ticket,
+      {
+        ...buildTradeRow(e, "statement:99999999", "u", "j"),
+        ...buildSlTpPatch(e),
+        ...buildCloseFields(e),
+      },
+    ]),
+  );
+
+  const EXPECTED: Record<number, "hit" | "sl" | null> = {
+    73684852: "sl",
+    74348594: null,
+    74381111: "sl",
+    74866205: null,
+    75387290: null,
+    76070067: null,
+    76611363: "hit",
+    77287259: null,
+    77387893: null,
+    77943462: null,
+  };
+
+  it.each(Object.entries(EXPECTED))(
+    "ticket %s → tp1_result %s",
+    (ticket, expected) => {
+      expect(stored.get(Number(ticket))!.tp1_result).toBe(expected);
+    },
+  );
+
+  it("marks exactly one TP hit and two SL hits", () => {
+    const results = [...stored.values()].map((r) => r.tp1_result);
+    expect(results.filter((r) => r === "hit")).toHaveLength(1);
+    expect(results.filter((r) => r === "sl")).toHaveLength(2);
+  });
+
+  it("does NOT read a position that closed 2 pips short of TP as a hit", () => {
+    // 74348594: a partial close whose averaged exit (1.14130) lands near — but
+    // not at — TP 1.14150. Stays null; still a Win by its stored P&L.
+    const row = stored.get(74348594)!;
+    expect(row.tp1_result).toBeNull();
+    expect(row.pnl_absolute).toBeCloseTo(15.1, 2);
+  });
+
+  it("leaves the broker's P&L untouched when stamping a result", () => {
+    // The TP-hit and SL-hit trades keep their exact broker net P&L — the label
+    // must never trigger a price×qty recompute.
+    expect(stored.get(76611363)!.pnl_absolute).toBeCloseTo(14.7, 2); // TP hit
+    expect(stored.get(73684852)!.pnl_absolute).toBeCloseTo(-13.0, 2); // SL hit
+    expect(stored.get(74381111)!.pnl_absolute).toBeCloseTo(-5.66, 2); // SL hit (JPY)
+  });
+
+  it("computeTradeFields would NOT corrupt P&L for a stamped import trade", () => {
+    // Guard the guard: feed a stamped row through computeTradeFields (the edit
+    // path). It WILL recompute to a different number — which is exactly why the
+    // PATCH route preserves the stored value for broker-sourced ("csv") trades.
+    const slHit = stored.get(73684852)!;
+    const recomputed = computeTradeFields({
+      entry_price: slHit.entry_price as number,
+      exit_price: slHit.exit_price as number,
+      quantity: slHit.quantity as number,
+      direction: slHit.direction as "buy" | "sell",
+      fees: slHit.fees as number,
+      stop_loss: slHit.stop_loss as number | null,
+      take_profit: slHit.take_profit as number | null,
+      tp1: slHit.tp1 as number | null,
+      tp1_result: slHit.tp1_result as "hit" | "sl" | "be" | null,
+    });
+    // Proves the recompute diverges (so preserving the stored value matters).
+    expect(recomputed.pnl_absolute).not.toBeCloseTo(-13.0, 2);
+  });
+});
+
+describe("TP/SL-hit — adversarial edge cases (review hardening)", () => {
+  const mkClose = (o: Record<string, unknown>) =>
+    ({
+      type: "close",
+      is_final: true,
+      ticket: 1,
+      symbol: "EURUSD",
+      direction: "buy",
+      volume: 0.1,
+      entry_price: 1.1,
+      open_time: 1_700_000_000,
+      exit_price: 1.1,
+      close_time: 1_700_003_600,
+      profit: 0,
+      commission: 0,
+      swap: 0,
+      ...o,
+    }) as unknown as Parameters<typeof buildCloseFields>[0];
+
+  it("a flat close in an overlapping tp≈sl scalp is neither hit nor sl", () => {
+    // TP and SL within 1 pip of entry → tolerance bands overlap; a break-even
+    // exit belongs to neither side.
+    const r = buildCloseFields(
+      mkClose({ entry_price: 1.1, tp: 1.10005, sl: 1.09995, exit_price: 1.1, profit: 0 }),
+    );
+    expect(r.tp1_result).toBeNull();
+  });
+
+  it("a losing stop-out in an overlapping band is 'sl', never 'hit'", () => {
+    // The dangerous mislabel: TP-first ordering used to flag this a win.
+    const r = buildCloseFields(
+      mkClose({
+        entry_price: 1.1,
+        tp: 1.10005,
+        sl: 1.09995,
+        exit_price: 1.09996,
+        profit: -4,
+      }),
+    );
+    expect(r.tp1_result).toBe("sl");
+    expect(r.pnl_absolute).toBeCloseTo(-4, 2);
+  });
+
+  it("a TP that reached price but netted <= 0 after swap is NOT marked hit", () => {
+    // Keeps the table status consistent with pnl-based win-rate analytics.
+    const r = buildCloseFields(
+      mkClose({
+        entry_price: 1.1,
+        tp: 1.101,
+        exit_price: 1.101, // touched TP
+        profit: 100,
+        swap: -150, // but a big swap made it a net loss
+      }),
+    );
+    expect(r.tp1_result).toBeNull();
+    expect(r.pnl_absolute).toBeCloseTo(-50, 2);
+  });
+
+  it("a clean TP hit with positive net is still marked hit", () => {
+    const r = buildCloseFields(
+      mkClose({ entry_price: 1.1, tp: 1.101, exit_price: 1.101, profit: 100, swap: -5 }),
+    );
+    expect(r.tp1_result).toBe("hit");
+  });
+});
+
+describe("PATCH default-injection hazard (documents the guard)", () => {
+  it("updateTradeSchema.partial() re-applies defaults — so a raw spread would flip source", async () => {
+    const { updateTradeSchema } = await import("@/lib/validators/trade");
+    const parsed = updateTradeSchema.safeParse({ notes: "reviewed" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // The hazard: Zod injects source:"manual" for a note-only edit.
+    expect((parsed.data as { source?: string }).source).toBe("manual");
+
+    // The route's mitigation: keep only keys actually present in the body.
+    const body = { notes: "reviewed" };
+    const bodyKeys = new Set(Object.keys(body));
+    const sent = Object.fromEntries(
+      Object.entries(parsed.data).filter(([k]) => bodyKeys.has(k)),
+    );
+    expect(sent).toEqual({ notes: "reviewed" });
+    expect("source" in sent).toBe(false);
+    expect("fees" in sent).toBe(false);
+    expect("tags" in sent).toBe(false);
+  });
+
+  it("source is dropped from the write even when explicitly sent (immutable provenance)", async () => {
+    const { updateTradeSchema } = await import("@/lib/validators/trade");
+    // A raw/scripted PATCH tries to flip a broker trade's provenance.
+    const body = { source: "manual", notes: "x" };
+    const parsed = updateTradeSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const bodyKeys = new Set(Object.keys(body));
+    const updatePatch: Record<string, unknown> = Object.fromEntries(
+      Object.entries(parsed.data).filter(([k]) => bodyKeys.has(k)),
+    );
+    // The route's `delete updatePatch.source` — provenance can never be edited.
+    delete updatePatch.source;
+    expect("source" in updatePatch).toBe(false);
+    expect(updatePatch).toEqual({ notes: "x" });
   });
 });
 

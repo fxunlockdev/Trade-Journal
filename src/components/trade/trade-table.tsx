@@ -485,8 +485,25 @@ export function TradeTable({ trades }: TradeTableProps) {
                 <TableCell className="text-right tabular-nums">
                   {formatPrice(trade.entry_price)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {trade.stop_loss !== null ? formatPrice(trade.stop_loss) : "—"}
+                <TableCell className="text-right tabular-nums">
+                  {trade.stop_loss !== null ? (
+                    <span
+                      className={cn(
+                        // Highlight the stop in red when it was the exit — the
+                        // position was stopped out at this level.
+                        trade.tp1_result === "sl"
+                          ? "font-medium text-neg"
+                          : "text-muted-foreground",
+                      )}
+                      title={
+                        trade.tp1_result === "sl" ? "Stopped out here" : undefined
+                      }
+                    >
+                      {formatPrice(trade.stop_loss)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {tps.total > 0 ? (
