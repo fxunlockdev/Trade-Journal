@@ -44,6 +44,14 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
   const winCount = trades.filter(
     (t) => t.pnl_absolute !== null && t.pnl_absolute > 0,
   ).length;
+  const lossCount = trades.filter(
+    (t) => t.pnl_absolute !== null && t.pnl_absolute < 0,
+  ).length;
+  // Profit factor is null for BOTH "no data" and "wins with zero losses"
+  // (mathematically infinite). Distinguish them so a flawless run doesn't read
+  // as "Not enough data".
+  const winsOnly = closedCount > 0 && winCount > 0 && lossCount === 0;
+  const pfGood = (profitFactor !== null && profitFactor > 1) || winsOnly;
 
   return [
     {
@@ -72,29 +80,27 @@ function buildCards(trades: readonly Trade[]): readonly StatCardData[] {
     },
     {
       label: "Profit Factor",
-      // null  → no data OR wins-only (unbounded). Render "—" when we genuinely
-      // have no losses to compare against, so the card doesn't falsely claim
-      // "Profitable system" with zero signal.
-      value: profitFactor === null ? "—" : profitFactor.toFixed(2),
+      // "∞" = wins with no losing trades (unbounded); "—" = genuinely no data.
+      value:
+        profitFactor !== null
+          ? profitFactor.toFixed(2)
+          : winsOnly
+            ? "∞"
+            : "—",
       subtitle:
-        profitFactor === null
-          ? "Not enough data"
-          : profitFactor > 1
+        profitFactor !== null
+          ? profitFactor > 1
             ? "Profitable system"
-            : "Needs improvement",
+            : "Needs improvement"
+          : winsOnly
+            ? "No losing trades"
+            : "Not enough data",
       icon: TrendingUp,
-      colorClass:
-        profitFactor !== null && profitFactor > 1
-          ? "text-pos"
-          : "text-neg",
-      bgGradient:
-        profitFactor !== null && profitFactor > 1
-          ? "from-pos/10 to-transparent"
-          : "from-neg/10 to-transparent",
-      iconBg:
-        profitFactor !== null && profitFactor > 1
-          ? "bg-pos/15"
-          : "bg-neg/15",
+      colorClass: pfGood ? "text-pos" : "text-neg",
+      bgGradient: pfGood
+        ? "from-pos/10 to-transparent"
+        : "from-neg/10 to-transparent",
+      iconBg: pfGood ? "bg-pos/15" : "bg-neg/15",
     },
     {
       label: "Max Drawdown",
