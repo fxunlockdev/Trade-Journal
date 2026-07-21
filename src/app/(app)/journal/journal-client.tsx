@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Trade } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { computeTotalPips, computeDisplayRR } from "@/lib/trades/pips";
 import { TradeTable } from "@/components/trade/trade-table";
 import { TradeFiltersBar, type TradeFilters } from "@/components/trade/trade-filters";
 
@@ -17,6 +18,7 @@ interface PeriodStats {
   readonly winRate: number;
   readonly totalPnl: number;
   readonly avgRR: number | null;
+  readonly totalPips: number;
 }
 
 function computePeriodStats(trades: readonly Trade[]): PeriodStats {
@@ -28,16 +30,19 @@ function computePeriodStats(trades: readonly Trade[]): PeriodStats {
   const totalPnl = closed.reduce((sum, t) => sum + t.pnl_absolute!, 0);
   const winRate = closed.length > 0 ? (wins / closed.length) * 100 : 0;
 
-  const rrTrades = closed.filter(
-    (t) => t.risk_reward_ratio !== null && Number.isFinite(t.risk_reward_ratio),
-  );
-  const avgRR =
-    rrTrades.length > 0
-      ? rrTrades.reduce((sum, t) => sum + t.risk_reward_ratio!, 0) /
-        rrTrades.length
-      : null;
+  // Use the SAME R:R the table shows (computeDisplayRR), not the stored value,
+  // so "Avg R:R" and the per-row R:R can't disagree on legacy multi-TP rows.
+  const rrs = closed
+    .map((t) => computeDisplayRR(t))
+    .filter((rr): rr is number => rr !== null && Number.isFinite(rr));
+  const avgRR = rrs.length > 0 ? rrs.reduce((a, b) => a + b, 0) / rrs.length : null;
 
-  return { closed: closed.length, wins, losses, winRate, totalPnl, avgRR };
+  // Net pips over the period — same per-trade basis as the table's PIPS column,
+  // so this total is exactly the sum of the rows shown. Open trades and
+  // unknown-pip instruments contribute nothing.
+  const totalPips = computeTotalPips(trades);
+
+  return { closed: closed.length, wins, losses, winRate, totalPnl, avgRR, totalPips };
 }
 
 function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
@@ -48,8 +53,11 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
   const pnlPositive = stats.totalPnl > 0;
   const pnlNeutral = stats.totalPnl === 0;
 
+  const pipsPositive = stats.totalPips > 0;
+  const pipsNeutral = Math.round(stats.totalPips) === 0;
+
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
       {/* Period P&L */}
       <div className="col-span-2 sm:col-span-1 lg:col-span-1 rounded-lg border border-border bg-card px-4 py-3">
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -109,6 +117,27 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
         </p>
         <p className="mt-1 text-lg font-bold text-foreground">
           {stats.avgRR !== null ? `${stats.avgRR.toFixed(2)}R` : "—"}
+        </p>
+        <p className="text-[10px] text-muted-foreground">across closed trades</p>
+      </div>
+
+      {/* Total Pips */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Total Pips
+        </p>
+        <p
+          className={cn(
+            "mt-1 text-lg font-bold tabular-nums",
+            pipsNeutral
+              ? "text-muted-foreground"
+              : pipsPositive
+                ? "text-pos"
+                : "text-neg",
+          )}
+        >
+          {stats.totalPips > 0 ? "+" : ""}
+          {Math.round(stats.totalPips).toLocaleString("en-US")}
         </p>
         <p className="text-[10px] text-muted-foreground">across closed trades</p>
       </div>
