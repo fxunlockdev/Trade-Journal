@@ -158,20 +158,6 @@ export async function PATCH(
     // trade's provenance and disarm the P&L guard below on the next edit.
     delete updatePatch.source;
 
-    // Only overwrite the stored exit_price when the patch touches price-related
-    // fields. Writing computed.exit_price unconditionally was causing note-only
-    // or tag-only edits to silently mutate the weighted exit price on multi-TP
-    // trades (because computeTradeFields re-derives it from tp_results on every
-    // call regardless of what changed in the patch).
-    const pricingKeys = new Set([
-      "entry_price", "exit_price", "direction", "quantity", "fees", "stop_loss",
-      "tp1", "tp2", "tp3", "tp4", "tp5", "tp6", "tp7",
-      "tp1_result", "tp2_result", "tp3_result", "tp4_result",
-      "tp5_result", "tp6_result", "tp7_result",
-      "num_positions", "split_risk",
-    ]);
-    const patchTouchesPricing = Object.keys(sentData).some((k) => pricingKeys.has(k));
-
     // Broker-sourced trades — the MT5 webhook AND report imports ("csv") —
     // carry the broker's REAL money PnL (profit + commission + swap), which
     // price×quantity math cannot reproduce (lot-denominated volumes,
@@ -197,10 +183,13 @@ export async function PATCH(
           ? existing.risk_reward_ratio
           : computed.risk_reward_ratio,
         r_multiple: isBrokerSourced ? existing.r_multiple : computed.r_multiple,
-        // Only persist the re-derived exit_price when pricing fields changed.
-        ...(patchTouchesPricing && !isBrokerSourced
-          ? { exit_price: computed.exit_price }
-          : {}),
+        // exit_price travels WITH the recomputed P&L, never separately. Writing
+        // one without the other (the old "only on pricing edits" rule) let a
+        // note-only edit leave a row whose stored exit says one thing and whose
+        // stored money says another. For a manual trade both are derived from
+        // the same fields, so persisting them together is what keeps the row
+        // internally consistent.
+        ...(isBrokerSourced ? {} : { exit_price: computed.exit_price }),
       })
       .eq("id", id)
       .select()

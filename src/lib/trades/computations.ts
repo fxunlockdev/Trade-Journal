@@ -129,6 +129,43 @@ function priceForResult(
   return stopLoss != null && stopLoss > 0 ? stopLoss : null;
 }
 
+/**
+ * The price a SINGLE position actually closed at: the last recorded TP slot
+ * that resolves to a price. Slot order is chronological — you reach TP1 before
+ * TP2 — so the final recorded slot is the closing event.
+ *
+ * Slot order (not "furthest by distance") on purpose: a stop-out recorded after
+ * a hit closes the trade at the stop. Picking the best hit instead would turn a
+ * mis-clicked stop-out into a full win.
+ *
+ * Slots that can't resolve are SKIPPED rather than aborting the whole trade —
+ * a trailing target ("Open / Trail" disables its price input but leaves its
+ * Outcome buttons live) or an `sl` outcome with no stop price would otherwise
+ * null out the P&L, dropping the trade out of every money metric while the
+ * table still rendered it as a win. Mirrors the split branch, which also skips
+ * unresolvable slices.
+ */
+function lastResolvedExit<T extends TradeForComputation>(
+  trade: T,
+  results: ReadonlyArray<{
+    readonly price: number | null | undefined;
+    readonly result: TPResult | null | undefined;
+  }>,
+): number | null {
+  for (let i = results.length - 1; i >= 0; i -= 1) {
+    const r = results[i];
+    if (r.result == null) continue;
+    const price = priceForResult(
+      r.result,
+      r.price,
+      trade.entry_price,
+      trade.stop_loss,
+    );
+    if (price != null) return price;
+  }
+  return null;
+}
+
 export function computeMultiTpPnl<T extends TradeForComputation>(
   trade: T,
 ): MultiTpOutcome | null {
@@ -144,6 +181,26 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
 
   const concrete = results.filter((r) => r.result != null);
   if (concrete.length === 0) return null;
+
+  /**
+   * SINGLE position (not split, or only one position): the trade closes ONCE,
+   * at its last recorded outcome — so with TP1+TP2 hit the exit is TP2, and a
+   * stop-out recorded after a hit closes at the stop. The slice logic below
+   * would collapse to `concrete[0]` here (slices = num_positions = 1), which
+   * counted only TP1 and under-reported exit price, pips and P&L for every
+   * multi-target trade.
+   */
+  const isSplit = (trade.split_risk ?? false) && (trade.num_positions ?? 1) > 1;
+  if (!isSplit) {
+    const exitPx = lastResolvedExit(trade, results);
+    if (exitPx == null) return null;
+
+    const gross =
+      trade.direction === "buy"
+        ? (exitPx - trade.entry_price) * trade.quantity
+        : (trade.entry_price - exitPx) * trade.quantity;
+    return { value: gross - trade.fees, price: exitPx };
+  }
 
   // Count how many TP price slots are populated. This is the "intended" number
   // of partial-close positions the user set up. We use it as the slice fallback

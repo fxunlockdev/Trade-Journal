@@ -41,13 +41,13 @@ export function highestHitTpPrice(trade: Trade): number | null {
 /**
  * Realized pips for a single trade.
  *
- * Measures to the ACTUAL exit_price — for multi-TP trades this is the
- * quantity-weighted realized close that `computeTradeFields` persists, so pips
- * always agree in sign and magnitude with the stored P&L. (Measuring to the
- * highest hit TP instead would over-report a partial win and could even show
- * POSITIVE pips on a net-losing partial where later slices were stopped out.)
- * The highest hit TP is only a fallback for the rare case of a hit with no
- * recorded exit. Open trades (no reference) return null.
+ * Measures to the STORED `exit_price` — the one number every other surface
+ * (P&L, equity curve, calendar, analytics) is derived from, so pips can never
+ * contradict the money shown beside them. `computeTradeFields` writes that exit
+ * from the TP results on save (furthest level reached for a single position,
+ * quantity-weighted close for a split), and broker rows store the real fill.
+ * The highest hit TP is only a fallback for a hit with no recorded exit.
+ * Open trades (no reference) return null.
  *
  * Direction-aware: a profitable move is always positive regardless of buy/sell.
  */
