@@ -160,6 +160,28 @@ function refineTradeGeometry(
   }
 }
 
+/**
+ * Optional numeric fields for a form-backed schema. React-hook-form delivers an
+ * empty <input> as "" (a string), and `z.coerce.number("")` is 0 — which then
+ * trips `.positive()` with "Too small: expected number to be >0", so a BLANK
+ * optional field (Entry High, SL, TP, exit, lot size…) wrongly blocks submit.
+ * Treat blank / null / whitespace as "not provided"; real values still validate.
+ * Same technique already used for `tags`/`notes` below.
+ */
+const blankToUndefined = (v: unknown): unknown =>
+  v === "" || v === null || (typeof v === "string" && v.trim() === "")
+    ? undefined
+    : v;
+
+const optionalPositiveNumber = z.preprocess(
+  blankToUndefined,
+  z.coerce.number().positive().nullable().optional(),
+);
+const optionalNonnegativeNumber = z.preprocess(
+  blankToUndefined,
+  z.coerce.number().nonnegative().nullable().optional(),
+);
+
 const createTradeObjectSchema = z.object({
   user_id: z.string().trim().min(1),
   instrument: z.string().trim().min(1).max(20),
@@ -167,28 +189,28 @@ const createTradeObjectSchema = z.object({
   direction: z.enum(directions),
   order_type: z.enum(orderTypes).default("market"),
   entry_price: z.coerce.number().positive(),
-  entry_price_high: z.coerce.number().positive().nullable().optional(),
-  exit_price: z.coerce.number().positive().nullable().optional(),
+  entry_price_high: optionalPositiveNumber,
+  exit_price: optionalPositiveNumber,
   quantity: z.coerce.number().positive(),
-  lot_size: z.coerce.number().positive().nullable().optional(),
-  stop_loss: z.coerce.number().positive().nullable().optional(),
-  sl_pips: z.coerce.number().nonnegative().nullable().optional(),
+  lot_size: optionalPositiveNumber,
+  stop_loss: optionalPositiveNumber,
+  sl_pips: optionalNonnegativeNumber,
   // Legacy single-TP — kept in sync with tp1 when only one target is set.
-  take_profit: z.coerce.number().positive().nullable().optional(),
-  tp1: z.coerce.number().positive().nullable().optional(),
-  tp2: z.coerce.number().positive().nullable().optional(),
-  tp3: z.coerce.number().positive().nullable().optional(),
-  tp4: z.coerce.number().positive().nullable().optional(),
-  tp5: z.coerce.number().positive().nullable().optional(),
-  tp6: z.coerce.number().positive().nullable().optional(),
-  tp7: z.coerce.number().positive().nullable().optional(),
-  tp1_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp2_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp3_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp4_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp5_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp6_pips: z.coerce.number().nonnegative().nullable().optional(),
-  tp7_pips: z.coerce.number().nonnegative().nullable().optional(),
+  take_profit: optionalPositiveNumber,
+  tp1: optionalPositiveNumber,
+  tp2: optionalPositiveNumber,
+  tp3: optionalPositiveNumber,
+  tp4: optionalPositiveNumber,
+  tp5: optionalPositiveNumber,
+  tp6: optionalPositiveNumber,
+  tp7: optionalPositiveNumber,
+  tp1_pips: optionalNonnegativeNumber,
+  tp2_pips: optionalNonnegativeNumber,
+  tp3_pips: optionalNonnegativeNumber,
+  tp4_pips: optionalNonnegativeNumber,
+  tp5_pips: optionalNonnegativeNumber,
+  tp6_pips: optionalNonnegativeNumber,
+  tp7_pips: optionalNonnegativeNumber,
   tp1_result: z.enum(tpResults).nullable().optional(),
   tp2_result: z.enum(tpResults).nullable().optional(),
   tp3_result: z.enum(tpResults).nullable().optional(),
