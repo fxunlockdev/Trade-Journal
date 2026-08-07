@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  computeMultiTpPnl,
-  computeTradeFields,
-  resolveDisplayExitPrice,
-} from "@/lib/trades/computations";
+import { computeMultiTpPnl, computeTradeFields } from "@/lib/trades/computations";
 import { computeTradePips, computeDisplayRR } from "@/lib/trades/pips";
 import type { Trade } from "@/types/database";
 
@@ -32,6 +28,16 @@ const mk = (o: Partial<Trade>): Trade =>
     ...o,
   }) as Trade;
 
+/**
+ * A row as the DB would hold it after a save: exit_price and P&L written by
+ * computeTradeFields. Pips are read off the stored exit, so any assertion about
+ * displayed pips must run against a saved row, never a bare fixture.
+ */
+const saved = (t: Trade): Trade => {
+  const c = computeTradeFields(t);
+  return { ...t, exit_price: c.exit_price, pnl_absolute: c.pnl_absolute } as Trade;
+};
+
 describe("reported bug — USDJPY sell, TP2 hit of 3, Single mode", () => {
   // entry 163.86, SL 163.96 (10 pips risk), TP1/2/3 at 10/20/30 pips.
   // TPs 1 and 2 hit → the position closed at TP2.
@@ -50,11 +56,20 @@ describe("reported bug — USDJPY sell, TP2 hit of 3, Single mode", () => {
 
   it("exits at TP2, not TP1", () => {
     expect(computeMultiTpPnl(trade)!.price).toBeCloseTo(163.66, 5);
-    expect(resolveDisplayExitPrice(trade)).toBeCloseTo(163.66, 5);
+    // The saved row carries that exit, so pips follow it.
+    expect(computeTradeFields(trade).exit_price).toBeCloseTo(163.66, 5);
   });
 
-  it("counts 20 pips (was 10)", () => {
-    expect(computeTradePips(trade)).toBeCloseTo(20, 5);
+  it("counts 20 pips (was 10) once the row is saved with the fixed exit", () => {
+    expect(computeTradePips(saved(trade))).toBeCloseTo(20, 5);
+  });
+
+  it("pips and stored P&L tell the same story (no display/data divergence)", () => {
+    const row = saved(trade);
+    const pips = computeTradePips(row)!;
+    // 20 pips on 0.1 lots of USDJPY = the stored money, same sign, same size.
+    expect(pips).toBeCloseTo(20, 5);
+    expect(row.pnl_absolute!).toBeCloseTo(pips * 0.01 * row.quantity, 2);
   });
 
   it("keeps R:R at 1:2 (measured to the furthest hit TP)", () => {
@@ -83,11 +98,11 @@ describe("reported bug — EURUSD buy, 3/3 hit, Single mode", () => {
   });
 
   it("exits at TP3", () => {
-    expect(resolveDisplayExitPrice(trade)).toBeCloseTo(1.1398, 6);
+    expect(computeTradeFields(trade).exit_price).toBeCloseTo(1.1398, 6);
   });
 
-  it("counts 30 pips (was 10)", () => {
-    expect(computeTradePips(trade)).toBeCloseTo(30, 4);
+  it("counts 30 pips (was 10) once the row is saved with the fixed exit", () => {
+    expect(computeTradePips(saved(trade))).toBeCloseTo(30, 4);
   });
 
   it("shows R:R 1:3 for correctly-entered TP prices", () => {
@@ -102,7 +117,7 @@ describe("single position — non-hit outcomes", () => {
       tp1: 1.105, tp2: 1.11, tp1_result: "sl",
     });
     expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.095, 5);
-    expect(computeTradePips(t)).toBeCloseTo(-50, 4);
+    expect(computeTradePips(saved(t))).toBeCloseTo(-50, 4);
   });
 
   it("break-even closes at entry", () => {
@@ -114,12 +129,99 @@ describe("single position — non-hit outcomes", () => {
     expect(computeTradePips(t)).toBeCloseTo(0, 4);
   });
 
-  it("a hit still wins over a later sl marker (the level WAS reached)", () => {
+  it("a stop-out recorded AFTER a hit closes at the stop, not the hit", () => {
+    // Slot order is chronological, so the last recorded slot is the closing
+    // event. Letting the earlier hit win would turn a stop-out into a full win.
     const t = mk({
       entry_price: 1.1, stop_loss: 1.095,
       tp1: 1.105, tp2: 1.11, tp1_result: "hit", tp2_result: "sl",
     });
-    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.105, 5);
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.095, 5);
+    expect(computeMultiTpPnl(t)!.value).toBeLessThan(0);
+  });
+
+  it("falls through to a later break-even when the stop price is missing", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: null,
+      tp1: 1.105, tp2: 1.11, tp1_result: "sl", tp2_result: "be",
+    });
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.1, 5);
+  });
+
+  it("an sl outcome with no stop price is unresolvable (null, not a guess)", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: null,
+      tp1: 1.105, tp2: 1.11, tp1_result: "sl",
+    });
+    expect(computeMultiTpPnl(t)).toBeNull();
+  });
+
+  it("hit results with no TP prices are unresolvable", () => {
+    expect(computeMultiTpPnl(mk({ tp1_result: "hit", tp2_result: "hit" }))).toBeNull();
+  });
+
+  it("a trailing target with an outcome but NO price falls back to the last priced level", () => {
+    // The form's "Open / Trail" checkbox disables TP4's price input while its
+    // Outcome buttons stay live. Aborting on that slot used to save the trade
+    // with a null exit and null P&L — it vanished from every money metric while
+    // the table still rendered it as a win.
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.09, quantity: 100_000,
+      tp1: 1.11, tp2: 1.12, tp3: 1.13,
+      tp1_result: "hit", tp2_result: "hit", tp3_result: "hit",
+      tp4: null, tp4_result: "hit", tp4_trailing: true,
+    });
+    const outcome = computeMultiTpPnl(t);
+    expect(outcome).not.toBeNull();
+    expect(outcome!.price).toBeCloseTo(1.13, 5); // last PRICED level
+
+    const row = saved(t);
+    expect(row.exit_price).toBeCloseTo(1.13, 5);
+    expect(row.pnl_absolute).not.toBeNull();
+    // Pips and money agree — the trade counts everywhere or nowhere.
+    expect(computeTradePips(row)).toBeCloseTo(300, 4);
+    expect(row.pnl_absolute!).toBeCloseTo(0.03 * 100_000, 2);
+  });
+
+  it("a NaN TP price is skipped, never propagated into P&L", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.09,
+      tp1: 1.105, tp2: Number.NaN, tp1_result: "hit", tp2_result: "hit",
+    });
+    // The unusable slot is skipped and the last priced level closes the trade —
+    // no NaN reaches pnl_absolute, and the trade still counts.
+    const outcome = computeMultiTpPnl(t)!;
+    expect(outcome.price).toBeCloseTo(1.105, 5);
+    expect(Number.isFinite(outcome.value)).toBe(true);
+  });
+
+  it("fees reduce the single-position P&L", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.09,
+      tp1: 1.105, tp2: 1.11, tp1_result: "hit", tp2_result: "hit",
+      fees: 7, quantity: 100_000,
+    });
+    expect(computeMultiTpPnl(t)!.value).toBeCloseTo(1000 - 7, 2);
+  });
+});
+
+describe("split predicate — the (split_risk, num_positions) truth table", () => {
+  const base = {
+    instrument: "XAUUSD", entry_price: 2000, stop_loss: 1980, quantity: 300,
+    tp1: 2001, tp2: 2010, tp3: 2020,
+    tp1_result: "hit" as const, tp2_result: "sl" as const, tp3_result: "sl" as const,
+  };
+
+  it.each([
+    // Only split_risk AND >1 position slices the trade; everything else is one
+    // position closing at its last recorded outcome (here: the stop).
+    [false, 1, 1980],
+    [false, 3, 1980],
+    [true, 1, 1980],
+    [true, 3, (2001 + 1980 + 1980) / 3],
+  ])("split_risk=%s num_positions=%s → exit %s", (split_risk, num_positions, expected) => {
+    const t = mk({ ...base, split_risk, num_positions } as Partial<Trade>);
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(expected as number, 5);
   });
 });
 
@@ -144,7 +246,10 @@ describe("split positions — weighted close is unchanged", () => {
   });
 
   it("reports negative pips, agreeing with the loss", () => {
-    expect(computeTradePips(split)!).toBeLessThan(0);
+    const row = saved(split);
+    expect(computeTradePips(row)!).toBeLessThan(0);
+    // Pips and the stored money must never disagree in sign.
+    expect(row.pnl_absolute!).toBeLessThan(0);
   });
 
   it("a fully-won split still averages its targets", () => {
@@ -159,19 +264,34 @@ describe("split positions — weighted close is unchanged", () => {
 });
 
 describe("no regression for broker-sourced and single-target rows", () => {
-  it("a broker row with one TP keeps its real fill, not the TP target", () => {
-    // Import stamps tp1_result="hit" and stores the actual fill price.
+  it("a broker row keeps its real fill, not the TP target", () => {
+    // Import stamps tp1_result="hit" and stores the actual fill price. Pips
+    // must measure the fill (5.9), never the target (6.9).
     const t = mk({
       entry_price: 1.14231, tp1: 1.143, tp1_result: "hit",
-      exit_price: 1.14290, // real fill, short of the target
+      exit_price: 1.1429, // real fill, short of the target
     });
-    expect(resolveDisplayExitPrice(t)).toBeCloseTo(1.1429, 6);
     expect(computeTradePips(t)).toBeCloseTo(5.9, 4);
+  });
+
+  it("a broker row with an extra user-added TP STILL keeps the real fill", () => {
+    const t = mk({
+      entry_price: 1.14231, tp1: 1.143, tp2: 1.144, tp1_result: "hit",
+      exit_price: 1.1429,
+    });
+    expect(computeTradePips(t)).toBeCloseTo(5.9, 4);
+  });
+
+  it("a manual close between targets keeps the typed exit", () => {
+    const t = mk({
+      entry_price: 1.1368, tp1: 1.1378, tp2: 1.1388, tp1_result: "hit",
+      exit_price: 1.1372, // user closed early by hand
+    });
+    expect(computeTradePips(t)).toBeCloseTo(4, 4);
   });
 
   it("a plain trade with no TP results uses its exit price", () => {
     const t = mk({ entry_price: 1.1, exit_price: 1.105 });
-    expect(resolveDisplayExitPrice(t)).toBeCloseTo(1.105, 6);
     expect(computeTradePips(t)).toBeCloseTo(50, 4);
   });
 
