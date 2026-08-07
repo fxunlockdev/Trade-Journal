@@ -129,6 +129,27 @@ function priceForResult(
   return stopLoss != null && stopLoss > 0 ? stopLoss : null;
 }
 
+/**
+ * Furthest TP marked "hit", measured in the winning direction. Uses distance
+ * rather than slot order so odd/legacy data (TPs entered out of sequence) still
+ * resolves to the level actually reached.
+ */
+function furthestHitTp(
+  direction: TradeDirection,
+  results: ReadonlyArray<{
+    readonly price: number | null | undefined;
+    readonly result: TPResult | null | undefined;
+  }>,
+): number | null {
+  let best: number | null = null;
+  for (const r of results) {
+    if (r.result !== "hit" || r.price == null || r.price <= 0) continue;
+    if (best === null) best = r.price;
+    else best = direction === "buy" ? Math.max(best, r.price) : Math.min(best, r.price);
+  }
+  return best;
+}
+
 export function computeMultiTpPnl<T extends TradeForComputation>(
   trade: T,
 ): MultiTpOutcome | null {
@@ -144,6 +165,34 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
 
   const concrete = results.filter((r) => r.result != null);
   if (concrete.length === 0) return null;
+
+  /**
+   * SINGLE position (not split, or only one position): the trade closes ONCE,
+   * at the furthest level it actually reached — so with TP1+TP2 hit the exit is
+   * TP2, not TP1. The slice logic below would collapse to `concrete[0]` here
+   * (slices = num_positions = 1), which counted only TP1 and under-reported
+   * exit price, pips and P&L for every multi-target trade.
+   */
+  const isSplit = (trade.split_risk ?? false) && (trade.num_positions ?? 1) > 1;
+  if (!isSplit) {
+    const hitPrice = furthestHitTp(trade.direction, results);
+    const exitPx =
+      hitPrice ??
+      (concrete.some((r) => r.result === "sl")
+        ? trade.stop_loss != null && trade.stop_loss > 0
+          ? trade.stop_loss
+          : null
+        : concrete.some((r) => r.result === "be")
+          ? trade.entry_price
+          : null);
+    if (exitPx == null) return null;
+
+    const gross =
+      trade.direction === "buy"
+        ? (exitPx - trade.entry_price) * trade.quantity
+        : (trade.entry_price - exitPx) * trade.quantity;
+    return { value: gross - trade.fees, price: exitPx };
+  }
 
   // Count how many TP price slots are populated. This is the "intended" number
   // of partial-close positions the user set up. We use it as the slice fallback
@@ -188,6 +237,39 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
     value: realized - trade.fees,
     price: weightedExitNumerator / weightedExitQty,
   };
+}
+
+/**
+ * The price a closed trade effectively exited at, for DISPLAY.
+ *
+ * A genuine multi-target trade (2+ TP levels with at least one recorded result)
+ * resolves from its TP results, so rows saved BEFORE the single-position fix
+ * above — whose stored `exit_price` was pinned to TP1 — still read correctly
+ * without needing to be re-saved. Everything else keeps the stored
+ * `exit_price`: for broker-sourced rows that is the real fill and must win over
+ * any TP target.
+ */
+export function resolveDisplayExitPrice<T extends TradeForComputation>(
+  trade: T,
+): number | null {
+  const tpPricesSet = [
+    trade.tp1, trade.tp2, trade.tp3, trade.tp4,
+    trade.tp5, trade.tp6, trade.tp7,
+  ].filter((p) => p != null && p > 0).length;
+  const hasResult =
+    trade.tp1_result != null ||
+    trade.tp2_result != null ||
+    trade.tp3_result != null ||
+    trade.tp4_result != null ||
+    trade.tp5_result != null ||
+    trade.tp6_result != null ||
+    trade.tp7_result != null;
+
+  if (tpPricesSet >= 2 && hasResult) {
+    const multi = computeMultiTpPnl(trade);
+    if (multi !== null) return multi.price;
+  }
+  return trade.exit_price ?? null;
 }
 
 export function computeTradeFields<T extends TradeForComputation>(

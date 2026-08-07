@@ -1,5 +1,8 @@
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
-import { computeRiskRewardRatio } from "@/lib/trades/computations";
+import {
+  computeRiskRewardRatio,
+  resolveDisplayExitPrice,
+} from "@/lib/trades/computations";
 import type { Trade, TPResult } from "@/types/database";
 
 /**
@@ -41,13 +44,14 @@ export function highestHitTpPrice(trade: Trade): number | null {
 /**
  * Realized pips for a single trade.
  *
- * Measures to the ACTUAL exit_price — for multi-TP trades this is the
- * quantity-weighted realized close that `computeTradeFields` persists, so pips
- * always agree in sign and magnitude with the stored P&L. (Measuring to the
- * highest hit TP instead would over-report a partial win and could even show
- * POSITIVE pips on a net-losing partial where later slices were stopped out.)
- * The highest hit TP is only a fallback for the rare case of a hit with no
- * recorded exit. Open trades (no reference) return null.
+ * Measures to the trade's EFFECTIVE exit (see `resolveDisplayExitPrice`):
+ * - multi-target trades resolve from their TP results, so a single position
+ *   that ran to TP2 counts the full TP2 distance, not TP1's;
+ * - a split trade uses its quantity-weighted close, so a partial that netted a
+ *   loss can't report positive pips;
+ * - broker-sourced rows use the real fill.
+ * The furthest hit TP is only a fallback for a hit with no recorded exit.
+ * Open trades (no reference) return null.
  *
  * Direction-aware: a profitable move is always positive regardless of buy/sell.
  */
@@ -55,7 +59,7 @@ export function computeTradePips(trade: Trade): number | null {
   const spec = getInstrumentSpec(trade.instrument);
   if (spec.pipSize <= 0) return null;
 
-  const reference = trade.exit_price ?? highestHitTpPrice(trade);
+  const reference = resolveDisplayExitPrice(trade) ?? highestHitTpPrice(trade);
   if (reference === null) return null; // open trade — nothing realized yet
 
   const rawMove = reference - trade.entry_price;
