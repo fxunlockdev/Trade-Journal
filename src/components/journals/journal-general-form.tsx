@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 
-import type { JournalColor, JournalWithRole } from "@/types/database";
+import type {
+  AccountCurrency,
+  JournalColor,
+  JournalWithRole,
+} from "@/types/database";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,13 +63,69 @@ export function JournalGeneralForm({
   const [name, setName] = useState(journal.name);
   const [color, setColor] = useState<JournalColor>(journal.color);
   const [description, setDescription] = useState(journal.description ?? "");
+  const [capital, setCapital] = useState(
+    journal.initial_capital == null ? "" : String(journal.initial_capital),
+  );
+  const [currency, setCurrency] = useState<AccountCurrency>(
+    journal.account_currency ?? "USD",
+  );
+  const [riskPercent, setRiskPercent] = useState(
+    String(journal.default_risk_percent ?? 1),
+  );
   const [saving, setSaving] = useState(false);
+  const [savingRisk, setSavingRisk] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
   const isDirty =
     name.trim() !== journal.name ||
     color !== journal.color ||
     (description.trim() || null) !== journal.description;
+
+  const capitalNum = capital.trim() === "" ? null : Number(capital);
+  const riskNum = Number(riskPercent);
+  const riskDirty =
+    capitalNum !== (journal.initial_capital ?? null) ||
+    currency !== (journal.account_currency ?? "USD") ||
+    riskNum !== (journal.default_risk_percent ?? 1);
+
+  const handleSaveRisk = async (): Promise<void> => {
+    if (!canManage || !riskDirty || savingRisk) return;
+    if (capitalNum !== null && (!Number.isFinite(capitalNum) || capitalNum <= 0)) {
+      toast.error("Capital must be a positive number (or blank to turn sizing off)");
+      return;
+    }
+    if (!Number.isFinite(riskNum) || riskNum <= 0 || riskNum > 100) {
+      toast.error("Risk must be between 0 and 100%");
+      return;
+    }
+    setSavingRisk(true);
+    try {
+      const res = await fetch(`/api/journals/${journal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          initial_capital: capitalNum,
+          account_currency: currency,
+          default_risk_percent: riskNum,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(body.error ?? "Failed to save");
+        return;
+      }
+      toast.success(
+        capitalNum === null
+          ? "Auto-sizing turned off"
+          : "Saved — new trades will size themselves",
+      );
+      router.refresh();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setSavingRisk(false);
+    }
+  };
 
   const handleSave = async (): Promise<void> => {
     if (!canManage || !isDirty || saving) return;
@@ -196,6 +256,92 @@ export function JournalGeneralForm({
             <div className="flex justify-end">
               <Button onClick={handleSave} disabled={!isDirty || saving}>
                 {saving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Account &amp; risk</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Set this journal&apos;s account size and how much of it you risk per
+            trade, and the trade form works out the position size itself from
+            your entry and stop loss — no more typing a quantity on every trade.
+            Leave the capital blank to keep entering it by hand.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="initial_capital">Account capital</Label>
+              <Input
+                id="initial_capital"
+                type="number"
+                step="any"
+                min="0"
+                inputMode="decimal"
+                placeholder="e.g. 10000"
+                value={capital}
+                onChange={(e) => setCapital(e.target.value)}
+                disabled={!canManage || savingRisk}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="account_currency">Currency</Label>
+              <select
+                id="account_currency"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as AccountCurrency)}
+                disabled={!canManage || savingRisk}
+                className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm disabled:opacity-50"
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="default_risk_percent">Risk per trade (%)</Label>
+              <Input
+                id="default_risk_percent"
+                type="number"
+                step="any"
+                min="0"
+                max="100"
+                inputMode="decimal"
+                value={riskPercent}
+                onChange={(e) => setRiskPercent(e.target.value)}
+                disabled={!canManage || savingRisk}
+              />
+            </div>
+          </div>
+
+          {capitalNum !== null && Number.isFinite(capitalNum) && capitalNum > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Risking{" "}
+              <span className="font-medium text-foreground">
+                {riskNum}% of {currency} {capitalNum.toLocaleString("en-US")}
+              </span>{" "}
+              ={" "}
+              <span className="font-medium text-foreground">
+                {currency}{" "}
+                {((capitalNum * riskNum) / 100).toLocaleString("en-US", {
+                  maximumFractionDigits: 2,
+                })}
+              </span>{" "}
+              per trade.
+            </p>
+          )}
+
+          {canManage && (
+            <div className="flex justify-end">
+              <Button onClick={handleSaveRisk} disabled={!riskDirty || savingRisk}>
+                {savingRisk ? "Saving…" : "Save account settings"}
               </Button>
             </div>
           )}

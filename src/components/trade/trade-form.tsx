@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import { JournalPicker } from "@/components/trade/journal-picker";
 import { createTradeFormSchema } from "@/lib/validators/trade";
 import { EMOTIONS } from "@/lib/constants/emotions";
 import { computeTradeFields } from "@/lib/trades/computations";
+import { computeAutoSize } from "@/lib/trades/auto-size";
 import { parseSignalText } from "@/lib/trades/signal-parser";
 import {
   ALL_INSTRUMENTS,
@@ -285,6 +286,45 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
 
   const watched = watch();
   const direction = watch("direction");
+
+  /**
+   * Position sizing from the journal's account capital. When the journal has a
+   * capital + risk % configured, entry and stop loss are enough to work out the
+   * size — so the trader never types a quantity. It stays a suggestion: editing
+   * the field by hand switches auto-sizing off for this trade.
+   */
+  const sizingJournal = availableJournals.find((j) => j.id === journalId);
+  const [quantityTouched, setQuantityTouched] = useState(isEditMode);
+  const autoSize = useMemo(
+    () =>
+      computeAutoSize({
+        capital: sizingJournal?.initial_capital,
+        accountCurrency: sizingJournal?.account_currency ?? "USD",
+        riskPercent: sizingJournal?.default_risk_percent ?? 1,
+        instrument: watched.instrument ?? "",
+        direction: direction ?? "buy",
+        entryPrice: Number(watched.entry_price),
+        stopLossPrice:
+          watched.stop_loss == null || watched.stop_loss === ("" as unknown)
+            ? null
+            : Number(watched.stop_loss),
+      }),
+    [
+      sizingJournal?.initial_capital,
+      sizingJournal?.account_currency,
+      sizingJournal?.default_risk_percent,
+      watched.instrument,
+      watched.entry_price,
+      watched.stop_loss,
+      direction,
+    ],
+  );
+
+  useEffect(() => {
+    if (quantityTouched || autoSize === null) return;
+    setValue("quantity", autoSize.quantity, { shouldValidate: true });
+    setValue("lot_size", autoSize.lots);
+  }, [autoSize, quantityTouched, setValue]);
   const tp4Trailing = watch("tp4_trailing");
   const splitRisk = watch("split_risk");
   const numPositions = watch("num_positions");
@@ -1178,7 +1218,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel htmlFor="quantity" required help="Total units / contracts on the trade. Used for P&L math.">
+              <FieldLabel htmlFor="quantity" required help="Total units / contracts on the trade. Used for P&L math. Filled in automatically when the journal has an account capital set.">
                 Quantity
               </FieldLabel>
               <Input
@@ -1187,10 +1227,28 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                 step="any"
                 placeholder="1"
                 {...register("quantity")}
+                onInput={() => setQuantityTouched(true)}
               />
               {errors.quantity && (
                 <p className="text-xs text-destructive">{errors.quantity.message}</p>
               )}
+              {autoSize !== null && !quantityTouched && (
+                <p className="text-xs text-primary">
+                  Auto-sized: {autoSize.lots.toFixed(2)} lots — risking{" "}
+                  {sizingJournal?.account_currency ?? "USD"}{" "}
+                  {autoSize.riskAmount.toLocaleString("en-US", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  over {Math.round(autoSize.pipsAtRisk)} pips. Type to override.
+                </p>
+              )}
+              {autoSize === null &&
+                sizingJournal?.initial_capital != null &&
+                !quantityTouched && (
+                  <p className="text-xs text-muted-foreground">
+                    Add an entry price and stop loss to size this automatically.
+                  </p>
+                )}
             </div>
             <div className="space-y-2">
               <FieldLabel htmlFor="fees" help="Commissions + spread + swap. Deducted from P&L.">
