@@ -62,15 +62,22 @@ function computeMultiTp(trade) {
   const isSplit = Boolean(trade.split_risk) && Number(trade.num_positions ?? 1) > 1;
 
   if (!isSplit) {
-    // Single position: the last recorded slot that RESOLVES to a price is the
-    // closing event. Unresolvable slots (a trailing target with no price) are
-    // skipped, exactly as computeMultiTpPnl does.
+    // Single position: banked levels stay banked — the furthest HIT target is
+    // the close. A be/sl marked on a later target describes the runner, not the
+    // whole position. Falls back to the stop, then break-even. Mirrors
+    // singlePositionExit in src/lib/trades/computations.ts.
     let exitPx = null;
-    for (let i = slots.length - 1; i >= 0; i -= 1) {
-      if (slots[i].result == null) continue;
-      const px = priceForResult(slots[i].result, slots[i].price, entry, sl);
-      if (px != null) { exitPx = px; break; }
+    for (const slot of slots) {
+      if (slot.result !== "hit") continue;
+      const px = slot.price;
+      if (px == null || !(px > 0)) continue;
+      if (exitPx === null) exitPx = px;
+      else exitPx = buy ? Math.max(exitPx, px) : Math.min(exitPx, px);
     }
+    if (exitPx == null && slots.some((s) => s.result === "sl")) {
+      exitPx = sl != null && sl > 0 ? sl : null;
+    }
+    if (exitPx == null && slots.some((s) => s.result === "be")) exitPx = entry;
     if (exitPx == null) return null;
     const gross = buy ? (exitPx - entry) * qty : (entry - exitPx) * qty;
     return { value: gross - fees, price: exitPx };

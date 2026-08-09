@@ -1,6 +1,9 @@
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
-import { computeRiskRewardRatio } from "@/lib/trades/computations";
-import type { Trade, TPResult } from "@/types/database";
+import {
+  computeRiskRewardRatio,
+  furthestHitTpPrice,
+} from "@/lib/trades/computations";
+import type { Trade } from "@/types/database";
 
 /**
  * Pips — single source of truth for the per-trade PIPS column AND the
@@ -13,30 +16,11 @@ import type { Trade, TPResult } from "@/types/database";
  */
 
 /**
- * Highest TP price that has result="hit", scanning TP7→TP1 (so the first match
- * is the highest level actually reached). Null when no TP was hit — i.e. SL,
- * break-even, open, or a legacy trade with no per-TP results.
+ * Furthest TP marked "hit" — the level the trade actually reached. Re-exported
+ * from the computations module so the exit price, the R-multiple and the R:R
+ * shown in the table all resolve the same way. Null when nothing was hit.
  */
-export function highestHitTpPrice(trade: Trade): number | null {
-  const tpPairs: ReadonlyArray<{
-    readonly result: TPResult | null;
-    readonly price: number | null;
-  }> = [
-    { result: trade.tp7_result, price: trade.tp7 },
-    { result: trade.tp6_result, price: trade.tp6 },
-    { result: trade.tp5_result, price: trade.tp5 },
-    { result: trade.tp4_result, price: trade.tp4 },
-    { result: trade.tp3_result, price: trade.tp3 },
-    { result: trade.tp2_result, price: trade.tp2 },
-    { result: trade.tp1_result, price: trade.tp1 },
-  ];
-  for (const tp of tpPairs) {
-    if (tp.result === "hit" && tp.price != null && tp.price > 0) {
-      return tp.price;
-    }
-  }
-  return null;
-}
+export const highestHitTpPrice = furthestHitTpPrice<Trade>;
 
 /**
  * Realized pips for a single trade.

@@ -129,47 +129,14 @@ function priceForResult(
   return stopLoss != null && stopLoss > 0 ? stopLoss : null;
 }
 
-/**
- * The price a SINGLE position actually closed at: the last recorded TP slot
- * that resolves to a price. Slot order is chronological — you reach TP1 before
- * TP2 — so the final recorded slot is the closing event.
- *
- * Slot order (not "furthest by distance") on purpose: a stop-out recorded after
- * a hit closes the trade at the stop. Picking the best hit instead would turn a
- * mis-clicked stop-out into a full win.
- *
- * Slots that can't resolve are SKIPPED rather than aborting the whole trade —
- * a trailing target ("Open / Trail" disables its price input but leaves its
- * Outcome buttons live) or an `sl` outcome with no stop price would otherwise
- * null out the P&L, dropping the trade out of every money metric while the
- * table still rendered it as a win. Mirrors the split branch, which also skips
- * unresolvable slices.
- */
-function lastResolvedExit<T extends TradeForComputation>(
+/** The TP slots of a trade, in order, as {price, result} pairs. */
+function tpSlots<T extends TradeForComputation>(
   trade: T,
-  results: ReadonlyArray<{
-    readonly price: number | null | undefined;
-    readonly result: TPResult | null | undefined;
-  }>,
-): number | null {
-  for (let i = results.length - 1; i >= 0; i -= 1) {
-    const r = results[i];
-    if (r.result == null) continue;
-    const price = priceForResult(
-      r.result,
-      r.price,
-      trade.entry_price,
-      trade.stop_loss,
-    );
-    if (price != null) return price;
-  }
-  return null;
-}
-
-export function computeMultiTpPnl<T extends TradeForComputation>(
-  trade: T,
-): MultiTpOutcome | null {
-  const results: ReadonlyArray<{ readonly price: number | null | undefined; readonly result: TPResult | null | undefined }> = [
+): ReadonlyArray<{
+  readonly price: number | null | undefined;
+  readonly result: TPResult | null | undefined;
+}> {
+  return [
     { price: trade.tp1, result: trade.tp1_result },
     { price: trade.tp2, result: trade.tp2_result },
     { price: trade.tp3, result: trade.tp3_result },
@@ -178,21 +145,82 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
     { price: trade.tp6, result: trade.tp6_result },
     { price: trade.tp7, result: trade.tp7_result },
   ];
+}
+
+/**
+ * The furthest target marked "hit", measured in the winning direction — the
+ * best level the trade actually reached. Null when nothing was hit.
+ *
+ * Single source of truth for "which target did this trade reach": the exit
+ * price, the R-multiple and the displayed R:R all resolve through here, so one
+ * row can never show an exit derived one way and an R:R derived another.
+ * Targets with no usable price (a trailing target whose price box is disabled,
+ * or a NaN) are skipped rather than counted.
+ */
+export function furthestHitTpPrice<T extends TradeForComputation>(
+  trade: T,
+): number | null {
+  let best: number | null = null;
+  for (const slot of tpSlots(trade)) {
+    if (slot.result !== "hit") continue;
+    const price = slot.price;
+    if (price == null || !(price > 0)) continue; // also rejects NaN
+    if (best === null) best = price;
+    else best = trade.direction === "buy" ? Math.max(best, price) : Math.min(best, price);
+  }
+  return best;
+}
+
+/**
+ * Where a SINGLE position closed.
+ *
+ * Banked levels stay banked. If ANY target was hit, the trade closed at the
+ * FURTHEST hit target — a `be` or `sl` marked on a later target describes the
+ * runner coming back, not the whole position unwinding. Reading that later
+ * marker as the close collapsed the trade to its entry price (P&L 0) and
+ * silently erased every target already reached.
+ *
+ * With no hit at all, the stop is the close; failing that, break-even (entry).
+ * Unresolvable outcomes fall through instead of nulling the trade, so a
+ * priceless target can't drop a real trade out of every money metric.
+ */
+function singlePositionExit<T extends TradeForComputation>(
+  trade: T,
+  results: ReadonlyArray<{
+    readonly price: number | null | undefined;
+    readonly result: TPResult | null | undefined;
+  }>,
+): number | null {
+  const hit = furthestHitTpPrice(trade);
+  if (hit !== null) return hit;
+
+  if (results.some((r) => r.result === "sl")) {
+    const stop = priceForResult("sl", null, trade.entry_price, trade.stop_loss);
+    if (stop !== null) return stop;
+  }
+  if (results.some((r) => r.result === "be")) return trade.entry_price;
+  return null;
+}
+
+export function computeMultiTpPnl<T extends TradeForComputation>(
+  trade: T,
+): MultiTpOutcome | null {
+  const results = tpSlots(trade);
 
   const concrete = results.filter((r) => r.result != null);
   if (concrete.length === 0) return null;
 
   /**
    * SINGLE position (not split, or only one position): the trade closes ONCE,
-   * at its last recorded outcome — so with TP1+TP2 hit the exit is TP2, and a
-   * stop-out recorded after a hit closes at the stop. The slice logic below
-   * would collapse to `concrete[0]` here (slices = num_positions = 1), which
-   * counted only TP1 and under-reported exit price, pips and P&L for every
-   * multi-target trade.
+   * at the furthest target it reached — so with TP1+TP2 hit the exit is TP2,
+   * and a break-even marked on TP3 leaves those banked levels intact. The slice
+   * logic below would collapse to `concrete[0]` here (slices = num_positions =
+   * 1), which counted only TP1 and under-reported exit price, pips and P&L for
+   * every multi-target trade.
    */
   const isSplit = (trade.split_risk ?? false) && (trade.num_positions ?? 1) > 1;
   if (!isSplit) {
-    const exitPx = lastResolvedExit(trade, results);
+    const exitPx = singlePositionExit(trade, results);
     if (exitPx == null) return null;
 
     const gross =
@@ -285,28 +313,11 @@ export function computeTradeFields<T extends TradeForComputation>(
         trade.direction,
       );
 
-      // For R:R, use the HIGHEST TP that was actually hit — not always TP1.
-      // Scanning from TP7 down so the first match is the highest hit level.
-      // Falls back to primaryTp (TP1 / legacy take_profit) when nothing is hit
-      // yet (e.g. only BE / SL results recorded).
-      const highestHitTp = (() => {
-        const tpPairs: ReadonlyArray<{ result: TPResult | null | undefined; price: number | null | undefined }> = [
-          { result: trade.tp7_result, price: trade.tp7 },
-          { result: trade.tp6_result, price: trade.tp6 },
-          { result: trade.tp5_result, price: trade.tp5 },
-          { result: trade.tp4_result, price: trade.tp4 },
-          { result: trade.tp3_result, price: trade.tp3 },
-          { result: trade.tp2_result, price: trade.tp2 },
-          { result: trade.tp1_result, price: trade.tp1 },
-        ];
-        for (const tp of tpPairs) {
-          if (tp.result === "hit" && tp.price != null && tp.price > 0) {
-            return tp.price;
-          }
-        }
-        return null;
-      })();
-      const rrTp = highestHitTp ?? primaryTp;
+      // R:R measures to the furthest TP actually hit — the same resolver the
+      // exit price uses, so the two can never disagree on one row. Falls back
+      // to primaryTp (TP1 / legacy take_profit) when nothing was hit (e.g. only
+      // BE / SL recorded).
+      const rrTp = furthestHitTpPrice(trade) ?? primaryTp;
 
       const riskRewardRatio =
         trade.stop_loss !== null && rrTp !== null
