@@ -129,23 +129,77 @@ describe("single position — non-hit outcomes", () => {
     expect(computeTradePips(t)).toBeCloseTo(0, 4);
   });
 
-  it("a stop-out recorded AFTER a hit closes at the stop, not the hit", () => {
-    // Slot order is chronological, so the last recorded slot is the closing
-    // event. Letting the earlier hit win would turn a stop-out into a full win.
+  it("a break-even on a LATER target does not wipe out the banked hits", () => {
+    // Reported bug: marking BE collapsed the whole trade to entry → P&L 0,
+    // erasing TP1/TP2 that had already been reached.
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.095, quantity: 100_000,
+      tp1: 1.105, tp2: 1.11, tp3: 1.115,
+      tp1_result: "hit", tp2_result: "hit", tp3_result: "be",
+    });
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.11, 5); // TP2, not entry
+    expect(computeMultiTpPnl(t)!.value).toBeCloseTo(0.01 * 100_000, 2);
+    expect(computeTradePips(saved(t))).toBeCloseTo(100, 4);
+  });
+
+  it.each([2, 3, 4])(
+    "BE marked on TP%i behaves the same — the furthest hit still counts",
+    (beSlot) => {
+      const base: Partial<Trade> = {
+        entry_price: 1.1, stop_loss: 1.095, quantity: 100_000,
+        tp1: 1.105, tp2: 1.11, tp3: 1.115, tp4: 1.12,
+        tp1_result: "hit",
+      };
+      // Everything below the BE slot is hit; the BE sits on top.
+      const marks: Partial<Trade> = {};
+      for (let i = 2; i < beSlot; i += 1) {
+        (marks as Record<string, unknown>)[`tp${i}_result`] = "hit";
+      }
+      (marks as Record<string, unknown>)[`tp${beSlot}_result`] = "be";
+      const t = mk({ ...base, ...marks });
+      const furthestHit = [1.105, 1.11, 1.115][beSlot - 2];
+      expect(computeMultiTpPnl(t)!.price).toBeCloseTo(furthestHit, 5);
+      expect(computeMultiTpPnl(t)!.value).toBeGreaterThan(0);
+    },
+  );
+
+  it("a stop-out on a later target also leaves the banked hits intact", () => {
     const t = mk({
       entry_price: 1.1, stop_loss: 1.095,
       tp1: 1.105, tp2: 1.11, tp1_result: "hit", tp2_result: "sl",
     });
-    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.095, 5);
-    expect(computeMultiTpPnl(t)!.value).toBeLessThan(0);
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.105, 5);
+    expect(computeMultiTpPnl(t)!.value).toBeGreaterThan(0);
   });
 
-  it("falls through to a later break-even when the stop price is missing", () => {
+  it("break-even with NO hit at all still closes at entry (P&L 0)", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.095,
+      tp1: 1.105, tp2: 1.11, tp1_result: "be",
+    });
+    expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.1, 5);
+    expect(computeMultiTpPnl(t)!.value).toBeCloseTo(0, 6);
+  });
+
+  it("falls through to break-even when an sl has no stop price", () => {
     const t = mk({
       entry_price: 1.1, stop_loss: null,
       tp1: 1.105, tp2: 1.11, tp1_result: "sl", tp2_result: "be",
     });
     expect(computeMultiTpPnl(t)!.price).toBeCloseTo(1.1, 5);
+  });
+
+  it("R:R and the exit price resolve to the SAME target", () => {
+    const t = mk({
+      entry_price: 1.1, stop_loss: 1.09,
+      tp1: 1.105, tp2: 1.12, tp3: 1.13,
+      tp1_result: "hit", tp2_result: "hit", tp3_result: "be",
+    });
+    const computed = computeTradeFields(t);
+    expect(computed.exit_price).toBeCloseTo(1.12, 5);
+    // reward 0.02 / risk 0.01 = 2 — measured to the same TP2 the exit used.
+    expect(computed.risk_reward_ratio).toBeCloseTo(2, 4);
+    expect(computeDisplayRR(t)).toBeCloseTo(2, 4);
   });
 
   it("an sl outcome with no stop price is unresolvable (null, not a guess)", () => {
@@ -213,11 +267,14 @@ describe("split predicate — the (split_risk, num_positions) truth table", () =
   };
 
   it.each([
-    // Only split_risk AND >1 position slices the trade; everything else is one
-    // position closing at its last recorded outcome (here: the stop).
-    [false, 1, 1980],
-    [false, 3, 1980],
-    [true, 1, 1980],
+    // Only split_risk AND >1 position slices the trade. Everything else is ONE
+    // position, which keeps the level it banked (TP1 at 2001) — the later
+    // stop markers apply to a runner that doesn't exist in single mode.
+    [false, 1, 2001],
+    [false, 3, 2001],
+    [true, 1, 2001],
+    // Split: each slice closes at its own outcome, so the stops drag the
+    // weighted exit below entry — a genuine net loss.
     [true, 3, (2001 + 1980 + 1980) / 3],
   ])("split_risk=%s num_positions=%s → exit %s", (split_risk, num_positions, expected) => {
     const t = mk({ ...base, split_risk, num_positions } as Partial<Trade>);
