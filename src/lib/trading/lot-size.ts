@@ -95,10 +95,17 @@ export function computeLotSize(input: LotSizeInput): LotSizeResult | null {
   // trades to fail at the broker with "invalid volume" because UI showed
   // e.g. 0.07483921 while the broker only accepts 2dp.
   const LOT_STEP = 0.01;
+  // Nudge by an epsilon before flooring: in IEEE-754, 0.2 / 0.01 is
+  // 19.999999999999996, so a bare floor returned 0.19 lots for an exact 0.20 —
+  // one step light on every size that lands on a round number. The epsilon is
+  // far smaller than a lot step, so a genuine 0.194 still floors to 0.19.
+  const floorToStep = (value: number): number =>
+    Math.round(Math.floor(value / LOT_STEP + 1e-9) * LOT_STEP * 100) / 100;
+
   const standardLotsRaw = units / spec.contractSize;
-  const standardLots = Math.floor(standardLotsRaw / LOT_STEP) * LOT_STEP;
-  const miniLots = Math.floor((standardLotsRaw * 10) / LOT_STEP) * LOT_STEP;
-  const microLots = Math.floor((standardLotsRaw * 100) / LOT_STEP) * LOT_STEP;
+  const standardLots = floorToStep(standardLotsRaw);
+  const miniLots = floorToStep(standardLotsRaw * 10);
+  const microLots = floorToStep(standardLotsRaw * 100);
 
   // ── Pip value per standard lot (USD + account currency) ────────────────
   const pipValuePerLotUSD =

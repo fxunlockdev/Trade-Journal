@@ -53,6 +53,9 @@ export type JournalColor =
 
 export type TradeAuditAction = "created" | "updated" | "deleted";
 
+/** Account base currencies the position-sizing math supports. */
+export type AccountCurrency = "USD" | "EUR" | "GBP";
+
 export interface Journal {
   readonly id: string;
   readonly owner_user_id: string;
@@ -61,6 +64,15 @@ export interface Journal {
   readonly description: string | null;
   readonly is_archived: boolean;
   readonly sort_order: number;
+  /**
+   * Account size for this journal. When set (with `default_risk_percent`), the
+   * trade form derives position size from entry + stop loss instead of making
+   * the user type a quantity. Null turns auto-sizing off.
+   */
+  readonly initial_capital: number | null;
+  readonly account_currency: AccountCurrency;
+  /** Percent of capital risked per trade — drives the derived position size. */
+  readonly default_risk_percent: number;
   readonly created_at: string;
   readonly updated_at: string;
 }

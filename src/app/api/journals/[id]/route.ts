@@ -26,6 +26,18 @@ const patchSchema = z
       .optional(),
     description: z.string().trim().max(300).nullable().optional(),
     is_archived: z.boolean().optional(),
+    // Account sizing. Blank input arrives as "" from the form, so treat blank
+    // as "clear it" (null) rather than letting z.coerce turn it into 0 — the
+    // same trap that made optional trade fields reject empty input.
+    initial_capital: z
+      .preprocess(
+        (v) =>
+          v === "" || (typeof v === "string" && v.trim() === "") ? null : v,
+        z.coerce.number().positive().nullable(),
+      )
+      .optional(),
+    account_currency: z.enum(["USD", "EUR", "GBP"]).optional(),
+    default_risk_percent: z.coerce.number().positive().max(100).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided",
