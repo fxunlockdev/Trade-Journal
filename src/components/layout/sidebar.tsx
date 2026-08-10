@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   BookOpen,
   CalendarDays,
+  Layers,
   Radio,
   Settings,
   MessageSquare,
@@ -79,6 +80,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Calendar",
     href: "/calendar",
     icon: CalendarDays,
+    section: "main",
+  },
+  {
+    label: "Portfolio",
+    href: "/portfolio",
+    icon: Layers,
     section: "main",
   },
   {
