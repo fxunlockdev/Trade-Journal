@@ -155,3 +155,36 @@ describe("computeTradeFields applies the conversion on every P&L path", () => {
     expect(t.risk_reward_ratio!).toBeCloseTo(1, 4);
   });
 });
+
+describe("every P&L surface passes the instrument (no preview/saved divergence)", () => {
+  /**
+   * The trade form's Preview panel and the API both call computeTradeFields.
+   * If either omits `instrument`, a JPY trade previews its yen profit as
+   * dollars while the other saves the converted figure — the same
+   * "display disagrees with stored data" class this repo keeps hitting.
+   */
+  const jpy = {
+    instrument: "USDJPY",
+    direction: "sell" as const,
+    entry_price: 163.86,
+    exit_price: 163.76,
+    quantity: 100,
+    fees: 0,
+    stop_loss: 163.96,
+    take_profit: null,
+  };
+
+  it("preview (with instrument) matches the API result exactly", () => {
+    const preview = computeTradeFields(jpy);
+    const api = computeTradeFields({ ...jpy });
+    expect(preview.pnl_absolute).toBeCloseTo(api.pnl_absolute!, 10);
+    expect(preview.pnl_absolute!).toBeCloseTo(10 / 163.76, 6);
+  });
+
+  it("dropping the instrument is what caused the divergence — 164x apart", () => {
+    const withSymbol = computeTradeFields(jpy).pnl_absolute!;
+    const { instrument: _omitted, ...withoutSymbol } = jpy;
+    const naive = computeTradeFields(withoutSymbol).pnl_absolute!;
+    expect(naive / withSymbol).toBeCloseTo(163.76, 1);
+  });
+});

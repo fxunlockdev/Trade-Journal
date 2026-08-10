@@ -14,9 +14,12 @@
  * broker's own realized money and are never touched.
  *
  * Dry run (default, writes nothing):
- *   npx tsx scripts/backfill-pnl-currency.ts
+ *   npx tsx --env-file=.env.local scripts/backfill-pnl-currency.ts
  * Apply:
- *   npx tsx scripts/backfill-pnl-currency.ts --apply
+ *   npx tsx --env-file=.env.local scripts/backfill-pnl-currency.ts --apply
+ *
+ * (--env-file loads NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY; drop
+ * it if those are already exported in your shell.)
  */
 
 import { createClient } from "@supabase/supabase-js";

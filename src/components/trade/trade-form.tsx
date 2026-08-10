@@ -366,6 +366,10 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
     };
 
     const tradeData = {
+      // Required for the P&L conversion: priceMove × quantity is in the
+      // instrument's QUOTE currency, so without this a JPY pair previews its
+      // yen profit as dollars — the preview would disagree with what gets saved.
+      instrument: watched.instrument,
       entry_price: entry,
       exit_price: toOptNum(watched.exit_price),
       quantity: qty,
@@ -413,6 +417,9 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
 
     return computed;
   }, [
+    // instrument drives the quote-currency conversion, so switching pairs must
+    // re-run the preview.
+    watched.instrument,
     watched.entry_price,
     watched.exit_price,
     watched.quantity,
