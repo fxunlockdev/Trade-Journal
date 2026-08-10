@@ -1,6 +1,16 @@
+import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
+import { quoteToUsdFactor } from "@/lib/trading/quote-conversion";
 import type { TradeDirection, TPResult } from "@/types/database";
 
 interface TradeForComputation {
+  /**
+   * Needed to value the trade in the account currency: `priceMove × quantity`
+   * is denominated in the instrument's QUOTE currency, so a JPY-quoted pair has
+   * to be converted or its P&L reads ~164× too large. Optional so legacy
+   * callers still type-check; when absent the figure stays in the quote
+   * currency (correct for the USD-quoted majority).
+   */
+  readonly instrument?: string | null;
   readonly entry_price: number;
   readonly exit_price: number | null;
   readonly quantity: number;
@@ -27,18 +37,49 @@ interface TradeForComputation {
   readonly split_risk?: boolean | null;
 }
 
+/**
+ * How much 1 unit of an instrument's quote currency is worth in the account
+ * currency, at the given price. `instrument` absent → 1 (no scaling), which is
+ * correct for every USD-quoted symbol and leaves legacy callers unchanged.
+ */
+function accountCurrencyFactor(
+  instrument: string | null | undefined,
+  price: number,
+): number {
+  if (!instrument) return 1;
+  const spec = getInstrumentSpec(instrument);
+  return quoteToUsdFactor({
+    quoteCurrency: spec.quoteCurrency,
+    baseCurrency: spec.baseCurrency,
+    price,
+  }).factor;
+}
+
+/**
+ * Realized P&L in the ACCOUNT currency.
+ *
+ * `priceMove × quantity` is denominated in the instrument's quote currency, so
+ * it must be converted before it can be called dollars. Skipping that step
+ * reported a 10-pip USDJPY trade as "$10.00" when it was 10 JPY ≈ $0.06 — a
+ * 164× overstatement that made JPY pairs incomparable with EURUSD/GBPUSD.
+ *
+ * Fees are already in the account currency, so they're subtracted after the
+ * conversion.
+ */
 export function computePnlAbsolute(
   entryPrice: number,
   exitPrice: number,
   quantity: number,
   direction: TradeDirection,
   fees: number,
+  instrument?: string | null,
 ): number {
   const rawPnl =
     direction === "buy"
       ? (exitPrice - entryPrice) * quantity
       : (entryPrice - exitPrice) * quantity;
-  return rawPnl - fees;
+  // Convert at the EXIT price: that's the rate the position was closed at.
+  return rawPnl * accountCurrencyFactor(instrument, exitPrice) - fees;
 }
 
 export function computePnlPercentage(
@@ -227,7 +268,10 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
       trade.direction === "buy"
         ? (exitPx - trade.entry_price) * trade.quantity
         : (trade.entry_price - exitPx) * trade.quantity;
-    return { value: gross - trade.fees, price: exitPx };
+    // Quote currency → account currency, same as the single-exit path.
+    const value =
+      gross * accountCurrencyFactor(trade.instrument, exitPx) - trade.fees;
+    return { value, price: exitPx };
   }
 
   // Count how many TP price slots are populated. This is the "intended" number
@@ -262,7 +306,10 @@ export function computeMultiTpPnl<T extends TradeForComputation>(
       trade.direction === "buy"
         ? (exitPx - trade.entry_price) * perSliceQty
         : (trade.entry_price - exitPx) * perSliceQty;
-    realized += gross;
+    // Each slice converts at its OWN exit price — for an indirect quote
+    // (USDJPY) the rate moves with the price, so slices closed at different
+    // levels convert at different rates.
+    realized += gross * accountCurrencyFactor(trade.instrument, exitPx);
     weightedExitNumerator += exitPx * perSliceQty;
     weightedExitQty += perSliceQty;
   }
@@ -378,6 +425,7 @@ export function computeTradeFields<T extends TradeForComputation>(
     trade.quantity,
     trade.direction,
     trade.fees,
+    trade.instrument,
   );
 
   const pnlPercentage = computePnlPercentage(

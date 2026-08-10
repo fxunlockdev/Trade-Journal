@@ -1,4 +1,5 @@
 import { applyOverrides, getInstrumentSpec } from "./instrument-specs";
+import { quoteToUsdFactor } from "./quote-conversion";
 import type {
   AccountCurrency,
   InstrumentSpec,
@@ -212,48 +213,21 @@ function computeQuoteConversion(args: {
     return 1 / entryPrice;
   }
 
-  // Cross pair — need an explicit quote/USD rate from the user.
-  if (quoteToAccountRate && Number.isFinite(quoteToAccountRate) && quoteToAccountRate > 0) {
-    return quoteToAccountRate;
-  }
-
-  // Provide hardcoded approximations for the most common quote currencies so
-  // the lot size is at least in the right ballpark when the user hasn't entered
-  // a live rate. Using 1.0 for JPY (where 1 USD ≈ 150 JPY) was producing lot
-  // sizes that were ~150× too small.
-  const QUOTE_APPROX: Record<string, number> = {
-    JPY: 1 / 150,   // 1 JPY ≈ 0.0067 USD
-    CHF: 1.11,
-    CAD: 0.74,
-    AUD: 0.65,
-    NZD: 0.60,
-    GBP: 1.27,
-    EUR: 1.08,
-    SGD: 0.74,
-    HKD: 0.13,
-    NOK: 0.093,
-    SEK: 0.096,
-    DKK: 0.145,
-    MXN: 0.058,
-    ZAR: 0.054,
-    TRY: 0.029,
-  };
-  const approx = QUOTE_APPROX[quote];
-  if (approx !== undefined) {
+  // Cross pair — resolve via the shared quote→USD table (the same one the P&L
+  // math uses, so a position sized here is valued consistently later).
+  const conversion = quoteToUsdFactor({
+    quoteCurrency: quote,
+    baseCurrency: base,
+    price: entryPrice,
+    explicitRate: quoteToAccountRate,
+  });
+  if (conversion.approximate) {
     warnings.push({
       level: "info",
-      message:
-        `Enter the current ${quote}/USD rate in the advanced section for an exact lot size. Using an approximate rate of ${approx.toFixed(6)} meanwhile.`,
+      message: `${conversion.note} Enter the current ${quote}/USD rate in the advanced section for an exact lot size.`,
     });
-    return approx;
   }
-
-  warnings.push({
-    level: "info",
-    message:
-      `Enter the current ${quote}/USD rate in the advanced section for an exact lot size on this cross pair. Using a rough 1.0 assumption meanwhile.`,
-  });
-  return 1;
+  return conversion.factor;
 }
 
 /**

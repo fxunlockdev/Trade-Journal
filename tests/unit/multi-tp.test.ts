@@ -67,18 +67,21 @@ describe("reported bug — USDJPY sell, TP2 hit of 3, Single mode", () => {
   it("pips and stored P&L tell the same story (no display/data divergence)", () => {
     const row = saved(trade);
     const pips = computeTradePips(row)!;
-    // 20 pips on 0.1 lots of USDJPY = the stored money, same sign, same size.
     expect(pips).toBeCloseTo(20, 5);
-    expect(row.pnl_absolute!).toBeCloseTo(pips * 0.01 * row.quantity, 2);
+    // The yen gain converted to USD at the exit rate — pips and money agree in
+    // sign and magnitude, just denominated in the account currency.
+    const yenGain = pips * 0.01 * row.quantity;
+    expect(row.pnl_absolute!).toBeCloseTo(yenGain / row.exit_price!, 4);
+    expect(row.pnl_absolute!).toBeGreaterThan(0);
   });
 
   it("keeps R:R at 1:2 (measured to the furthest hit TP)", () => {
     expect(computeDisplayRR(trade)).toBeCloseTo(2, 5);
   });
 
-  it("P&L reflects the full TP2 move", () => {
-    // 20 pips × 0.01 × 100_000 units = 2000 quote units.
-    expect(computeMultiTpPnl(trade)!.value).toBeCloseTo(0.2 * 100_000, 2);
+  it("P&L reflects the full TP2 move, valued in the account currency", () => {
+    // 20 pips × 0.01 × 100,000 units = 20,000 JPY, converted at the TP2 exit.
+    expect(computeMultiTpPnl(trade)!.value).toBeCloseTo((0.2 * 100_000) / 163.66, 2);
   });
 });
 
@@ -368,7 +371,8 @@ describe("computeTradeFields agrees with the resolved exit", () => {
     });
     const computed = computeTradeFields(t);
     expect(computed.exit_price).toBeCloseTo(163.66, 5);
-    expect(computed.pnl_absolute).toBeCloseTo(0.2 * 100_000, 2);
+    // 20,000 JPY converted at the exit rate — not reported as 20,000 dollars.
+    expect(computed.pnl_absolute).toBeCloseTo((0.2 * 100_000) / 163.66, 2);
     expect(computed.r_multiple).toBeCloseTo(2, 4); // 20 pips gained / 10 risked
   });
 });

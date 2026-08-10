@@ -3,6 +3,12 @@
  * exit_price set but pnl_absolute = null.
  *
  * Run:  node scripts/backfill-pnl.mjs
+ *
+ * NOTE: the copy of the P&L math below is quote-currency naive — it would
+ * report a JPY-quoted trade's yen profit as dollars. Rather than maintain a
+ * second implementation, this script now SKIPS any symbol that isn't
+ * USD-quoted; use `npx tsx scripts/backfill-pnl-currency.ts` for those, which
+ * imports the app's real computeTradeFields.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -58,7 +64,7 @@ async function main() {
   while (true) {
     const { data: trades, error } = await supabase
       .from("trades")
-      .select("id, entry_price, exit_price, quantity, direction, fees, stop_loss, pnl_absolute")
+      .select("id, instrument, entry_price, exit_price, quantity, direction, fees, stop_loss, pnl_absolute")
       .not("exit_price", "is", null)
       .is("pnl_absolute", null)
       .range(offset, offset + PAGE - 1);
@@ -80,6 +86,18 @@ async function main() {
 
       if (!Number.isFinite(ep) || !Number.isFinite(xp) || ep <= 0 || xp <= 0) {
         console.warn(`  Skipping trade ${trade.id}: invalid prices (entry=${ep} exit=${xp})`);
+        skipped++;
+        continue;
+      }
+
+      // Only USD-quoted symbols: the math below yields quote-currency profit,
+      // so anything else would be written as dollars when it isn't. Those rows
+      // belong to scripts/backfill-pnl-currency.ts.
+      const symbol = String(trade.instrument ?? "").toUpperCase();
+      if (!symbol.endsWith("USD") && !symbol.endsWith("USDT")) {
+        console.warn(
+          `  Skipping ${trade.id} (${symbol}): not USD-quoted — use scripts/backfill-pnl-currency.ts`,
+        );
         skipped++;
         continue;
       }
