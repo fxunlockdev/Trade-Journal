@@ -62,7 +62,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     type Row = { readonly role: JournalRole; readonly journals: Journal };
-    const journals: JournalWithRole[] = ((rows as unknown as Row[]) ?? [])
+    const base: JournalWithRole[] = ((rows as unknown as Row[]) ?? [])
       .filter((r) => includeArchived || !r.journals.is_archived)
       .map((r) => ({ ...r.journals, my_role: r.role }))
       .sort(
@@ -70,6 +70,63 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           a.sort_order - b.sort_order ||
           a.created_at.localeCompare(b.created_at),
       );
+
+    // Attach the live balance (starting capital + closed P&L) so the trade form
+    // can size a position off the CURRENT account rather than the starting
+    // number. Derived on read — nothing stored, nothing to drift.
+    const capitalised = base.filter((j) => j.initial_capital != null);
+    const realizedByJournal = new Map<string, number>();
+    // Whether the balance figure can be trusted at all. On failure we OMIT
+    // current_balance rather than defaulting it to the starting capital: an
+    // omitted balance makes the trade form say "starting capital", while a
+    // defaulted one would claim to be the live balance while being stale.
+    let balanceAvailable = false;
+    if (capitalised.length > 0) {
+      // Admin client on purpose. Membership is already verified above (these ids
+      // come from the caller's own `journal_members` rows), and the SSR client's
+      // JWT context drops intermittently on Vercel — which for THIS query fails
+      // silently, since an RLS-emptied result is not an error. That would hand
+      // the trade form a balance equal to the starting capital and size every
+      // position off it with no indication anything went wrong.
+      const admin = createAdminClient();
+      const { data: pnlRows, error: pnlError } = await admin
+        .from("trades")
+        .select("journal_id, pnl_absolute")
+        .in(
+          "journal_id",
+          capitalised.map((j) => j.id),
+        )
+        .not("pnl_absolute", "is", null);
+
+      if (pnlError) {
+        // A missing balance degrades to "size off the starting capital" — never
+        // a reason to fail the whole journals list.
+        console.error("[TRDR] journals balance query failed:", pnlError.message);
+      } else {
+        balanceAvailable = true;
+        for (const row of (pnlRows ?? []) as ReadonlyArray<{
+          journal_id: string;
+          pnl_absolute: number | null;
+        }>) {
+          const pnl = Number(row.pnl_absolute);
+          if (!Number.isFinite(pnl)) continue;
+          realizedByJournal.set(
+            row.journal_id,
+            (realizedByJournal.get(row.journal_id) ?? 0) + pnl,
+          );
+        }
+      }
+    }
+
+    const journals: JournalWithRole[] = base.map((j) =>
+      j.initial_capital == null || !balanceAvailable
+        ? j
+        : {
+            ...j,
+            current_balance:
+              j.initial_capital + (realizedByJournal.get(j.id) ?? 0),
+          },
+    );
 
     return NextResponse.json({ data: journals });
   } catch (err: unknown) {

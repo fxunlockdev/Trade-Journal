@@ -43,6 +43,77 @@ export function computeAvgLoss(trades: readonly Trade[]): number {
   return losses.reduce((sum, t) => sum + t.pnl_absolute, 0) / losses.length;
 }
 
+/**
+ * Expectancy — the average money a single trade is worth to you.
+ *
+ * `total P&L / number of closed trades`. Unlike win rate it can't be gamed by
+ * many tiny wins funding one huge loss, which is exactly why it's the number
+ * that tells you whether the system is worth trading at all.
+ */
+export function computeExpectancy(trades: readonly Trade[]): number | null {
+  const closed = getClosedTrades(trades);
+  if (closed.length === 0) return null;
+  const total = closed.reduce((sum, t) => sum + t.pnl_absolute, 0);
+  return total / closed.length;
+}
+
+export interface ExpectancyR {
+  /** Average R across the closed trades that carry an R multiple. */
+  readonly value: number;
+  /** How many closed trades had an R multiple (i.e. had a stop loss). */
+  readonly covered: number;
+  /** How many closed trades there are in total. */
+  readonly closed: number;
+}
+
+/**
+ * Expectancy in R — the same idea normalised by risk, so it stays comparable
+ * across position sizes and across journals with different capital.
+ * `null` when no closed trade carries an R multiple.
+ */
+export function computeExpectancyR(
+  trades: readonly Trade[],
+): ExpectancyR | null {
+  // Filtered off the raw trades: `r_multiple` lives on Trade, not on the
+  // narrowed ClosedTrade shape. A closed trade still needs a finite P&L to
+  // count, so both conditions are checked here.
+  const withR = trades.filter(
+    (t) =>
+      t.pnl_absolute !== null &&
+      Number.isFinite(t.pnl_absolute) &&
+      t.r_multiple !== null &&
+      Number.isFinite(t.r_multiple),
+  );
+  if (withR.length === 0) return null;
+  return {
+    value:
+      withR.reduce((sum, t) => sum + (t.r_multiple as number), 0) / withR.length,
+    // R only exists for trades that had a stop loss. Reporting an R average
+    // taken over 1 of 10 trades next to a dollar average taken over all 10 is
+    // how a losing system ends up advertising "+3.00R per trade", so the
+    // coverage travels with the number and the caller qualifies it.
+    covered: withR.length,
+    closed: getClosedTrades(trades).length,
+  };
+}
+
+/**
+ * Payoff ratio — average win / average loss. Tells you how big your winners are
+ * relative to your losers, which is what makes a sub-50% win rate survivable.
+ * `null` when there are no losses yet (unbounded).
+ */
+export function computePayoffRatio(trades: readonly Trade[]): number | null {
+  const closed = getClosedTrades(trades);
+  if (closed.length === 0) return null;
+  const avgWin = computeAvgWin(trades);
+  const avgLoss = Math.abs(computeAvgLoss(trades));
+  // No losses yet — the ratio is unbounded, which the caller renders as "∞".
+  if (avgLoss === 0) return null;
+  // Losses but no wins is a payoff ratio of ZERO, not "no data". Returning null
+  // here would grey out the single most alarming reading on the card.
+  return avgWin / avgLoss;
+}
+
 export function computeMaxDrawdown(trades: readonly Trade[]): number {
   const sorted = [...getClosedTrades(trades)].sort(
     (a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime(),

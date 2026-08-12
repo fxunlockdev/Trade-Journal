@@ -11,8 +11,15 @@ import { WinLossPie } from "@/components/analytics/win-loss-pie";
 import { DrawdownChart } from "@/components/analytics/drawdown-chart";
 import { TimeFilter } from "@/components/analytics/time-filter";
 import { PerformanceCalendar } from "@/components/analytics/performance-calendar";
+import { BalanceCard } from "@/components/analytics/balance-card";
 import { useAnalytics } from "@/hooks/use-analytics";
-import type { AssetType, JournalColor, Trade } from "@/types/database";
+import type {
+  AccountCurrency,
+  AssetType,
+  JournalColor,
+  RiskBasis,
+  Trade,
+} from "@/types/database";
 
 interface DashboardChartsProps {
   readonly trades: readonly Trade[];
@@ -23,6 +30,11 @@ interface DashboardChartsProps {
    */
   readonly journalName?: string;
   readonly journalColor?: JournalColor;
+  /** Journal account settings — drive the balance card and the equity curve baseline. */
+  readonly startingCapital?: number | null;
+  readonly accountCurrency?: AccountCurrency;
+  readonly riskPercent?: number | null;
+  readonly riskBasis?: RiskBasis;
 }
 
 type AssetFilter = "all" | AssetType;
@@ -57,6 +69,10 @@ export function DashboardCharts({
   trades,
   journalName,
   journalColor,
+  startingCapital,
+  accountCurrency,
+  riskPercent,
+  riskBasis,
 }: DashboardChartsProps) {
   const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("all");
   const [direction, setDirection] = useState<"all" | "buy" | "sell">("all");
@@ -125,6 +141,11 @@ export function DashboardCharts({
 
     return result as readonly Trade[];
   }, [trades, dateRange, direction, asset]);
+
+  // Any active filter means the visible trade set is no longer the account, so
+  // account-relative readings have to stand down.
+  const isFiltered =
+    dateRange !== "all" || direction !== "all" || asset !== "all";
 
   const { period, setPeriod } = useAnalytics(filteredTrades);
 
@@ -224,7 +245,32 @@ export function DashboardCharts({
         </div>
       </div>
 
-      <StatsCards trades={filteredTrades} />
+      {/*
+        The account balance is a fact about the ACCOUNT, so it reads from every
+        trade in the journal — never `filteredTrades`. Filtering to one asset or
+        the last 7 days must not invent a balance the broker would disagree
+        with, and the "next trade risks" figure has to match what the trade form
+        will actually size from.
+      */}
+      <BalanceCard
+        trades={trades}
+        startingCapital={startingCapital}
+        currency={accountCurrency}
+        riskPercent={riskPercent}
+        riskBasis={riskBasis}
+      />
+
+      {/*
+        Account-relative readings (Max Drawdown %, "% of account") are claims
+        about the ACCOUNT, so they must not be computed from a filtered slice:
+        filtering out a losing month doesn't shrink your drawdown, it hides it.
+        While a filter is active the capital is withheld and those readings fall
+        back to their absolute forms.
+      */}
+      <StatsCards
+        trades={filteredTrades}
+        startingCapital={isFiltered ? null : startingCapital}
+      />
 
       <Card className="border-border bg-card">
         <CardHeader>
@@ -234,7 +280,10 @@ export function DashboardCharts({
         </CardHeader>
         <CardContent>
           <Suspense fallback={<ChartSkeleton />}>
-            <EquityCurve trades={filteredTrades} />
+            <EquityCurve
+              trades={filteredTrades}
+              startingCapital={isFiltered ? null : startingCapital}
+            />
           </Suspense>
         </CardContent>
       </Card>

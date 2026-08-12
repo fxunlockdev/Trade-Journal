@@ -152,6 +152,15 @@ export async function PATCH(
       updatePatch.take_profit = sentData.tp1 ?? sentData.take_profit ?? null;
     }
 
+    // Clearing the per-trade risk override has to REACH the database. The
+    // validator maps a blank/null input to `undefined`, and `undefined` is
+    // dropped by JSON serialization — so without this the column would keep its
+    // old value and the trade would stay pinned to a stale risk % forever.
+    // Sending `null` is what puts it back on the journal default.
+    if (bodyKeys.has("risk_percent")) {
+      updatePatch.risk_percent = parsed.data.risk_percent ?? null;
+    }
+
     // `source` is provenance — how the trade entered the system (manual / csv
     // import / mt5_webhook). It is immutable after creation: an edit must never
     // rewrite it, or a raw PATCH `{"source":"manual"}` could strip a broker
