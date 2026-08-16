@@ -78,3 +78,42 @@ context degrade silently.
 - **W2 — FXU Home face** (awaiting "go W2"): port the FXNUHOME landing to `/`
   (strip the Risk Calculator product), `/education`, unified auth screens,
   `?next=` open-redirect allowlist, keep the waitlist wired.
+
+---
+
+## W2–W7 progress (2026-08-16, autonomous run)
+
+**Shipped & applied to production (all shadow-verified first):**
+- **W2** FXU Home landing (`/`) + `/education`; Risk Calculator product stripped;
+  `?next=` open-redirect guard (`safeInternalPath` + 6 tests).
+- **W3** CRM at `/crm` (dashboard, affiliates, commissions, settings). Migration
+  `0002_crm_core` — affiliates/commissions, RLS = owner AND has_product('crm').
+- **W4** Partner tracking. Migration `0003_partner_tracking` — member_user_id,
+  crm_invites (SHA-256, 72h, single-use), crm_audit (append-only),
+  get_member_activity() (6-field whitelist, owner-only), accept_crm_invite(),
+  touch_last_active(). API: invite / join / unlink. `/join/[token]` page.
+- **W5** Admin at `/admin`. Migration `0004_platform_admin` — admin_list_users(),
+  admin_set_platform_role() (SECURITY DEFINER, no self-change, last-admin guard).
+  **No new service-role usage** — all admin ops via definer functions (P2 honored).
+- **W6** Security headers (HSTS/XFO/XCTO/Referrer/Permissions). Migration
+  `0005` pinned search_path on handle_new_user (was the last unpinned definer fn).
+
+**Prod invariants verified:** 20/20 public tables RLS-on; only `trades` has no
+policy (intentional deny-all, documented above); every definer fn pins
+search_path; users.role/platform_role NOT self-writable; anon has no write on
+users; entitlement matrix + claim-sync trigger correct; one signup-trigger set
+(no CRM dupe); data intact (users=3, trades=205, journals=12).
+
+## Deferred (need explicit approval / infra — do NOT ship silently)
+- **Rate limiting** on signup/reset/invite/accept — needs Upstash/Redis (serverless
+  in-memory is per-instance and misleading). Not shipped. **F6/F from plan open.**
+- **CSP** — needs per-request nonce wiring through Server Components; header set
+  deferred rather than ship an over-broad one.
+- **D10 force-sign-out on demotion** — needs the GoTrue admin API (a NEW service-role
+  call site). NOT added (P2 says stop+ask). Mitigation: RLS reads the DB live, so a
+  demoted IB loses CRM DATA instantly (proven I5); only the shell nav lags ≤ token TTL.
+- **Realtime channel authz** for chat_messages — table RLS ≠ Realtime authz; verify
+  before enabling any Realtime subscription (currently none added).
+- **Invite emails** — currently copy-link only in the UI (D4). Wire Resend behind an
+  EmailProvider before relying on emailed invites.
+- **Old CRM users** = fresh start (no data import from lkzgpxkyueazrnbugldj).
