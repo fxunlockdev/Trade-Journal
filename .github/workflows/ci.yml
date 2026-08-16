@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [fxu-home-platform, main]
+  pull_request:
+
+jobs:
+  app:
+    name: lint · typecheck · build · unit
+    runs-on: ubuntu-latest
+    env:
+      # Non-secret placeholders so the build and fail-fast env validation pass.
+      # Real secrets are configured in the deploy platform, never in CI.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci_placeholder_anon_key_0000000000
+      SUPABASE_SERVICE_ROLE_KEY: ci_placeholder_service_role_00000000
+      CREDENTIALS_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npm run test
+
+  rls-coverage:
+    name: I7 RLS coverage (pg_policies enumerator)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # Loads the committed schema baseline + all migrations into a throwaway DB,
+      # then asserts every public table is RLS-covered. Any table shipped without
+      # RLS/policies (and not on the documented deny-all allowlist) fails here.
+      - name: Prepare DB roles (Supabase-compatible)
+        run: |
+          PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $$ begin create role anon nologin noinherit; exception when duplicate_object then null; end $$;
+          do $$ begin create role authenticated nologin noinherit; exception when duplicate_object then null; end $$;
+          do $$ begin create role service_role nologin noinherit bypassrls; exception when duplicate_object then null; end $$;
+          create schema if not exists auth;
+          create schema if not exists extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          SQL
+      - name: Load baseline schema
+        run: PGPASSWORD=ci psql -h localhost -U postgres -d postgres --no-psqlrc -f supabase/baseline/0000_baseline.sql || true
+      - name: Apply migrations
+        run: |
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "applying $f"
+            PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f" || true
+          done
+      - name: Assert RLS coverage (I7)
+        run: PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f tests/sql/rls_coverage.test.sql

@@ -43,10 +43,38 @@ context degrade silently.
   transited chat. (W7 checklist.)
 - **Revoke** the GitHub PAT in the public `FXNUHOME` git history (commit `102aeb0`).
 
+## W1 — COMPLETE (2026-08-16)
+
+- Migration `20260816130000_platform_identity.sql` (platform_role enum, products
+  + role_products matrix, `has_product()`, JWT sync trigger). Applied prod;
+  rollback + idempotent re-apply tested on shadow. Backfill: owner stays admin,
+  other 2 users = affiliate (journal only). JWT claims synced.
+- **P0-b breach** (chat_messages/trade_insights world-readable) found by the W1
+  security review, verified live with the anon key, fixed by migration
+  `20260816140000`. See SECURITY-LEDGER.
+- App layer: `middleware.ts` gates (/crm→locked, /admin→404, claim-based UX),
+  `src/lib/auth/entitlements.ts` (DB-authoritative `hasProduct`/`requireProduct`),
+  `/locked` page + `src/lib/copy/products.ts` (D1 labels in one file),
+  bootstrap route reworked to service-role + sets platform_role.
+- Tests: I5/I6/I7/I10 proven (SQL suite `tests/sql/w1_identity.test.sql`);
+  I7 enumerator `tests/sql/rls_coverage.test.sql` + `.github/workflows/ci.yml`
+  (first CI in the repo).
+
+## Deferred (added W1)
+
+- **Middleware → proxy.ts:** Next 16 deprecated `middleware.ts` in favour of
+  `proxy.ts` (`npx @next/codemod middleware-to-proxy .`). Works as-is; rename in a
+  cleanup pass (P10).
+- **Pre-existing eslint error** on the base commit (not in our diff) — 1 error,
+  ~13 warnings across the untouched codebase. Triage in W6.
+- **admin/users PATCH** manages journal `role` only; platform_role assignment UI
+  is W5 (admin panel).
+- **trades RLS:** intentional deny-all (server-only via service-role). If we ever
+  want client-side trade reads, add an owner policy; until then it's allowlisted
+  in the I7 check.
+
 ## Open threads / next
 
-- **W1 — Identity & entitlements** (awaiting "go W1"): `platform_role` enum +
-  `products`/`role_products` + `has_product()` (definer, `search_path=''`), JWT
-  app_metadata sync, middleware gates, locked `/crm` screen, rework
-  admin/bootstrap routes to service-role, backfill existing 3 users → `affiliate`
-  (except the existing admin — confirm identity first), I5/I6/I7 tests.
+- **W2 — FXU Home face** (awaiting "go W2"): port the FXNUHOME landing to `/`
+  (strip the Risk Calculator product), `/education`, unified auth screens,
+  `?next=` open-redirect allowlist, keep the waitlist wired.

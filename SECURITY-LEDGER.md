@@ -6,16 +6,16 @@ every wave.
 
 | ID | Invariant | Status | Evidence |
 |----|-----------|--------|----------|
-| **I1** | User B reads **zero** rows of user A on every table | not yet proven | two-user adversarial suite lands W6 (partial: RLS enabled on all 13 tables — `rowsecurity=true`) |
+| **I1** | User B reads **zero** rows of user A on every table | partial | W1: proved for chat_messages/trade_insights (P0-b — anon now gets 0 rows, authenticated sees only own); full per-table adversarial suite lands W6 |
 | **I2** | User B writes/updates/deletes **zero** of A's rows | not yet proven | W6 |
 | **I3** | IB reads **nothing** of a linked member's journal data | not yet proven | needs the CRM + partner feature (W3/W4) |
 | **I4** | `get_member_activity()` returns exactly the 6-field whitelist | not yet proven | W4 |
-| **I5** | Demoted IB loses CRM data access immediately (old JWT) | not yet proven | W1 (RLS reads `has_product()` from DB) |
-| **I6** | Crafted signup payload cannot set role/platform_role/app_metadata | not yet proven | W1 |
-| **I7** | Every `public` table has `rowsecurity=true` **and** ≥1 policy | partial | W0: all 13 tables `rowsecurity=true`, 39 policies present; automated CI enumerator lands W1 |
-| **I8** | `anon` has no privileges beyond policy; `authenticated` least-privilege | partial | W0: `public.users` reduced to `SELECT`+`UPDATE(3 cols)` for authenticated, `SELECT` for anon (see P0). Other tables still `GRANT ALL` (RLS-guarded) — hardening tracked in NOTES |
+| **I5** | Demoted IB loses CRM data access immediately (old JWT) | **PROVEN** | W1 shadow test T4: flip ib→affiliate, `has_product(crm)` false immediately (reads DB, not JWT) |
+| **I6** | Crafted signup payload cannot set role/platform_role/app_metadata | **PROVEN** | W1 shadow test T7/T8: hostile signup metadata `{role:admin,platform_role:admin}` → user is `affiliate`, role unchanged |
+| **I7** | Every `public` table has `rowsecurity=true` **and** ≥1 policy | **PROVEN** | `tests/sql/rls_coverage.test.sql` — PASS on prod, exit 3 on an injected unprotected table (proven by breaking once); wired into `.github/workflows/ci.yml`. `trades` documented as intentional deny-all |
+| **I8** | `anon` has no privileges beyond policy; `authenticated` least-privilege | partial | W0: `public.users` least-privileged. W1: chat_messages/trade_insights policies restricted to `service_role` (P0-b). Other tables' `GRANT ALL` (RLS-guarded) — W6 |
 | **I9** | Journal sharing is the ONLY cross-user read path (opt-in/TTL/single-use/revocable) | not yet proven | enumerate non-`auth.uid()` policies at W6 |
-| **I10** | Role / privilege columns are never self-writable by a user | **PROVEN (users)** | P0 fix `20260816120000_p0_users_least_privilege.sql`; prod verify: `role self-writable by authenticated = false`; shadow RED→GREEN (self-promote denied, legit `full_name` update ok) |
+| **I10** | Role / privilege columns are never self-writable by a user | **PROVEN (users)** | P0 fix `20260816120000`; prod `role self-writable = false`; W1 test T5: authenticated self-set `platform_role` → permission denied |
 
 ## P0 — privilege escalation on `public.users` (CLOSED)
 
@@ -29,6 +29,19 @@ every wave.
   (users=3, trades=205, journals=12 before and after).
 - **Verified:** faithful PG17 shadow RED (self-promote succeeded) → fix → GREEN
   (INSERT/DELETE/UPDATE-role all `permission denied`, legit update ok, signup ok).
+
+## P0-b — unauthenticated data breach on chat_messages / trade_insights (CLOSED)
+
+- **Found (W1, via security review):** four policies named "Service role …" were
+  created with **no `TO` clause**, so they applied to `PUBLIC` (incl. `anon`)
+  with `USING(true)`. Being permissive and OR'd, they nullified the owner-scoped
+  policies. **Verified live with only the public anon key, no login:**
+  `GET /rest/v1/chat_messages` returned all 14 users' AI chat rows;
+  `/rest/v1/trade_insights` returned the insights row.
+- **Fixed (prod, 2026-08-16):** migration `20260816140000_p0b_restrict_service_role_policies.sql`
+  → `alter policy … to service_role` on all four. Re-ran the exploit: anon now
+  gets **0 rows** on both; an authenticated user still sees all 14 of their own.
+  Data intact. `ALTER`, not `DROP` — reversible.
 
 ## Service-role call sites (P2 — must stay at zero new)
 
