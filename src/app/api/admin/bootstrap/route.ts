@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+/**
+ * One-time admin bootstrap.
+ *
+ * Promotes the *calling* user to admin when they present the deployment's
+ * BOOTSTRAP_SECRET. Used once, to create the first admin on a fresh
+ * deployment; the secret is unset afterwards, which disables this endpoint
+ * (503).
+ *
+ * Security notes:
+ *  - The privilege write goes through the service-role client. It must never
+ *    go through the caller's own session: users have no UPDATE grant on
+ *    `role`/`platform_role` (that was the P0 escalation hole), and a route
+ *    that depended on such a grant would be re-opening it.
+ *  - Both role columns are set together so the journal capability flag and the
+ *    platform entitlement can't drift apart.
+ */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createClient();
@@ -32,10 +49,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Invalid secret" }, { status: 403 });
     }
 
-    // Set the authenticated user as admin
-    const { error } = await supabase
+    // Privilege escalation is a service-role operation, never a user-session one.
+    const admin = createAdminClient();
+    const { error } = await admin
       .from("users")
-      .update({ role: "admin" })
+      .update({ role: "admin", platform_role: "admin" })
       .eq("id", user.id);
 
     if (error) {
