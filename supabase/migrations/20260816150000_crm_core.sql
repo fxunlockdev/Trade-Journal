@@ -36,6 +36,12 @@ $$;
 alter table public.users
   add column if not exists company_name text;
 
+-- Let a user edit their own company_name from CRM settings. This EXTENDS the
+-- least-privilege column grant set by the P0 fix (full_name, avatar_url,
+-- has_onboarded) with one more self-editable, non-privilege column. RLS still
+-- scopes it to the caller's own row; role stays un-writable.
+grant update (company_name) on public.users to authenticated;
+
 -- ───────────────────────────────────────────────────────────────
 -- 1. affiliates — the IB's roster
 -- ───────────────────────────────────────────────────────────────
