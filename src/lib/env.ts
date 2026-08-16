@@ -15,7 +15,6 @@ import { z } from "zod";
  */
 const isUrl = (v: string): boolean => {
   try {
-    // eslint-disable-next-line no-new
     new URL(v);
     return true;
   } catch {
@@ -24,24 +23,29 @@ const isUrl = (v: string): boolean => {
 };
 
 const serverEnvSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z
-    .string()
-    .refine(isUrl, "must be a valid URL"),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z
-    .string()
-    .min(20, "missing or too short"),
-  SUPABASE_SERVICE_ROLE_KEY: z
-    .string()
-    .min(20, "missing or too short"),
+  NEXT_PUBLIC_SUPABASE_URL: z.string().refine(isUrl, "must be a valid URL"),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20, "too short (or unset)"),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20, "too short (or unset)"),
   CREDENTIALS_ENCRYPTION_KEY: z
     .string()
-    .regex(/^[0-9a-fA-F]{64}$/, "must be 64 hex chars (32 bytes for AES-256-GCM)"),
+    .regex(
+      /^[0-9a-fA-F]{64}$/,
+      "must be 64 hex chars (32 bytes for AES-256-GCM)",
+    ),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
-/** Validate and return required server env, or throw a clear, actionable error. */
-export function validateEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
+/**
+ * Validate and return required server env, or throw a clear, actionable error.
+ *
+ * Takes a plain string bag rather than `NodeJS.ProcessEnv` so the validator
+ * stays decoupled from Next's ambient env augmentation (which makes NODE_ENV
+ * required and breaks a bare `tsc --noEmit` for callers passing literals).
+ */
+export function validateEnv(
+  source: Record<string, string | undefined> = process.env,
+): ServerEnv {
   const parsed = serverEnvSchema.safeParse(source);
   if (!parsed.success) {
     const issues = parsed.error.issues

@@ -1,4 +1,4 @@
--- 0001_p0_users_least_privilege.sql
+-- 20260816120000_p0_users_least_privilege.sql
 -- W0 · P0 security fix (privilege escalation on public.users).
 --
 -- BEFORE: anon + authenticated held GRANT ALL on public.users, so an
