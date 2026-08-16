@@ -14,8 +14,22 @@ export function safeInternalPath(
   fallback = "/dashboard",
 ): string {
   if (!raw) return fallback;
-  if (!raw.startsWith("/")) return fallback; // must be relative to this origin
-  if (raw.startsWith("//")) return fallback; // protocol-relative -> off-site
-  if (raw.startsWith("/\\")) return fallback; // backslash -> normalised off-site
-  return raw;
+
+  // The WHATWG URL parser (used by router.push internally) strips tabs,
+  // newlines and other C0 control chars as its FIRST normalization step, so a
+  // crafted `/<tab>/evil.com` would slip past the checks below and then be
+  // re-normalised to `//evil.com` at navigation time. Drop C0 controls (0x00-
+  // 0x1F, which includes tab/newline/CR) and DEL (0x7F) up front so the string
+  // we validate is exactly the string that gets navigated to.
+  const clean = Array.from(raw)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("");
+
+  if (!clean.startsWith("/")) return fallback; // must be relative to this origin
+  if (clean.startsWith("//")) return fallback; // protocol-relative -> off-site
+  if (clean.startsWith("/\\")) return fallback; // backslash -> normalised off-site
+  return clean;
 }

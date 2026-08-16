@@ -36,17 +36,20 @@ async function getCallerAsAdmin(): Promise<
     return { error: "Unauthorized", status: 401 };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  // Authorize on the PLATFORM authority (has_product reads platform_role from
+  // the DB), NOT the legacy users.role column. Otherwise a platform-demoted
+  // admin whose stale role='admin' lingered would keep this service-role,
+  // RLS-bypassing endpoint — a back door the /admin demotion is meant to close.
+  const { data: isAdmin, error: adminError } = await supabase.rpc("has_product", {
+    p_user_id: user.id,
+    p_product: "admin",
+  });
 
-  if (profileError || !profile) {
+  if (adminError) {
     return { error: "Unauthorized", status: 401 };
   }
 
-  if ((profile as { role: string }).role !== "admin") {
+  if (isAdmin !== true) {
     return { error: "Forbidden", status: 403 };
   }
 

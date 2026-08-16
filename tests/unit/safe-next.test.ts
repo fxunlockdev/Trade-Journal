@@ -27,6 +27,16 @@ describe("safeInternalPath (open-redirect guard)", () => {
     expect(safeInternalPath("/\\/evil.com")).toBe("/dashboard");
   });
 
+  it("strips control chars so a tab/newline can't smuggle a protocol-relative URL", () => {
+    // `/<tab>/evil.com` would normalise to `//evil.com` at navigation time.
+    expect(safeInternalPath("/\t/evil.com")).toBe("/dashboard");
+    expect(safeInternalPath("/\n/evil.com")).toBe("/dashboard");
+    expect(safeInternalPath("/\r/evil.com")).toBe("/dashboard");
+    expect(safeInternalPath("/\t\\evil.com")).toBe("/dashboard");
+    // A legitimate path with an embedded control char is cleaned, not rejected.
+    expect(safeInternalPath("/crm\t/affiliates")).toBe("/crm/affiliates");
+  });
+
   it("rejects non-path values (no leading slash)", () => {
     expect(safeInternalPath("evil.com")).toBe("/dashboard");
     expect(safeInternalPath("javascript:alert(1)")).toBe("/dashboard");
