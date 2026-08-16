@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { safeInternalPath } from "@/lib/safe-next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,7 +68,14 @@ function LoginSkeleton() {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(
+    searchParams.get("mode") === "signup" ? "signup" : "login",
+  );
+
+  // Post-auth destination — guarded to a relative in-app path so a crafted
+  // ?next=//evil.com can't bounce the user off-site. Middleware sets ?next
+  // when it redirects an unauthenticated user here from /crm or /admin.
+  const safeNext = safeInternalPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -121,7 +129,7 @@ function LoginContent() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(safeNext);
   }
 
   async function handleSignUp() {
