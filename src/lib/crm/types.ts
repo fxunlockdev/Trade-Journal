@@ -39,8 +39,20 @@ export interface Affiliate {
   readonly commission_rate: number | null;
   readonly join_date: string | null;
   readonly notes: string | null;
+  /** Set once the affiliate accepts a join link — the hierarchy edge. */
+  readonly member_user_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+/** The exact whitelist returned by get_member_activity() — counts, never content. */
+export interface MemberActivity {
+  readonly linked: boolean;
+  readonly joined_at: string | null;
+  readonly last_active_at: string | null;
+  readonly trades_7d: number;
+  readonly trades_30d: number;
+  readonly last_trade_at: string | null;
 }
 
 export interface Commission {

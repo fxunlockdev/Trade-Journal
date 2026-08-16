@@ -43,6 +43,10 @@ export default async function AppLayout({
         .select("role, journals!inner(*)")
         .eq("user_id", user.id),
       getActiveJournal(supabase, user.id),
+      // Debounced activity heartbeat (writes <= 1/hour/user). Runs in parallel
+      // with the fetches above, so it adds no latency. Powers the CRM's
+      // partner-tracking "last active" without exposing anything to the IB.
+      supabase.rpc("touch_last_active"),
     ]);
 
   const profile =

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AffiliateDialog } from "@/components/crm/affiliate-dialog";
+import { PartnerCell } from "@/components/crm/partner-cell";
 import { type Affiliate, type AffiliateStatus } from "@/lib/crm/types";
 
 const STATUS_VARIANT: Record<AffiliateStatus, string> = {
@@ -105,6 +106,7 @@ export default function AffiliatesPage() {
               <TableHead>Status</TableHead>
               <TableHead className="hidden md:table-cell">Commission</TableHead>
               <TableHead className="hidden lg:table-cell">Joined</TableHead>
+              <TableHead>Partner</TableHead>
               <TableHead className="w-[90px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -112,12 +114,12 @@ export default function AffiliatesPage() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
+                  <TableCell colSpan={7}><Skeleton className="h-6 w-full" /></TableCell>
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={7}>
                   <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
                     <Users className="h-8 w-8 opacity-40" />
                     <p>{rows.length === 0 ? "No affiliates yet — add your first one." : "No matches."}</p>
@@ -139,6 +141,9 @@ export default function AffiliatesPage() {
                   </TableCell>
                   <TableCell className="hidden lg:table-cell text-muted-foreground">
                     {r.join_date ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    <PartnerCell affiliate={r} onChanged={load} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => { setEditing(r); setDialogOpen(true); }} aria-label={`Edit ${r.name}`}>
