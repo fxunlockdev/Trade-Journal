@@ -17,8 +17,8 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ci_placeholder_service_role_00000000
       CREDENTIALS_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -39,28 +39,57 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: ci
+      PSQL: psql -h localhost -U postgres -d postgres --no-psqlrc -v ON_ERROR_STOP=1
     steps:
-      - uses: actions/checkout@v4
-      # Loads the committed schema baseline + all migrations into a throwaway DB,
-      # then asserts every public table is RLS-covered. Any table shipped without
-      # RLS/policies (and not on the documented deny-all allowlist) fails here.
-      - name: Prepare DB roles (Supabase-compatible)
-        run: |
-          PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-          do $$ begin create role anon nologin noinherit; exception when duplicate_object then null; end $$;
-          do $$ begin create role authenticated nologin noinherit; exception when duplicate_object then null; end $$;
-          do $$ begin create role service_role nologin noinherit bypassrls; exception when duplicate_object then null; end $$;
-          create schema if not exists auth;
-          create schema if not exists extensions;
-          create extension if not exists pgcrypto with schema extensions;
-          SQL
+      - uses: actions/checkout@v5
+
+      # A bare Postgres has no `auth` schema, so every FK to auth.users and every
+      # policy calling auth.uid() would fail to apply — which previously made this
+      # job report "0 policies" on tables that are fully protected in production.
+      # The stub provides just enough of Supabase's surface for the real schema to
+      # load, so the assertion below tests the real policies.
+      - name: Create Supabase-compatible auth stub
+        run: $PSQL -f tests/sql/00_auth_stub.sql
+
+      # The dump owns the public schema; drop the server default first so it
+      # applies cleanly under ON_ERROR_STOP.
       - name: Load baseline schema
-        run: PGPASSWORD=ci psql -h localhost -U postgres -d postgres --no-psqlrc -f supabase/baseline/0000_baseline.sql || true
-      - name: Apply migrations
         run: |
+          psql -h localhost -U postgres -d postgres -c "drop schema public cascade;"
+          $PSQL -f supabase/baseline/0000_baseline.sql
+
+      # Migrations at or before BASELINE_INCLUDES_THROUGH are already captured in
+      # the baseline dump; re-running them would fail on duplicate objects. Apply
+      # only what comes after it — strictly, so a broken migration fails CI
+      # instead of being swallowed.
+      - name: Apply post-baseline migrations
+        run: |
+          CUTOFF="$(cat supabase/baseline/BASELINE_INCLUDES_THROUGH)"
           for f in $(ls supabase/migrations/*.sql | sort); do
-            echo "applying $f"
-            PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f" || true
+            ts="$(basename "$f" | cut -d_ -f1)"
+            if [ "$ts" -le "$CUTOFF" ]; then
+              echo "skip (in baseline): $(basename "$f")"
+              continue
+            fi
+            echo "applying $(basename "$f")"
+            $PSQL -f "$f"
           done
+
+      # Guards against a silently empty load: if the schema didn't really apply,
+      # the RLS assertion below would "pass" on an empty database.
+      - name: Sanity-check the schema actually loaded
+        run: |
+          $PSQL -t -c "do \$\$
+            declare n int;
+          begin
+            select count(*) into n from pg_policies where schemaname='public';
+            if n < 40 then
+              raise exception 'schema load looks incomplete: only % policies in public', n;
+            end if;
+            raise notice 'schema loaded: % policies', n;
+          end \$\$;"
+
       - name: Assert RLS coverage (I7)
-        run: PGPASSWORD=ci psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f tests/sql/rls_coverage.test.sql
+        run: $PSQL -f tests/sql/rls_coverage.test.sql
