@@ -17,6 +17,8 @@ import { computeFlow, seedSlots, FLOWS, type FlowResult } from "@/lib/assistant/
  */
 
 export interface DemoFrame {
+  /** True from the first frame onward, so the layout settles once. */
+  readonly started: boolean;
   readonly typed: string;
   /** The full query, kept after sending so the user bubble can show it. */
   readonly query: string;
@@ -39,7 +41,7 @@ const SCENARIOS = [
   },
 ];
 
-const EMPTY: DemoFrame = { typed: "", query: "", sent: false, thinking: false, reply: null, result: null };
+const EMPTY: DemoFrame = { started: false, typed: "", query: "", sent: false, thinking: false, reply: null, result: null };
 
 /** Precomputed once: same functions the live agent uses. */
 const FRAMES = SCENARIOS.map((s) => {
@@ -57,7 +59,7 @@ export function useAgentDemo(enabled: boolean) {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       // Reduced motion: show the finished frame, no typing, no cycling.
       const f = FRAMES[0]!;
-      setFrame({ typed: f.query, query: f.query, sent: true, thinking: false, reply: f.reply, result: f.result });
+      setFrame({ started: true, typed: f.query, query: f.query, sent: true, thinking: false, reply: f.reply, result: f.result });
       return;
     }
 
@@ -70,19 +72,21 @@ export function useAgentDemo(enabled: boolean) {
       const s = FRAMES[i % FRAMES.length]!;
       let t = 0;
 
-      setFrame(EMPTY);
+      // Deliberately no blank frame here: clearing to EMPTY between scenarios
+      // collapsed the shell and bounced the hero. The first typed character
+      // replaces the previous answer instead.
 
       // Type it out.
       for (let c = 1; c <= s.query.length; c++) {
         t += c < 12 ? 34 : 21; // eases off after the mention
-        at(t, () => setFrame({ ...EMPTY, typed: s.query.slice(0, c), query: s.query }));
+        at(t, () => setFrame({ ...EMPTY, started: true, typed: s.query.slice(0, c), query: s.query }));
       }
 
       t += 520;
-      at(t, () => setFrame({ typed: "", query: s.query, sent: true, thinking: true, reply: null, result: null }));
+      at(t, () => setFrame({ started: true, typed: "", query: s.query, sent: true, thinking: true, reply: null, result: null }));
 
       t += 900;
-      at(t, () => setFrame({ typed: "", query: s.query, sent: true, thinking: false, reply: s.reply, result: s.result }));
+      at(t, () => setFrame({ started: true, typed: "", query: s.query, sent: true, thinking: false, reply: s.reply, result: s.result }));
 
       t += 5200; // dwell on the answer
       at(t, () => play(i + 1));

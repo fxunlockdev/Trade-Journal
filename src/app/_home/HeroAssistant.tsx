@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { STARTER_QUESTIONS } from "@/lib/assistant/knowledge";
-import { APP_TARGETS } from "@/lib/assistant/mentions";
+import { APP_TARGETS, parseMention } from "@/lib/assistant/mentions";
 import {
   FLOWS, computeFlow, nextMissingSlot, seedSlots, isSkip,
   type FlowId, type Slots, type FlowResult, type SlotDef,
@@ -49,7 +49,7 @@ export function HeroAssistant({
   // The demo runs until the first real interaction, then never returns.
   const [live, setLive] = useState(false);
   const demo = useAgentDemo(!live);
-  const demoing = !live && (demo.typed !== "" || demo.sent);
+  const demoing = !live && demo.started;
 
   function goLive() {
     if (!live) setLive(true);
@@ -220,17 +220,23 @@ export function HeroAssistant({
 
     // 2. An @mention that maps to an operable flow runs it here rather than
     //    sending the user off to another page.
-    const m = q.match(/^@([a-z ]+?)(?:\s+(.*))?$/i);
-    if (m) {
-      const alias = m[1].trim().toLowerCase();
-      const rest = m[2] ?? "";
-      const target = APP_TARGETS.find((t) => t.aliases.some((a) => a === alias || alias.startsWith(a)));
-      if (target) {
-        const locked = signedIn && target.product !== null && !products.includes(target.product);
-        if (target.id === "risk" && !locked) { startFlow("risk", rest); return; }
-        if (target.id === "rebate") { startFlow("rebate", rest); return; }
-        if (target.id === "journal" && !locked && /\b(add|log|record|new)\b/i.test(rest)) {
-          startFlow("trade", rest); return;
+    //
+    //    Use the SHARED parser, not a local regex: aliases contain spaces, so a
+    //    lazy pattern captured "trade" out of "@trade journal ..." and matched
+    //    nothing, which silently fell through to the link-out path. parseMention
+    //    tries the longest alias first, which is the only correct way here.
+    const mention = parseMention(q);
+    if (mention) {
+      const { target, instruction } = mention;
+      const locked = signedIn && target.product !== null && !products.includes(target.product);
+
+      if (!locked) {
+        if (target.id === "risk") { startFlow("risk", instruction); return; }
+        if (target.id === "rebate") { startFlow("rebate", instruction); return; }
+        // Any hint of logging something starts the draft; a bare "@trade
+        // journal" still just opens the app.
+        if (target.id === "journal" && /\b(add|log|record|new|enter|book)\b/i.test(instruction)) {
+          startFlow("trade", instruction); return;
         }
       }
     }
@@ -261,7 +267,7 @@ export function HeroAssistant({
   }
 
   return (
-    <div className="agent" data-open={turns.length > 0 ? "true" : "false"}>
+    <div className="agent" data-open={turns.length > 0 || demoing ? "true" : "false"}>
       <div className="agent-ambient" aria-hidden="true" />
 
       <div className="agent-shell">

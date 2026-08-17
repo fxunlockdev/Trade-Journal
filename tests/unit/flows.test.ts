@@ -96,3 +96,26 @@ describe("one-shot parsing", () => {
     }
   });
 });
+
+describe("mention routing (the bug that sent '@trade journal add a trade' to a link)", () => {
+  it("resolves multi-word aliases, longest first", async () => {
+    const { parseMention } = await import("@/lib/assistant/mentions");
+    const m = parseMention("@trade journal can you add a trade for me");
+    expect(m?.target.id).toBe("journal");
+    expect(m?.instruction).toBe("can you add a trade for me");
+  });
+
+  it("still resolves the short alias", async () => {
+    const { parseMention } = await import("@/lib/assistant/mentions");
+    expect(parseMention("@journal")?.target.id).toBe("journal");
+    expect(parseMention("@rebate calculator gold")?.target.id).toBe("rebate");
+    expect(parseMention("@risk calculator")?.target.id).toBe("risk");
+  });
+
+  it("treats a logging intent as a trade flow trigger", () => {
+    const trigger = /\b(add|log|record|new|enter|book)\b/i;
+    expect(trigger.test("can you add a trade for me")).toBe(true);
+    expect(trigger.test("log EURUSD long")).toBe(true);
+    expect(trigger.test("")).toBe(false); // bare mention just opens the app
+  });
+});

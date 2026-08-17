@@ -854,7 +854,11 @@ body.modal-open { overflow: hidden; }
   /* Scales with the viewport instead of a fixed height: ~38% of the visible
      window, floored so it never collapses to a sliver and capped so it doesn't
      swallow a tall monitor. dvh so mobile browser chrome doesn't break it. */
-  max-height: clamp(220px, 46dvh, 520px);
+  /* The rest of the hero (nav, pill, headline, sub, CTAs, input row, footnote)
+     occupies roughly 500px once compacted. Give the conversation whatever is
+     left, floored so it never collapses and capped so it doesn't dominate a
+     tall monitor. Self-adjusting, so no breakpoint guessing. */
+  max-height: clamp(150px, calc(100dvh - 500px), 440px);
   overflow-y: auto;
   overscroll-behavior: contain; /* don't scroll the page when the log ends */
   padding: 16px 16px 6px; text-align: left;
@@ -1139,3 +1143,46 @@ body.modal-open { overflow: hidden; }
 .agent-log-demo .agent-turn { animation: demoIn .5s var(--ease) both; }
 @keyframes demoIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .agent-log-demo .agent-turn { animation: none; } }
+
+/* ── Hero compacts around the agent ─────────────────────────
+   Once the agent has an answer on screen it becomes the subject, so the hero
+   yields: the headline steps down, the vertical rhythm tightens, and the whole
+   exchange stays above the fold instead of making you scroll to the number.
+   Pure CSS via :has(), so no state has to be threaded through the page.
+   ──────────────────────────────────────────────────────────── */
+.hero:has(.agent[data-open="true"]) h1 {
+  font-size: clamp(38px, 5.6vw, 76px);
+  margin-bottom: 18px;
+}
+.hero:has(.agent[data-open="true"]) .hero-sub {
+  font-size: clamp(15px, 1.3vw, 17px);
+  margin-bottom: 22px;
+}
+.hero:has(.agent[data-open="true"]) .pill { margin-bottom: 20px; }
+.hero:has(.agent[data-open="true"]) .agent { margin-top: 24px; }
+.hero:has(.agent[data-open="true"]) .hero-shot { margin-top: 40px; }
+.hero h1, .hero-sub, .pill, .agent {
+  transition: font-size .55s var(--ease), margin .55s var(--ease);
+}
+
+/* Short viewports need it more, not less: give back height by tightening the
+   hero itself so the answer still lands above the fold. */
+@media (max-height: 900px) {
+  .hero:has(.agent[data-open="true"]) { padding-top: 44px; }
+  .hero:has(.agent[data-open="true"]) h1 { font-size: clamp(30px, 4vw, 50px); margin-bottom: 12px; }
+  .hero:has(.agent[data-open="true"]) .hero-sub { font-size: 14.5px; margin-bottom: 16px; }
+  .hero:has(.agent[data-open="true"]) .pill { margin-bottom: 14px; transform: scale(.94); }
+  .hero:has(.agent[data-open="true"]) .agent { margin-top: 16px; }
+  .hero:has(.agent[data-open="true"]) .agent-foot { display: none; }
+}
+@media (max-height: 760px) {
+  .hero:has(.agent[data-open="true"]) { padding-top: 30px; }
+  .hero:has(.agent[data-open="true"]) h1 { font-size: clamp(26px, 3.4vw, 40px); }
+  .hero:has(.agent[data-open="true"]) .hero-sub { display: none; }
+  /* The result's headline figure carries the message; shrink it, don't clip it. */
+  .hero:has(.agent[data-open="true"]) .ares-hero-value { font-size: 32px; }
+  .hero:has(.agent[data-open="true"]) .ares { margin-top: 9px; padding-top: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero h1, .hero-sub, .pill, .agent { transition: none; }
+}
