@@ -17,7 +17,7 @@ describe("agent flows", () => {
   it("computes a rebate", () => {
     const r = computeFlow("rebate", { asset: "gold", lots: "100" });
     expect(r).toMatchObject({ kind: "rebate", lots: 100 });
-    if ("monthlyMid" in r) expect(r.monthlyMid).toBe(750);
+    if ("kind" in r && r.kind === "rebate") expect(r.monthlyMid).toBe(750);
   });
 
   it("computes a position size", () => {
@@ -25,8 +25,9 @@ describe("agent flows", () => {
       instrument: "EURUSD", direction: "buy", balance: "10000",
       risk: "1", entry: "1.0850", stop: "1.0800",
     });
+    // Narrow on `kind`, not on a property name: RebateResult also has `lots`.
     expect(r).toHaveProperty("kind", "risk");
-    if ("lots" in r) {
+    if ("kind" in r && r.kind === "risk") {
       expect(r.lots).toBeGreaterThan(0);
       expect(Math.round(r.riskAmount)).toBe(100); // 1% of 10k
     }
@@ -34,12 +35,12 @@ describe("agent flows", () => {
 
   it("tolerates messy numeric input", () => {
     const r = computeFlow("rebate", { asset: "gold", lots: "1,000" });
-    if ("lots" in r) expect(r.lots).toBe(1000);
+    if ("kind" in r && r.kind === "rebate") expect(r.lots).toBe(1000);
     const k = computeFlow("risk", {
       instrument: "EURUSD", direction: "buy", balance: "$10k",
       risk: "1%", entry: "1.0850", stop: "1.0800",
     });
-    if ("balance" in k) expect(k.balance).toBe(10000);
+    if ("kind" in k && k.kind === "risk") expect(k.balance).toBe(10000);
   });
 
   it("rejects a stop on the wrong side", () => {
@@ -65,6 +66,8 @@ describe("agent flows", () => {
       instrument: "EURUSD", direction: "buy", entry: "1.0850",
       lots: "1", stop: "banana", target: "skip",
     });
-    if ("stop" in r) expect(Number.isNaN(r.stop as number)).toBe(false);
+    if ("kind" in r && r.kind === "trade") {
+      expect(r.stop === null || Number.isFinite(r.stop)).toBe(true);
+    }
   });
 });
