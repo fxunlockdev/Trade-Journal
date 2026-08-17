@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { getEntitlements, type ProductKey } from "@/lib/auth/entitlements";
+import { getCurrentUser, getEntitlements, type ProductKey } from "@/lib/auth/entitlements";
 import { TIER_LABEL, TIER_BLURB } from "@/lib/copy/tiers";
 import { Landing, type HomeUser } from "./_home/Landing";
 
@@ -21,14 +21,15 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getCurrentUser and getEntitlements are request-cached, so this whole page
+  // costs ONE auth call plus ONE row read, even though several things below ask
+  // about the same user.
+  const user = await getCurrentUser();
 
   let homeUser: HomeUser | null = null;
 
   if (user) {
+    const supabase = await createClient();
     const [{ data: profile }, entitlements] = await Promise.all([
       supabase
         .from("users")

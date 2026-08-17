@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveJournal } from "@/lib/journals/active-journal";
 import { AppShell } from "@/components/layout/app-shell";
+import { ActivityPing } from "@/components/activity-ping";
 import type {
   Journal,
   JournalRole,
@@ -43,10 +44,6 @@ export default async function AppLayout({
         .select("role, journals!inner(*)")
         .eq("user_id", user.id),
       getActiveJournal(supabase, user.id),
-      // Debounced activity heartbeat (writes <= 1/hour/user). Runs in parallel
-      // with the fetches above, so it adds no latency. Powers the CRM's
-      // partner-tracking "last active" without exposing anything to the IB.
-      supabase.rpc("touch_last_active"),
     ]);
 
   const profile =
@@ -90,12 +87,15 @@ export default async function AppLayout({
   }
 
   return (
-    <AppShell
-      profile={userProfile}
-      journals={journals}
-      activeJournalId={activeJournalId}
-    >
-      {children}
-    </AppShell>
+    <>
+      <ActivityPing />
+      <AppShell
+        profile={userProfile}
+        journals={journals}
+        activeJournalId={activeJournalId}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

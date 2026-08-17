@@ -110,7 +110,35 @@ export const config = {
   //  - static files (_next/static, _next/image)
   //  - favicon and common assets
   //  - public files in /public (.svg, .png, .jpg, etc.)
+  // COST: this runs getUser() on every match, and getUser() is a billable call
+  // to Supabase Auth. It used to match everything, so a visitor reading the
+  // public landing page or hitting any /api route paid for an auth lookup that
+  // nothing consumed.
+  //
+  // Now it matches only what it actually gates or needs a refreshed cookie for.
+  // Excluded and why:
+  //   /api/*         — every route already authenticates itself; the proxy
+  //                    result was thrown away.
+  //   public pages   — /education, /rebate-calculator and the token landing
+  //                    pages are readable signed-out.
+  //   static assets  — never gated.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/",
+    "/login",
+    "/apps",
+    "/crm/:path*",
+    "/admin/:path*",
+    "/dashboard/:path*",
+    "/journal/:path*",
+    "/insights/:path*",
+    "/portfolio/:path*",
+    "/calendar/:path*",
+    "/signals/:path*",
+    "/settings/:path*",
+    "/import/:path*",
+    "/mt5-sync/:path*",
+    "/ai-chat/:path*",
+    "/risk-calculator/:path*",
+    "/lot-calculator/:path*",
   ],
 };
