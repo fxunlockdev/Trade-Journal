@@ -18,11 +18,19 @@ interface Turn {
  * routes `@trade journal …` style commands into the apps. Only a genuinely new
  * question from a signed-in user reaches the model — see /api/assistant.
  */
-export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
+export function HeroAssistant({
+  signedIn,
+  products = [],
+}: {
+  signedIn: boolean;
+  /** Products this user can actually open; drives the locked state in the @ menu. */
+  products?: readonly string[];
+}) {
   const [value, setValue] = useState("");
   const [turns, setTurns] = useState<readonly Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [placeholder, setPlaceholder] = useState("");
+  const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +65,44 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, busy]);
 
-  const showMentions = value.startsWith("@") && !value.includes(" ");
+  // "@" alone lists everything; "@tra" narrows to Trade Journal. Matching the
+  // label too means "@journal" and "@Trade Journal" both land.
+  const mentionQuery = value.startsWith("@") ? value.slice(1).toLowerCase() : null;
+  const mentionMatches =
+    mentionQuery === null
+      ? []
+      : APP_TARGETS.filter(
+          (t) =>
+            mentionQuery === "" ||
+            t.aliases.some((a) => a.startsWith(mentionQuery)) ||
+            t.label.toLowerCase().startsWith(mentionQuery),
+        );
+  const showMentions = mentionQuery !== null && !value.includes(" ") && mentionMatches.length > 0;
+
+  // Reset the highlight whenever the filtered set changes.
+  useEffect(() => { setHighlight(0); }, [value]);
+
+  function pickMention(target: (typeof APP_TARGETS)[number]) {
+    setValue(`@${target.aliases[0]} `);
+    inputRef.current?.focus();
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showMentions) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((h) => (h + 1) % mentionMatches.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((h) => (h - 1 + mentionMatches.length) % mentionMatches.length);
+    } else if (e.key === "Tab" || (e.key === "Enter" && mentionMatches[highlight])) {
+      // Enter completes the mention rather than sending a bare "@tra".
+      e.preventDefault();
+      pickMention(mentionMatches[highlight]!);
+    } else if (e.key === "Escape") {
+      setValue("");
+    }
+  }
 
   async function ask(question: string) {
     const q = question.trim();
@@ -142,6 +187,7 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
             onChange={(e) => setValue(e.target.value)}
             placeholder={placeholder || "Ask about FXU, or type @ to open an app"}
             aria-label="Ask the FXU agent"
+            onKeyDown={onKeyDown}
             enterKeyHint="send"
           />
           <button type="submit" className="agent-send" disabled={busy || !value.trim()} aria-label="Send">
@@ -150,24 +196,9 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
             </svg>
           </button>
 
-          {showMentions && (
-            <div className="agent-mentions">
-              {APP_TARGETS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="agent-mention"
-                  onClick={() => { setValue(`@${t.aliases[0]} `); inputRef.current?.focus(); }}
-                >
-                  <strong>@{t.aliases[0]}</strong>
-                  <span>{t.hint}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </form>
 
-        {turns.length === 0 && (
+        {turns.length === 0 && !showMentions && (
           <div className="agent-chips">
             {STARTER_QUESTIONS.map((q) => (
               <button key={q} className="agent-chip" onClick={() => ask(q)}>{q}</button>
@@ -175,6 +206,34 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
           </div>
         )}
       </div>
+
+      {showMentions && (
+        <div className="agent-mentions" role="listbox" aria-label="Apps">
+          {mentionMatches.map((t, i) => {
+            const locked = signedIn && t.product !== null && !products.includes(t.product);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="option"
+                aria-selected={i === highlight}
+                className={`agent-mention ${i === highlight ? "on" : ""}`}
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => pickMention(t)}
+              >
+                <span className="agent-mention-row">
+                  <strong>@{t.aliases[0]}</strong>
+                  {locked && <em className="agent-mention-lock">Locked</em>}
+                </span>
+                <span>{locked ? "Included with IB access" : t.hint}</span>
+              </button>
+            );
+          })}
+          <p className="agent-mention-foot">
+            {signedIn ? "Enter to pick, then type what you want it to do" : "Sign in to run an app"}
+          </p>
+        </div>
+      )}
 
       <p className="agent-foot">
         {signedIn

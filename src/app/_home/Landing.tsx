@@ -123,7 +123,7 @@ export function Landing({ user = null }: { user?: HomeUser | null }) {
             </div>
 
             <div className="hero-el" style={{ ["--d" as string]: 4 }}>
-              <HeroAssistant signedIn={signedIn} />
+              <HeroAssistant signedIn={signedIn} products={user?.products ?? []} />
             </div>
           </div>
 
