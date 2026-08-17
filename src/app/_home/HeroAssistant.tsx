@@ -92,7 +92,7 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
 
   return (
     <div className="agent" data-open={turns.length > 0 ? "true" : "false"}>
-      <div className="agent-glow" aria-hidden="true" />
+      <div className="agent-ambient" aria-hidden="true" />
 
       <div className="agent-shell">
         {turns.length > 0 && (

@@ -804,113 +804,170 @@ body.modal-open { overflow: hidden; }
 }
 .nav-admin:hover { color: var(--text); border-color: var(--text-2); }
 
-/* ── Hero agent ─────────────────────────────────────────── */
-.agent { position: relative; max-width: 660px; margin: 34px auto 0; }
-.agent-glow {
-  position: absolute; inset: -30% -12% -45%;
+/* ── Hero agent — Liquid Glass ──────────────────────────────
+   Material rules (WWDC25): glass belongs to the floating layer, never to
+   content; nothing sitting ON glass gets glass again (bubbles/chips use fills
+   + vibrancy); one variant only (Regular — adaptive, since the hero behind it
+   changes); and only the primary action carries tint. Depth comes from a
+   specular top edge + a tinted diffusion shadow, not an outer glow.
+   ──────────────────────────────────────────────────────────── */
+.agent { position: relative; max-width: 640px; margin: 32px auto 0; }
+
+/* Ambient light the glass refracts — deliberately soft and far behind, so it
+   reads as atmosphere rather than a neon halo. */
+.agent-ambient {
+  position: absolute; inset: -16% -8% -26%;
   background:
-    radial-gradient(45% 60% at 30% 50%, rgba(10, 132, 255, .28), transparent 70%),
-    radial-gradient(40% 55% at 72% 45%, rgba(125, 92, 255, .24), transparent 70%);
-  filter: blur(46px); z-index: -1; pointer-events: none;
-  opacity: .85; animation: agentGlow 7s ease-in-out infinite alternate;
+    radial-gradient(50% 62% at 34% 46%, rgba(10, 132, 255, .20), transparent 72%),
+    radial-gradient(46% 58% at 70% 52%, rgba(125, 92, 255, .16), transparent 72%);
+  filter: blur(52px); opacity: .55; z-index: -1; pointer-events: none;
+  animation: agentBreathe 9s ease-in-out infinite alternate;
 }
-@keyframes agentGlow { from { opacity: .6; transform: scale(.97); } to { opacity: 1; transform: scale(1.03); } }
+@keyframes agentBreathe { from { opacity: .42; transform: scale(.98); } to { opacity: .62; transform: scale(1.02); } }
 
 .agent-shell {
-  background: var(--surface);
-  border: .5px solid var(--border-2);
-  border-radius: 22px;
-  box-shadow: 0 24px 60px -26px rgba(20, 40, 90, .35), inset 0 1px 0 rgba(255,255,255,.4);
-  overflow: hidden;
-  transition: box-shadow .4s var(--ease);
+  position: relative; overflow: hidden;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .62);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: .5px solid rgba(0, 0, 0, .07);
+  /* specular edge + contact shadow + tinted diffusion */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .8),
+    0 1px 2px rgba(16, 24, 40, .04),
+    0 20px 44px -20px rgba(16, 32, 64, .24);
+  transition: box-shadow .5s var(--ease), transform .5s var(--ease);
 }
-.dark .agent-shell { box-shadow: 0 24px 60px -26px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06); }
-.agent[data-open="true"] .agent-shell { box-shadow: 0 32px 80px -28px rgba(20, 40, 90, .42); }
+.dark .agent-shell {
+  background: rgba(28, 28, 30, .55);
+  border-color: rgba(255, 255, 255, .1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .09),
+    0 24px 54px -22px rgba(0, 0, 0, .8);
+}
+.agent[data-open="true"] .agent-shell { box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 28px 60px -22px rgba(16,32,64,.28); }
+.dark .agent[data-open="true"] .agent-shell { box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 30px 66px -24px rgba(0,0,0,.85); }
 
+/* Conversation. Elements here sit ON glass -> plain fills, no second blur. */
 .agent-log {
-  max-height: 320px; overflow-y: auto;
-  padding: 18px 18px 4px; text-align: left;
+  max-height: 316px; overflow-y: auto;
+  padding: 16px 16px 6px; text-align: left;
   display: flex; flex-direction: column; gap: 12px;
-  scrollbar-width: thin;
+  scrollbar-width: thin; scrollbar-color: var(--border-2) transparent;
+  /* soft scroll-edge fade, the web equivalent of a scroll edge effect */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px);
+  mask-image: linear-gradient(180deg, transparent 0, #000 14px);
 }
-.agent-turn { display: flex; flex-direction: column; gap: 8px; animation: agentIn .45s var(--ease) both; }
-@keyframes agentIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.agent-turn { display: flex; flex-direction: column; gap: 8px; animation: agentIn .5s var(--ease) both; }
+@keyframes agentIn { from { opacity: 0; transform: translateY(9px) scale(.985); } to { opacity: 1; transform: none; } }
 .agent-turn.user { align-items: flex-end; }
+.agent-bubble { padding: 11px 14px; font-size: 14.5px; line-height: 1.55; max-width: 88%; }
+/* radii are concentric with the 24px shell minus its 16px padding */
 .agent-turn.user .agent-bubble {
-  background: linear-gradient(180deg, #2f9bff 0%, #0066e0 100%); color: #fff;
-  border-radius: 16px 16px 4px 16px; max-width: 85%;
+  background: linear-gradient(180deg, #2f9bff, #0a6fe0); color: #fff;
+  border-radius: 16px 16px 5px 16px;
+  box-shadow: 0 6px 16px -8px rgba(10, 111, 224, .55), inset 0 1px 0 rgba(255,255,255,.24);
 }
 .agent-turn.assistant .agent-bubble {
-  background: var(--surface-2); color: var(--text);
-  border-radius: 16px 16px 16px 4px; max-width: 92%;
+  background: rgba(120, 120, 128, .12); color: var(--text);
+  border-radius: 16px 16px 16px 5px;
 }
-.agent-bubble { padding: 11px 14px; font-size: 14px; line-height: 1.55; }
+.dark .agent-turn.assistant .agent-bubble { background: rgba(255, 255, 255, .08); }
 .agent-bubble p { margin: 0; text-wrap: pretty; }
 .agent-bubble strong { font-weight: 600; }
 .agent-action {
-  display: inline-flex; align-items: center; gap: 5px; margin-top: 9px;
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
   font-size: 13.5px; font-weight: 500; color: var(--blue-bright); text-decoration: none;
 }
 .agent-turn.user .agent-action { color: #fff; }
 .agent-action:hover .chev { transform: translateX(3px); }
 
-.agent-typing { display: inline-flex; gap: 4px; padding: 2px 0; }
-.agent-typing i {
-  width: 6px; height: 6px; border-radius: 99px; background: var(--text-2);
-  animation: agentDot 1.3s ease-in-out infinite;
-}
-.agent-typing i:nth-child(2) { animation-delay: .18s; }
-.agent-typing i:nth-child(3) { animation-delay: .36s; }
+.agent-typing { display: inline-flex; gap: 4px; padding: 3px 0; }
+.agent-typing i { width: 6px; height: 6px; border-radius: 99px; background: var(--text-2); animation: agentDot 1.25s ease-in-out infinite; }
+.agent-typing i:nth-child(2) { animation-delay: .16s; }
+.agent-typing i:nth-child(3) { animation-delay: .32s; }
 @keyframes agentDot { 0%,60%,100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
-.agent-input { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 15px; }
-.agent[data-open="true"] .agent-input { border-top: .5px solid var(--border); }
-.agent-spark { display: inline-flex; color: var(--blue-bright); flex-shrink: 0; }
+/* Input row */
+.agent-input { position: relative; display: flex; align-items: center; gap: 11px; padding: 13px 13px 13px 16px; }
+.agent[data-open="true"] .agent-input { border-top: .5px solid rgba(120,120,128,.16); }
+.dark .agent[data-open="true"] .agent-input { border-top-color: rgba(255,255,255,.08); }
+.agent-spark { display: inline-flex; flex-shrink: 0; color: var(--blue-bright); animation: agentSpark 4.5s ease-in-out infinite; }
+@keyframes agentSpark { 0%,100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.09); } }
 .agent-input input {
   flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--text);
   background: none; border: none; outline: none; padding: 6px 0;
 }
 .agent-input input::placeholder { color: var(--text-2); }
+/* The only tinted element — the primary action. */
 .agent-send {
   flex-shrink: 0; width: 34px; height: 34px; border-radius: 999px; border: none; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, #2f9bff 0%, #0066e0 100%); color: #fff;
-  transition: transform .25s var(--ease), opacity .2s;
+  background: linear-gradient(180deg, #2f9bff, #0a6fe0); color: #fff;
+  box-shadow: 0 6px 14px -6px rgba(10, 111, 224, .6), inset 0 1px 0 rgba(255,255,255,.3);
+  transition: transform .2s var(--ease), opacity .2s, box-shadow .2s;
 }
-.agent-send:hover:not(:disabled) { transform: scale(1.08); }
-.agent-send:disabled { opacity: .35; cursor: default; }
+.agent-send:hover:not(:disabled) { transform: scale(1.07); }
+.agent-send:active:not(:disabled) { transform: scale(.94); }
+.agent-send:disabled { opacity: .3; cursor: default; box-shadow: none; }
 
+/* Floating above the glass -> an elevated solid surface, not glass on glass. */
 .agent-mentions {
-  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
-  background: var(--surface); border: .5px solid var(--border-2); border-radius: 16px;
-  box-shadow: 0 20px 50px -20px rgba(0,0,0,.32); padding: 6px; z-index: 5;
-  display: grid; gap: 2px; text-align: left;
-  animation: agentIn .22s var(--ease) both;
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 10px);
+  background: var(--surface); border: .5px solid var(--border-2); border-radius: 18px;
+  box-shadow: 0 24px 56px -22px rgba(16, 32, 64, .34), inset 0 1px 0 rgba(255,255,255,.6);
+  padding: 6px; z-index: 5; display: grid; gap: 2px; text-align: left;
+  animation: agentIn .24s var(--ease) both;
 }
+.dark .agent-mentions { box-shadow: 0 24px 56px -22px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.07); }
 .agent-mention {
   display: flex; flex-direction: column; gap: 1px; width: 100%;
   background: none; border: none; cursor: pointer; text-align: left;
-  padding: 9px 11px; border-radius: 11px; transition: background .18s;
+  padding: 9px 12px; border-radius: 12px; transition: background .18s;
 }
-.agent-mention:hover { background: var(--surface-2); }
+.agent-mention:hover { background: rgba(120,120,128,.1); }
+.dark .agent-mention:hover { background: rgba(255,255,255,.07); }
 .agent-mention strong { font-size: 13.5px; font-weight: 600; color: var(--blue-bright); }
 .agent-mention span { font-size: 12px; color: var(--text-2); }
 
-.agent-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 0 12px 14px; }
+/* Suggestion chips — on glass, so fills + vibrancy only. */
+.agent-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 0 13px 14px; }
 .agent-chips.in-log { justify-content: flex-start; padding: 0; }
 .agent-chip {
   cursor: pointer; font: inherit; font-size: 12.5px;
-  background: var(--surface-2); color: var(--text-3);
-  border: .5px solid var(--border); border-radius: 999px; padding: 7px 13px;
-  transition: transform .2s var(--ease), color .2s, border-color .2s;
+  background: rgba(120, 120, 128, .1); color: var(--text-3);
+  border: .5px solid rgba(0,0,0,.05); border-radius: 999px; padding: 7px 13px;
+  transition: transform .22s var(--ease), color .2s, background .2s;
 }
-.agent-chip:hover { transform: translateY(-1px); color: var(--text); border-color: var(--blue-bright); }
-.agent-foot { font-size: 11.5px; color: var(--text-2); margin: 12px 0 0; }
+.dark .agent-chip { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.08); }
+.agent-chip:hover { transform: translateY(-1px); color: var(--text); background: rgba(120,120,128,.16); }
+.dark .agent-chip:hover { background: rgba(255,255,255,.12); }
+.agent-chip:active { transform: scale(.97); }
+.agent-foot { font-size: 11.5px; color: var(--text-2); margin: 13px 0 0; }
+
+/* Increased contrast: drop the material, go opaque with a hard border. */
+@media (prefers-contrast: more) {
+  .agent-ambient { display: none; }
+  .agent-shell {
+    background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-color: var(--text); box-shadow: none;
+  }
+  .agent-chip { border-color: var(--text-2); }
+}
+/* Reduced motion: keep the material, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-ambient, .agent-spark { animation: none; }
+  .agent-turn, .agent-mentions { animation: none; }
+  .agent-send:hover:not(:disabled), .agent-chip:hover { transform: none; }
+}
 
 @media (max-width: 640px) {
-  .agent-log { max-height: 260px; }
-  .agent-chips { gap: 6px; }
+  .agent { margin-top: 26px; }
+  .agent-log { max-height: 250px; }
   .agent-chip { font-size: 12px; padding: 6px 11px; }
+  .agent-input { padding: 12px; gap: 9px; }
+  .agent-input input { font-size: 16px; } /* prevents iOS zoom-on-focus */
 }
 
 /* ── Rebate calculator ──────────────────────────────────── */
