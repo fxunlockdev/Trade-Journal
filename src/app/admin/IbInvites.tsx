@@ -96,7 +96,7 @@ export function IbInvites() {
 
       <div className="admin-invite-form">
         <input
-          placeholder="Who is this for? (optional, e.g. Nick — EU desk)"
+          placeholder="Who is this for? (optional, e.g. Nick, EU desk)"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
@@ -107,7 +107,7 @@ export function IbInvites() {
 
       {newUrl && (
         <div className="admin-newlink">
-          <span>Single-use link, valid 14 days — copied to your clipboard:</span>
+          <span>Single-use link, valid 14 days. Copied to your clipboard:</span>
           <code>{newUrl}</code>
         </div>
       )}
@@ -125,7 +125,7 @@ export function IbInvites() {
             const s = statusOf(i);
             return (
               <div className="admin-tr" key={i.id}>
-                <span>{i.label ?? i.email ?? "—"}</span>
+                <span>{i.label ?? i.email ?? "–"}</span>
                 <span className="muted">{new Date(i.created_at).toLocaleDateString()}</span>
                 <span><em className={`pill-status s-${s.toLowerCase()}`}>{s}</em></span>
                 <span className="right">

@@ -101,7 +101,7 @@ export default function CrmDashboardPage() {
                 <li key={a.id} className="flex items-center justify-between py-3">
                   <div>
                     <p className="font-medium">{a.name}</p>
-                    <p className="text-xs text-muted-foreground">{a.email ?? a.country ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground">{a.email ?? a.country ?? "–"}</p>
                   </div>
                   <Badge variant="secondary">{a.status}</Badge>
                 </li>

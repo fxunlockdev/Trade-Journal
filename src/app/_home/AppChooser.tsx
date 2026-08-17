@@ -87,7 +87,7 @@ export function AppChooser({
               name="Affiliate CRM"
               desc="Your affiliates, commissions and partner activity."
               unlocked={has("crm")}
-              lockedNote="Included with IB access — ask an admin to upgrade you."
+              lockedNote="Included with IB access. Ask an admin to upgrade you."
               accent="crm"
             />
             <ChooserItem

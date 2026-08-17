@@ -35,7 +35,7 @@ export const PRODUCT_COPY: Readonly<
   crm: {
     title: `${PRODUCT_LABELS.crm} isn't part of your plan`,
     description: `The ${PRODUCT_LABELS.crm} is where ${TIER_LABELS.ib}s manage their ${TIER_LABELS.affiliate} roster, track commissions and see who is actively trading.`,
-    howToGetAccess: `Your account is set up for the ${PRODUCT_LABELS.journal}. If you partner with FXU as an ${TIER_LABELS.ib}, ask your FXU contact to upgrade your account — the CRM appears here the next time you sign in.`,
+    howToGetAccess: `Your account is set up for the ${PRODUCT_LABELS.journal}. If you partner with FXU as an ${TIER_LABELS.ib}, ask your FXU contact to upgrade your account. The CRM appears here the next time you sign in.`,
   },
   admin: {
     title: "Admin tools aren't available on your account",
@@ -46,6 +46,6 @@ export const PRODUCT_COPY: Readonly<
     title: "This app isn't part of your plan",
     description: "Your account doesn't include access to this product yet.",
     howToGetAccess:
-      "Ask your FXU contact if you need it — access appears here the next time you sign in.",
+      "Ask your FXU contact if you need it. Access appears here the next time you sign in.",
   },
 };

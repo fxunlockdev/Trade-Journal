@@ -122,7 +122,7 @@ export default function AffiliatesPage() {
                 <TableCell colSpan={7}>
                   <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
                     <Users className="h-8 w-8 opacity-40" />
-                    <p>{rows.length === 0 ? "No affiliates yet — add your first one." : "No matches."}</p>
+                    <p>{rows.length === 0 ? "No affiliates yet. Add your first one." : "No matches."}</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -131,7 +131,7 @@ export default function AffiliatesPage() {
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell className="hidden text-muted-foreground sm:table-cell">
-                    {r.email ?? r.phone ?? "—"}
+                    {r.email ?? r.phone ?? "–"}
                   </TableCell>
                   <TableCell>
                     <Badge className={STATUS_VARIANT[r.status]} variant="secondary">{r.status}</Badge>
@@ -140,7 +140,7 @@ export default function AffiliatesPage() {
                     {r.commission_type}{r.commission_rate != null ? ` · ${r.commission_rate}%` : ""}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell text-muted-foreground">
-                    {r.join_date ?? "—"}
+                    {r.join_date ?? "–"}
                   </TableCell>
                   <TableCell>
                     <PartnerCell affiliate={r} onChanged={load} />

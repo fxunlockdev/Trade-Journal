@@ -16,9 +16,9 @@ interface AdminUserRow {
 }
 
 const ROLE_LABEL: Record<PlatformRole, string> = {
-  affiliate: "Affiliate — Journal only",
-  ib: "IB — Journal + CRM",
-  admin: "Admin — everything",
+  affiliate: "Affiliate · Journal only",
+  ib: "IB · Journal + CRM",
+  admin: "Admin · everything",
 };
 
 /**
@@ -90,7 +90,7 @@ export function AdminUsers({ selfId }: { selfId: string }) {
                 <em className="muted block">{u.email}{u.id === selfId ? " · you" : ""}</em>
               </span>
               <span className="muted">
-                {u.last_active_at ? new Date(u.last_active_at).toLocaleDateString() : "—"}
+                {u.last_active_at ? new Date(u.last_active_at).toLocaleDateString() : "–"}
               </span>
               <span>
                 <select

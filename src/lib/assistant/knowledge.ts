@@ -21,7 +21,7 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
   {
     keywords: ["what", "fxu", "suite", "platform", "do for me", "about"],
     answer:
-      "FXU is one account for two working tools. **Trade Journal** logs every trade and turns your own history into feedback — P&L, win rate, profit factor, drawdown, and AI insights on your patterns. **Affiliate CRM** is for introducing brokers: track partners from lead to active, log commissions monthly, and see who's actually trading. You sign in once here and open whichever you have access to.",
+      "FXU is one account for two working tools. **Trade Journal** logs every trade and turns your own history into feedback: P&L, win rate, profit factor, drawdown, and AI insights on your patterns. **Affiliate CRM** is for introducing brokers: track partners from lead to active, log commissions monthly, and see who's actually trading. You sign in once here and open whichever you have access to.",
     suggestions: ["What can the Trade Journal do?", "What is the Affiliate CRM?", "How do I get access?"],
   },
   {
@@ -33,25 +33,25 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
   {
     keywords: ["crm", "affiliate crm", "partners", "commission", "ib tool", "introducing broker"],
     answer:
-      "The **Affiliate CRM** is built for introducing brokers. Keep a roster of affiliates with status, terms and joining dates; log commissions month by month as pending, paid or cancelled; and see live dashboards for monthly commission and top affiliates. You can also invite an affiliate into the Trade Journal and see whether they're actually active — activity counts only, never their trades.",
+      "The **Affiliate CRM** is built for introducing brokers. Keep a roster of affiliates with status, terms and joining dates; log commissions month by month as pending, paid or cancelled; and see live dashboards for monthly commission and top affiliates. You can also invite an affiliate into the Trade Journal and see whether they're actually active. You get activity counts only, never their trades.",
     suggestions: ["How do I become an IB?", "What is the rebate calculator?"],
   },
   {
     keywords: ["access", "tier", "level", "ib", "affiliate", "permission", "unlock", "become"],
     answer:
-      "There are two levels. **Affiliate** is what everyone gets on sign-up — full Trade Journal, free. **IB** adds the Affiliate CRM on top, and it's invite-only: an FXU admin sends you a link. If you're already signed in, whatever you have access to appears under *Explore the apps*; anything you don't is shown locked with how to get it.",
+      "There are two levels. **Affiliate** is what everyone gets on sign-up: full Trade Journal, free. **IB** adds the Affiliate CRM on top, and it's invite-only: an FXU admin sends you a link. If you're already signed in, whatever you have access to appears under *Explore the apps*; anything you don't is shown locked with how to get it.",
     suggestions: ["What is the Affiliate CRM?", "What is the rebate calculator?"],
   },
   {
     keywords: ["rebate", "calculator", "how much", "earn", "rebate calculator"],
     answer:
-      "The **Rebate Calculator** estimates what your monthly volume could be worth as an introducing broker. Pick the asset class your clients trade, enter monthly volume in lots, and it shows an estimated monthly and annual rebate range. It's free — leave your name, email and phone to unlock the full breakdown and we'll follow up with real terms.",
+      "The **Rebate Calculator** estimates what your monthly volume could be worth as an introducing broker. Pick the asset class your clients trade, enter monthly volume in lots, and it shows an estimated monthly and annual rebate range. It's free. Leave your name, email and phone to unlock the full breakdown and we'll follow up with real terms.",
     suggestions: ["Open the rebate calculator", "How do I become an IB?"],
   },
   {
     keywords: ["add trade", "log a trade", "record trade", "enter trade", "how do i add"],
     answer:
-      "Two ways. In the Trade Journal, use the trade form for full control over entries, stops and multiple take-profits. Or just describe it in plain English to the journal's AI chat — \"bought EURUSD at 1.0842, stop 1.0800, target 1.0920, 2 lots\" — and it drafts the entry for you to confirm. Nothing is saved until you approve it.",
+      "Two ways. In the Trade Journal, use the trade form for full control over entries, stops and multiple take-profits. Or just describe it in plain English to the journal's AI chat: \"bought EURUSD at 1.0842, stop 1.0800, target 1.0920, 2 lots\", and it drafts the entry for you to confirm. Nothing is saved until you approve it.",
     suggestions: ["Open Trade Journal", "Can I import from MT5?"],
   },
   {
@@ -63,7 +63,7 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
   {
     keywords: ["price", "pricing", "cost", "free", "how much does", "subscription"],
     answer:
-      "The Trade Journal is free with your FXU account. The Affiliate CRM comes with IB access, which is granted by invitation rather than sold — it's part of the partnership. The Rebate Calculator is free to use.",
+      "The Trade Journal is free with your FXU account. The Affiliate CRM comes with IB access, which is granted by invitation rather than sold. It's part of the partnership. The Rebate Calculator is free to use.",
     suggestions: ["How do I get access?", "What is the rebate calculator?"],
   },
   {
@@ -75,7 +75,7 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
   {
     keywords: ["private", "security", "safe", "data", "see my trades", "privacy"],
     answer:
-      "Your data is yours. Every table is protected at the database level, so one account can never read or change another's — even your IB sees only whether you're active (join date, last active, trade counts), never your trades, P&L or notes. Broker credentials are encrypted, and journals are private unless you invite someone yourself.",
+      "Your data is yours. Every table is protected at the database level, so one account can never read or change another's. Even your IB sees only whether you're active (join date, last active, trade counts), never your trades, P&L or notes. Broker credentials are encrypted, and journals are private unless you invite someone yourself.",
     suggestions: ["What is the Affiliate CRM?", "How do I get access?"],
   },
 ];

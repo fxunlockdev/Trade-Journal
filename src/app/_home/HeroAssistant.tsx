@@ -34,7 +34,7 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
       return;
     }
     const lines = [
-      "Ask the FXU agent — what can this suite do for me?",
+      "Ask the FXU agent: what can this suite do for me?",
       "@trade journal  log EURUSD long 2 lots at 1.0842",
       "How much rebate could my volume earn?",
       "@rebate calculator",
@@ -83,7 +83,7 @@ export function HeroAssistant({ signedIn }: { signedIn: boolean }) {
         suggestions: data.suggestions,
       }]);
     } catch {
-      setTurns((t) => [...t, { role: "assistant", text: "I couldn't reach the server — try again." }]);
+      setTurns((t) => [...t, { role: "assistant", text: "I couldn't reach the server. Try again." }]);
     } finally {
       setBusy(false);
       inputRef.current?.focus();

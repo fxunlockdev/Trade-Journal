@@ -61,7 +61,7 @@ export default function CrmSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Workspace</CardTitle>
-          <CardDescription>Shown across your CRM. This is your own profile — no one else can see or edit it.</CardDescription>
+          <CardDescription>Shown across your CRM. This is your own profile, and no one else can see or edit it.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (

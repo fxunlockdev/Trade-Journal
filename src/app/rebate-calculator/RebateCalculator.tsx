@@ -94,7 +94,7 @@ export function RebateCalculator() {
           <div className="kicker">Free tool for IBs</div>
           <h1 className="rc-title">What is your volume <span className="grad-text">actually worth?</span></h1>
           <p className="rc-sub">
-            Estimate the monthly rebate on the flow you already introduce. Move the sliders — the
+            Estimate the monthly rebate on the flow you already introduce. Move the sliders and the
             numbers update as you go.
           </p>
 
@@ -156,7 +156,7 @@ export function RebateCalculator() {
                     <div><dt>Annual projection</dt><dd>{formatUsd(est.annualMid)}</dd></div>
                   </dl>
                   <p className="rc-done">
-                    Thanks — we&apos;ll be in touch with your real terms. Meanwhile, your FXU account is
+                    Thanks. We&apos;ll be in touch with your real terms. Meanwhile, your FXU account is
                     free and includes the Trade Journal.
                   </p>
                   <Link className="btn-primary full" href="/login?mode=signup">Create your free account</Link>
@@ -164,7 +164,7 @@ export function RebateCalculator() {
               ) : (
                 <form className="rc-gate" onSubmit={unlock}>
                   <p className="rc-gate-copy">
-                    Unlock the full breakdown — per-lot rates, annual projection and next steps.
+                    Unlock the full breakdown: per-lot rates, annual projection and next steps.
                   </p>
                   <input className="rc-input" placeholder="Full name" value={name}
                     onChange={(e) => setName(e.target.value)} autoComplete="name" required />
@@ -184,8 +184,8 @@ export function RebateCalculator() {
 
           <p className="rc-disclaimer">
             {RATES_ARE_ILLUSTRATIVE
-              ? "Indicative figures based on typical industry rates — not an offer or a guarantee of earnings. Your actual rebate is confirmed with FXU and depends on the broker, instrument, account type and your agreement."
-              : "Estimates only — not an offer or a guarantee of earnings. Actual rebates depend on the broker, instrument, account type and your agreement with FXU."}
+              ? "Indicative figures based on typical industry rates. Not an offer or a guarantee of earnings. Your actual rebate is confirmed with FXU and depends on the broker, instrument, account type and your agreement."
+              : "Estimates only. Not an offer or a guarantee of earnings. Actual rebates depend on the broker, instrument, account type and your agreement with FXU."}
           </p>
         </div>
       </main>

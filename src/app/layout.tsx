@@ -23,7 +23,7 @@ const hanken = Hanken_Grotesk({
 export const metadata: Metadata = {
   title: "FXU · One account for Trade Journal & Affiliate CRM",
   description:
-    "FXU Home — one sign-in for the Trade Journal and the Affiliate CRM.",
+    "FXU Home: one sign-in for the Trade Journal and the Affiliate CRM.",
 };
 
 export default function RootLayout({

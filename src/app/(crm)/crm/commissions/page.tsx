@@ -145,7 +145,7 @@ export default function CommissionsPage() {
 
       {affiliates.length === 0 && !loading && (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Add an affiliate first — commissions are logged against an affiliate.
+          Add an affiliate first. Commissions are logged against an affiliate.
         </p>
       )}
 
@@ -178,11 +178,11 @@ export default function CommissionsPage() {
             ) : (
               commissions.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{nameById.get(c.affiliate_id) ?? "—"}</TableCell>
+                  <TableCell className="font-medium">{nameById.get(c.affiliate_id) ?? "–"}</TableCell>
                   <TableCell className="text-muted-foreground">{MONTHS[c.month - 1]} {c.year}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatCurrency(c.amount)}</TableCell>
                   <TableCell><Badge className={STATUS_VARIANT[c.status]} variant="secondary">{c.status}</Badge></TableCell>
-                  <TableCell className="hidden md:table-cell max-w-[200px] truncate text-muted-foreground">{c.note ?? "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell max-w-[200px] truncate text-muted-foreground">{c.note ?? "–"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(c)} aria-label="Edit commission"><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => setDeleting(c)} aria-label="Delete commission"><Trash2 className="h-4 w-4 text-destructive" /></Button>

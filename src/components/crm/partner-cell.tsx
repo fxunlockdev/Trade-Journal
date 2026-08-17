@@ -94,7 +94,7 @@ export function PartnerCell({ affiliate, onChanged }: { affiliate: Affiliate; on
               <DialogTitle>Invite {affiliate.name} to the Journal</DialogTitle>
               <DialogDescription>
                 Share this single-use link. It expires in 72 hours, and whoever accepts it is
-                linked to you. They&apos;ll get their own private journal — you&apos;ll only ever see their
+                linked to you. They&apos;ll get their own private journal, and you&apos;ll only ever see their
                 activity, never their trades.
               </DialogDescription>
             </DialogHeader>
@@ -145,7 +145,7 @@ export function PartnerCell({ affiliate, onChanged }: { affiliate: Affiliate; on
               </dl>
             )}
             <p className="pt-1 text-xs text-muted-foreground">
-              Counts only — their trades and P&amp;L stay private.
+              Counts only. Their trades and P&amp;L stay private.
             </p>
           </div>
         </PopoverContent>
@@ -161,7 +161,7 @@ export function PartnerCell({ affiliate, onChanged }: { affiliate: Affiliate; on
             <AlertDialogTitle>Revoke {affiliate.name}&apos;s link?</AlertDialogTitle>
             <AlertDialogDescription>
               This unlinks their account from your roster and stops tracking. It does not delete or
-              affect their own journal — that stays theirs. You can re-invite them later.
+              affect their own journal, which stays theirs. You can re-invite them later.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -186,6 +186,6 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "–";
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }

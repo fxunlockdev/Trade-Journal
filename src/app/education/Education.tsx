@@ -64,7 +64,7 @@ export function Education() {
             </h1>
             <p className="hero-sub hero-el" style={{ ["--d" as string]: 2 }}>
               Live, practical sessions for FXU partner communities. No indicator
-              sales, no signal hype — just the craft, and how each concept plugs
+              sales, no signal hype. Just the craft, and how each concept plugs
               into the tools you already use.
             </p>
             <div className="hero-ctas hero-el" style={{ ["--d" as string]: 3 }}>
@@ -145,7 +145,7 @@ export function Education() {
 
 const TOPICS: readonly { n: string; hue: string; title: string; body: string }[] = [
   { n: "01", hue: "blue", title: "Identifying patterns", body: "Read structure instead of guessing: trends, ranges, liquidity and the handful of repeatable setups worth trading." },
-  { n: "02", hue: "green", title: "Risk management", body: "Position sizing, risk-reward and drawdown control — and making the numbers work before every entry." },
+  { n: "02", hue: "green", title: "Risk management", body: "Position sizing, risk-reward and drawdown control, and making the numbers work before every entry." },
   { n: "03", hue: "orange", title: "Trading psychology", body: "Discipline over dopamine: handling losing streaks, avoiding revenge trades, and rules you can actually follow." },
   { n: "04", hue: "purple", title: "Review & journaling", body: "Turn your own entries into an edge. Tag setups, review sessions, and let the patterns surface." },
 ];
@@ -154,5 +154,5 @@ const CADENCE: readonly { when: string; hue: string; title: string; body: string
   { when: "LIVE", hue: "blue", title: "Weekly live session", body: "A focused topic each week, taught live with real charts and open Q&A for the community." },
   { when: "VOD", hue: "green", title: "Recorded for later", body: "Every session is recorded and shared, so members who miss it can catch up on their own time." },
   { when: "KIT", hue: "orange", title: "Workbook & templates", body: "Each session ships with a short workbook and the journal templates that go with it." },
-  { when: "Q&A", hue: "purple", title: "Ongoing support", body: "Between sessions, questions get answered inside your partner community — not left hanging." },
+  { when: "Q&A", hue: "purple", title: "Ongoing support", body: "Between sessions, questions get answered inside your partner community, not left hanging." },
 ];

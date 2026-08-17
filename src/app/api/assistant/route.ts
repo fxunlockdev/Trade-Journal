@@ -27,7 +27,7 @@ const MAX_MESSAGE_CHARS = 500;
 /** Product answers only — never user data — which is what makes the cache shareable. */
 const SYSTEM_PROMPT = `You are the assistant on FXU Home, a platform with two apps:
 - Trade Journal: trade logging, analytics (P&L, win rate, profit factor, drawdown), MT5/Myfxbook import, AI trade entry. Free with any account.
-- Affiliate CRM: for introducing brokers — affiliate roster, monthly commission ledger, partner activity tracking. Invite-only (IB tier).
+- Affiliate CRM: for introducing brokers. Affiliate roster, monthly commission ledger, partner activity tracking. Invite-only (IB tier).
 There is also a free Rebate Calculator that estimates an IB's monthly rebate, and Live Education sessions.
 
 Rules:
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (!user) {
         return NextResponse.json({
           source: "mention",
-          answer: `**${target.label}** — ${target.hint}. Sign in first and I'll take you straight there.`,
+          answer: `**${target.label}**: ${target.hint}. Sign in first and I'll take you straight there.`,
           action: { kind: "signin", href: `/login?next=${encodeURIComponent(target.href)}` },
         });
       }
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         source: "mention",
         answer: instruction
           ? `Opening **${target.label}** with: “${instruction}”.`
-          : `Opening **${target.label}** — ${target.hint}.`,
+          : `Opening **${target.label}**: ${target.hint}.`,
         action: { kind: "open", href, label: `Open ${target.label}` },
       });
     }
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         source: "gated",
         answer:
-          "I can answer that in more depth once you're signed in — free, and it also unlocks the Trade Journal. In the meantime, ask me what the suite does, how access levels work, or about the rebate calculator.",
+          "I can answer that in more depth once you're signed in. It's free, and it also unlocks the Trade Journal. In the meantime, ask me what the suite does, how access levels work, or about the rebate calculator.",
         action: { kind: "signin", href: "/login" },
       });
     }
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // shared office IPs don't throttle each other.
     if (!(await allowRequest(supabase, LIMITS.assistant, user.id || clientIp(request)))) {
       return NextResponse.json(
-        { error: "You're asking faster than I can think — give me a minute." },
+        { error: "You're asking faster than I can think. Give me a minute." },
         { status: 429 },
       );
     }
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const answer = completion.choices[0]?.message?.content?.trim();
     if (!answer) {
       return NextResponse.json(
-        { error: "I couldn't answer that one — try rephrasing?" },
+        { error: "I couldn't answer that one. Try rephrasing?" },
         { status: 502 },
       );
     }
