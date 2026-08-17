@@ -727,3 +727,5 @@ body.modal-open { overflow: hidden; }
 }
 .auth-toggle button:hover { text-decoration: underline; }
 .auth-foot { font-size: 12px; color: var(--text-2); margin-top: 22px; }
+/* Sign-in has no subtitle, so the title owns the gap above the card. */
+.auth-title-solo { margin-bottom: 28px; }

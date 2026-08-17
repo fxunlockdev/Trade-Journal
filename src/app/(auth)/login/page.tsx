@@ -193,14 +193,12 @@ function LoginContent() {
           <span>FXU</span>
         </a>
 
-        <h1 className="auth-title">
+        <h1 className={mode === "login" ? "auth-title auth-title-solo" : "auth-title"}>
           {mode === "login" ? <>Welcome back to <span className="grad-text">FXU.</span></> : <>Join <span className="grad-text">FXU.</span></>}
         </h1>
-        <p className="auth-sub">
-          {mode === "login"
-            ? "One sign-in unlocks every app your access level includes."
-            : "One account for the journal and your partnerships."}
-        </p>
+        {mode === "signup" && (
+          <p className="auth-sub">One account for the journal and your partnerships.</p>
+        )}
 
         <div className="auth-card">
           <button
