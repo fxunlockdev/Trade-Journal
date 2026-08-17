@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { EDUCATION_URL, isExternalEducation } from "@/lib/education-url";
 import { useAppleMotion } from "./useAppleMotion";
 import { AppChooser } from "./AppChooser";
+import { HeroAssistant } from "./HeroAssistant";
 import type { ProductKey } from "@/lib/auth/entitlements";
 import "./fxu-home.css";
 
@@ -121,15 +122,8 @@ export function Landing({ user = null }: { user?: HomeUser | null }) {
               <Link className="btn-ghost" href={appHref} onClick={openApps}>{signedIn ? "Open an app" : "Sign in"} <span className="chev">›</span></Link>
             </div>
 
-            {/* FX ticker marquee */}
-            <div className="ticker hero-el" style={{ ["--d" as string]: 4 }} aria-hidden="true">
-              <div className="ticker-track">
-                {TICKER.concat(TICKER).map((t, i) => (
-                  <span className="tick-item" key={i}>
-                    {t.sym} <b className={t.up ? "up" : "down"}>{t.up ? "▲" : "▼"} {t.px}</b>
-                  </span>
-                ))}
-              </div>
+            <div className="hero-el" style={{ ["--d" as string]: 4 }}>
+              <HeroAssistant signedIn={signedIn} />
             </div>
           </div>
 
@@ -179,9 +173,16 @@ export function Landing({ user = null }: { user?: HomeUser | null }) {
               <span className="chip-name">Affiliate CRM</span>
               <span className="chip-arrow">›</span>
             </Link>
+            <Link className="chip-tile reveal" style={{ ["--d" as string]: 2 }} href="/rebate-calculator">
+              <span className="chip-icon rebate" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><rect x="10" y="6" width="28" height="36" rx="6" fill="#fff" opacity=".92"/><rect x="15" y="12" width="18" height="6" rx="2" fill="#3b34c9"/><circle cx="18" cy="26" r="2.6" fill="#3b34c9"/><circle cx="24" cy="26" r="2.6" fill="#3b34c9"/><circle cx="30" cy="26" r="2.6" fill="#3b34c9"/><circle cx="18" cy="34" r="2.6" fill="#3b34c9"/><circle cx="24" cy="34" r="2.6" fill="#3b34c9"/><rect x="27.4" y="31.4" width="5.2" height="5.2" rx="2" fill="#3b34c9"/></svg>
+              </span>
+              <span className="chip-name">Rebate Calculator</span>
+              <span className="chip-arrow">›</span>
+            </Link>
             <a
               className="chip-tile reveal"
-              style={{ ["--d" as string]: 2 }}
+              style={{ ["--d" as string]: 3 }}
               href={EDUCATION_URL}
               {...(eduExternal ? { target: "_blank", rel: "noopener" } : {})}
             >
