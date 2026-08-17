@@ -68,13 +68,21 @@ export async function middleware(request: NextRequest) {
   const role = (user.app_metadata as { platform_role?: string } | null)
     ?.platform_role;
 
+  // A token minted before the claim existed (or before a promotion) simply has
+  // no platform_role. Blocking on that would 404 a genuine admin until their
+  // token refreshed — a false negative, and a confusing one. So an ABSENT claim
+  // is inconclusive, not a denial: fall through and let the page decide against
+  // the database (getEntitlements -> notFound()/redirect). Nothing is loosened,
+  // because the claim was never the authority — the server check and RLS are.
+  const claimKnown = role === "affiliate" || role === "ib" || role === "admin";
+
   // Admin is invisible to everyone else: 404, not 403.
-  if (isAdmin && !claimGrants(role, "admin")) {
+  if (isAdmin && claimKnown && !claimGrants(role, "admin")) {
     return NextResponse.rewrite(new URL("/404", request.url));
   }
 
   // CRM is a product they could legitimately be granted: explain, don't 404.
-  if (isCrm && !claimGrants(role, "crm")) {
+  if (isCrm && claimKnown && !claimGrants(role, "crm")) {
     const url = request.nextUrl.clone();
     url.pathname = "/locked";
     url.search = "?product=crm";
