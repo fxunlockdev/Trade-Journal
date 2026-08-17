@@ -29,6 +29,7 @@ export interface HomeUser {
   readonly products: readonly ProductKey[];
   readonly tierLabel: string;
   readonly tierBlurb: string;
+  readonly isAdmin: boolean;
 }
 
 export function Landing({ user = null }: { user?: HomeUser | null }) {
@@ -83,6 +84,9 @@ export function Landing({ user = null }: { user?: HomeUser | null }) {
                 <path d="M12 8.5A5 5 0 1 1 6.5 3 4 4 0 0 0 12 8.5z" fill="currentColor" />
               </svg>
             </button>
+            {signedIn && user.isAdmin && (
+              <Link href="/admin" className="nav-admin">Admin</Link>
+            )}
             {signedIn ? (
               <button className="nav-user" onClick={() => setChooserOpen(true)}>
                 <span className="nav-user-dot" />

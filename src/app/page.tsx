@@ -44,6 +44,7 @@ export default async function HomePage() {
     homeUser = {
       firstName: displayName.split(" ")[0],
       products: (entitlements?.products ?? []) as ProductKey[],
+      isAdmin: entitlements?.platformRole === "admin",
       tierLabel: entitlements ? TIER_LABEL[entitlements.platformRole] : "",
       tierBlurb: entitlements ? TIER_BLURB[entitlements.platformRole] : "",
     };
