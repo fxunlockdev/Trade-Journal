@@ -3,12 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { STARTER_QUESTIONS } from "@/lib/assistant/knowledge";
 import { APP_TARGETS } from "@/lib/assistant/mentions";
+import {
+  FLOWS, computeFlow, nextMissingSlot, seedSlots, isSkip,
+  type FlowId, type Slots, type FlowResult, type SlotDef,
+} from "@/lib/assistant/flows";
+import { AgentResult } from "./AgentResult";
 
 interface Turn {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly action?: { kind: string; href: string; label?: string };
   readonly suggestions?: readonly string[];
+  /** An inline computed answer (risk / rebate / trade draft). */
+  readonly result?: FlowResult;
+}
+
+/** An in-progress conversation with one of the apps. */
+interface FlowState {
+  readonly id: FlowId;
+  readonly slots: Slots;
 }
 
 /**
@@ -31,6 +44,7 @@ export function HeroAssistant({
   const [busy, setBusy] = useState(false);
   const [placeholder, setPlaceholder] = useState("");
   const [highlight, setHighlight] = useState(0);
+  const [flow, setFlow] = useState<FlowState | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -104,11 +118,98 @@ export function HeroAssistant({
     }
   }
 
+  function say(text: string, extra: Partial<Turn> = {}) {
+    setTurns((t) => [...t, { role: "assistant", text, ...extra }]);
+  }
+
+  /** Ask for the next missing slot, or compute if we have everything. */
+  function advance(id: FlowId, slots: Slots) {
+    const def = FLOWS[id];
+    const missing = nextMissingSlot(def, slots);
+
+    if (missing) {
+      setFlow({ id, slots });
+      say(missing.prompt, { suggestions: missing.options ?? [] });
+      return;
+    }
+
+    const out = computeFlow(id, slots);
+    setFlow(null);
+    if ("error" in out) {
+      say(out.error);
+      return;
+    }
+    if (out.kind === "trade") {
+      say("Here's the draft. Nothing is saved yet.", {
+        result: out,
+        action: { kind: "open", href: `/ai-chat?q=${encodeURIComponent(tradeSentence(slots))}`, label: "Open in Trade Journal to save" },
+      });
+      return;
+    }
+    say(
+      out.kind === "risk"
+        ? "Here's your position size."
+        : "Here's what that volume is worth.",
+      { result: out, suggestions: ["Start over"] },
+    );
+  }
+
+  function startFlow(id: FlowId, rest: string) {
+    const def = FLOWS[id];
+    const seeded = seedSlots(def, rest);
+    say(def.intro);
+    advance(id, seeded);
+  }
+
   async function ask(question: string) {
     const q = question.trim();
     if (!q || busy) return;
     setTurns((t) => [...t, { role: "user", text: q }]);
     setValue("");
+
+    if (/^start over$/i.test(q)) {
+      setFlow(null);
+      say("Fresh start. Ask me anything, or type @ to run an app.");
+      return;
+    }
+
+    // 1. Mid-conversation: treat the message as the answer to the pending slot.
+    if (flow) {
+      const def = FLOWS[flow.id];
+      const slot = nextMissingSlot(def, flow.slots) as SlotDef | null;
+      if (slot) {
+        if (slot.optional && isSkip(q)) {
+          advance(flow.id, { ...flow.slots, [slot.key]: "skip" });
+          return;
+        }
+        const problem = slot.validate?.(q, flow.slots);
+        if (problem) {
+          say(problem, { suggestions: slot.options ?? [] });
+          return;
+        }
+        advance(flow.id, { ...flow.slots, [slot.key]: q });
+        return;
+      }
+    }
+
+    // 2. An @mention that maps to an operable flow runs it here rather than
+    //    sending the user off to another page.
+    const m = q.match(/^@([a-z ]+?)(?:\s+(.*))?$/i);
+    if (m) {
+      const alias = m[1].trim().toLowerCase();
+      const rest = m[2] ?? "";
+      const target = APP_TARGETS.find((t) => t.aliases.some((a) => a === alias || alias.startsWith(a)));
+      if (target) {
+        const locked = signedIn && target.product !== null && !products.includes(target.product);
+        if (target.id === "risk" && !locked) { startFlow("risk", rest); return; }
+        if (target.id === "rebate") { startFlow("rebate", rest); return; }
+        if (target.id === "journal" && !locked && /\b(add|log|record|new)\b/i.test(rest)) {
+          startFlow("trade", rest); return;
+        }
+      }
+    }
+
+    // 3. Anything else goes to the server (knowledge base, cache, then model).
     setBusy(true);
     try {
       const res = await fetch("/api/assistant", {
@@ -121,14 +222,12 @@ export function HeroAssistant({
         action?: { kind: string; href: string; label?: string };
         suggestions?: string[];
       };
-      setTurns((t) => [...t, {
-        role: "assistant",
-        text: data.answer ?? data.error ?? "Something went wrong.",
+      say(data.answer ?? data.error ?? "Something went wrong.", {
         action: data.action,
         suggestions: data.suggestions,
-      }]);
+      });
     } catch {
-      setTurns((t) => [...t, { role: "assistant", text: "I couldn't reach the server. Try again." }]);
+      say("I couldn't reach the server. Try again.");
     } finally {
       setBusy(false);
       inputRef.current?.focus();
@@ -146,6 +245,7 @@ export function HeroAssistant({
               <div key={i} className={`agent-turn ${t.role}`}>
                 <div className="agent-bubble">
                   <Rendered text={t.text} />
+                  {t.result && <AgentResult result={t.result} />}
                   {t.action && (
                     <a className="agent-action" href={t.action.href}>
                       {t.action.label ?? (t.action.kind === "signin" ? "Sign in" : "Open")} <span className="chev">›</span>
@@ -242,6 +342,17 @@ export function HeroAssistant({
       </p>
     </div>
   );
+}
+
+/** Rebuild a plain-English trade so the journal's own parser can log it. */
+function tradeSentence(s: Slots): string {
+  const bits = [
+    `${s.direction} ${s.lots} lots ${s.instrument}`,
+    `at ${s.entry}`,
+    s.stop && !isSkip(s.stop) ? `stop ${s.stop}` : "",
+    s.target && !isSkip(s.target) ? `target ${s.target}` : "",
+  ];
+  return bits.filter(Boolean).join(" ");
 }
 
 /** Minimal **bold** rendering — the answers use it and nothing else. */
