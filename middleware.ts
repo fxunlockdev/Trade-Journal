@@ -40,6 +40,18 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // Already signed in? The sign-in page has nothing to offer — send them to
+  // FXU Home, where the nav greets them and the app chooser lives. (Honours an
+  // explicit ?next so an invite/deep link still reaches its destination.)
+  if (user && pathname === "/login") {
+    const url = request.nextUrl.clone();
+    const next = request.nextUrl.searchParams.get("next");
+    url.pathname = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   const isCrm = pathname === "/crm" || pathname.startsWith("/crm/");
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
 

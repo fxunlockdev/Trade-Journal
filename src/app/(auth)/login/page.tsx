@@ -75,7 +75,7 @@ function LoginContent() {
   // Post-auth destination — guarded to a relative in-app path so a crafted
   // ?next=//evil.com can't bounce the user off-site. Middleware sets ?next
   // when it redirects an unauthenticated user here from /crm or /admin.
-  const safeNext = safeInternalPath(searchParams.get("next"), "/apps");
+  const safeNext = safeInternalPath(searchParams.get("next"), "/");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

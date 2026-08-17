@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import { EDUCATION_URL, isExternalEducation } from "@/lib/education-url";
 import { useAppleMotion } from "./useAppleMotion";
+import { AppChooser } from "./AppChooser";
+import type { ProductKey } from "@/lib/auth/entitlements";
 import "./fxu-home.css";
 
 /**
@@ -22,15 +24,32 @@ import "./fxu-home.css";
  *  - Dark mode is driven by next-themes, not localStorage.
  *  - Live Education points at EDUCATION_URL (external when configured).
  */
-export function Landing({ signedIn = false }: { signedIn?: boolean }) {
+export interface HomeUser {
+  readonly firstName: string;
+  readonly products: readonly ProductKey[];
+  readonly tierLabel: string;
+  readonly tierBlurb: string;
+}
+
+export function Landing({ user = null }: { user?: HomeUser | null }) {
   const { resolvedTheme, setTheme } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
   useAppleMotion(rootRef);
 
+  const [chooserOpen, setChooserOpen] = useState(false);
+
   const isDark = resolvedTheme === "dark";
   const eduExternal = isExternalEducation();
-  // Signed-in visitors go straight to their app hub; visitors sign in first.
-  const appHref = signedIn ? "/apps" : "/login";
+  const signedIn = user !== null;
+
+  // Signed in: every app entry point opens the chooser (you stay on FXU Home
+  // and pick an app). Signed out: it takes you to the single sign-in.
+  const openApps = (e: React.MouseEvent) => {
+    if (!signedIn) return; // let the <Link href="/login"> do its job
+    e.preventDefault();
+    setChooserOpen(true);
+  };
+  const appHref = signedIn ? "#" : "/login";
 
   return (
     <div className="fxu-home" ref={rootRef}>
@@ -64,7 +83,14 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
                 <path d="M12 8.5A5 5 0 1 1 6.5 3 4 4 0 0 0 12 8.5z" fill="currentColor" />
               </svg>
             </button>
-            <Link href={appHref} className="nav-signin">{signedIn ? "Your apps" : "Sign in"}</Link>
+            {signedIn ? (
+              <button className="nav-user" onClick={() => setChooserOpen(true)}>
+                <span className="nav-user-dot" />
+                Hi {user.firstName}
+              </button>
+            ) : (
+              <Link href="/login" className="nav-signin">Sign in</Link>
+            )}
           </div>
         </div>
       </header>
@@ -87,8 +113,8 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
               Two apps and a community, built for the way you actually work.
             </p>
             <div className="hero-ctas hero-el" style={{ ["--d" as string]: 3 }}>
-              <a className="btn-primary" href="#apps">Explore the apps</a>
-              <Link className="btn-ghost" href={appHref}>{signedIn ? "Go to your apps" : "Sign in"} <span className="chev">›</span></Link>
+              <a className="btn-primary" href="#apps" onClick={openApps}>Explore the apps</a>
+              <Link className="btn-ghost" href={appHref} onClick={openApps}>{signedIn ? "Open an app" : "Sign in"} <span className="chev">›</span></Link>
             </div>
 
             {/* FX ticker marquee */}
@@ -135,14 +161,14 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
 
           {/* Quick switcher tiles */}
           <div className="app-row">
-            <Link className="chip-tile reveal" style={{ ["--d" as string]: 0 }} href={appHref}>
+            <Link className="chip-tile reveal" style={{ ["--d" as string]: 0 }} href={appHref} onClick={openApps}>
               <span className="chip-icon journal" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><rect x="9" y="14" width="4" height="20" rx="1" fill="#fff" opacity=".55"/><rect x="22" y="20" width="4" height="14" rx="1" fill="#fff"/><rect x="35" y="10" width="4" height="24" rx="1" fill="#fff" opacity=".85"/></svg>
               </span>
               <span className="chip-name">Trade Journal</span>
               <span className="chip-arrow">›</span>
             </Link>
-            <Link className="chip-tile reveal" style={{ ["--d" as string]: 1 }} href={appHref}>
+            <Link className="chip-tile reveal" style={{ ["--d" as string]: 1 }} href={appHref} onClick={openApps}>
               <span className="chip-icon crm" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><circle cx="14" cy="17" r="5" fill="#fff"/><circle cx="34" cy="17" r="5" fill="#fff" opacity=".75"/><path d="M5 36c0-5 4-9 9-9s9 4 9 9v3H5v-3z" fill="#fff"/><path d="M25 36c0-5 4-9 9-9s9 4 9 9v3H25v-3z" fill="#fff" opacity=".75"/></svg>
               </span>
@@ -177,7 +203,7 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
                 <li>Filters for range, direction and asset, forex or crypto</li>
                 <li>AI insights, signals and a built-in risk calc</li>
               </ul>
-              <Link className="text-link" href={signedIn ? "/dashboard" : "/login"}>Open Trade Journal <span className="chev">›</span></Link>
+              <Link className="text-link" href={signedIn ? "/dashboard" : "/login"} prefetch={false}>Open Trade Journal <span className="chev">›</span></Link>
             </div>
             <div className="feature-shot reveal">
               <div className="device tilt" data-tilt>
@@ -201,7 +227,7 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
                 <li>Commission ledger: pending, paid and cancelled</li>
                 <li>See which of your affiliates are active in the app</li>
               </ul>
-              <Link className="text-link" href={signedIn ? "/crm" : "/login"}>Open Affiliate CRM <span className="chev">›</span></Link>
+              <Link className="text-link" href={signedIn ? "/crm" : "/login"} prefetch={false}>Open Affiliate CRM <span className="chev">›</span></Link>
             </div>
             <div className="feature-shot reveal">
               <div className="device tilt" data-tilt>
@@ -255,7 +281,7 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
               </div>
             </div>
             <div className="dark-cta reveal">
-              <Link className="btn-light" href={appHref}>Become a partner</Link>
+              <Link className="btn-light" href={appHref} onClick={openApps}>Become a partner</Link>
               <span className="dark-cta-note">Educators · Content creators · Introducing brokers</span>
             </div>
           </div>
@@ -302,12 +328,23 @@ export function Landing({ signedIn = false }: { signedIn?: boolean }) {
             <div className="kicker">Get started</div>
             <h2 data-split>Your trading, in one place.</h2>
             <p>One account for the journal and your partnerships. Sign in and pick up where you left off.</p>
-            <Link className="btn-primary lg" href={appHref}>{signedIn ? "Go to your apps" : "Sign in to FXU"}</Link>
+            <Link className="btn-primary lg" href={appHref} onClick={openApps}>{signedIn ? "Open an app" : "Sign in to FXU"}</Link>
           </div>
         </section>
       </main>
 
       {/* ══ Footer ══ */}
+      {signedIn && (
+        <AppChooser
+          open={chooserOpen}
+          onClose={() => setChooserOpen(false)}
+          firstName={user.firstName}
+          tierLabel={user.tierLabel}
+          tierBlurb={user.tierBlurb}
+          products={user.products}
+        />
+      )}
+
       <div className="footer-outer">
         <footer className="footer">
           <span>Copyright © {new Date().getFullYear()} FXU. All rights reserved.</span>

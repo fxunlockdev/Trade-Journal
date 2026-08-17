@@ -617,3 +617,55 @@ body.modal-open { overflow: hidden; }
   .hero-shot { margin-top: 44px; }
   .orb { filter: blur(60px); }
 }
+
+/* ── Signed-in: name chip + app chooser ─────────────────── */
+.nav-user {
+  display: inline-flex; align-items: center; gap: 8px;
+  cursor: pointer; border: none;
+  background: var(--text); color: var(--bg);
+  font-size: 12px; font-weight: 500;
+  padding: 7px 15px; border-radius: 999px;
+  transition: transform .25s var(--ease), background .4s, color .4s;
+}
+.nav-user:hover { transform: scale(1.05); }
+.nav-user:active { transform: scale(.96); }
+.nav-user-dot {
+  width: 6px; height: 6px; border-radius: 99px; background: #30d158;
+}
+
+.chooser-list { display: grid; gap: 10px; margin: 4px 0 18px; }
+.chooser-item {
+  display: flex; align-items: center; gap: 13px;
+  text-decoration: none; color: inherit;
+  background: var(--surface-2);
+  border: .5px solid var(--border);
+  border-radius: 14px; padding: 13px 14px;
+  transition: transform .25s var(--ease), border-color .25s, background .25s;
+}
+.chooser-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(10, 132, 255, .35);
+  background: var(--surface);
+}
+.chooser-item:hover .chip-arrow { transform: translateX(3px); }
+.chooser-item.locked { opacity: .55; cursor: default; }
+.chooser-item.locked:hover { transform: none; border-color: var(--border); background: var(--surface-2); }
+.chooser-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.chooser-name {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14.5px; font-weight: 600; letter-spacing: -.01em;
+}
+.chooser-lock {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-2); background: var(--bg);
+  border: .5px solid var(--border); border-radius: 999px; padding: 1px 7px;
+}
+.chooser-desc { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.chooser-signout {
+  width: 100%; cursor: pointer;
+  background: none; border: .5px solid var(--border-2);
+  color: var(--text-2); font-size: 13px;
+  padding: 10px; border-radius: 999px;
+  transition: color .2s, border-color .2s;
+}
+.chooser-signout:hover { color: var(--text); border-color: var(--text-2); }

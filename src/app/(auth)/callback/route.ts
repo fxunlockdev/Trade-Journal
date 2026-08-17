@@ -8,8 +8,9 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   // Shared, hardened open-redirect guard (also strips control characters that
   // URL parsing would later normalise into a protocol-relative URL). Defaults
-  // to the /apps hub so SSO lands on "pick your app", not straight in a product.
-  const next = safeInternalPath(searchParams.get("next"), "/apps");
+  // to FXU Home: you sign in to the PLATFORM and pick an app from there, rather
+  // than being dropped inside one. A ?next set by middleware still wins.
+  const next = safeInternalPath(searchParams.get("next"), "/");
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?error=no_code", origin));

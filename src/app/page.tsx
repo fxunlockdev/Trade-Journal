@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { Landing } from "./_home/Landing";
+import { getEntitlements, type ProductKey } from "@/lib/auth/entitlements";
+import { TIER_LABEL, TIER_BLURB } from "@/lib/copy/tiers";
+import { Landing, type HomeUser } from "./_home/Landing";
 
 /**
- * The FXU Home landing — the public front door of the platform.
+ * The FXU Home landing — the public front door AND the signed-in home.
  *
- * Signed-out visitors get the marketing page. Signed-in visitors get the same
- * page with CTAs pointing at the /apps hub instead of /login, so returning
- * users are one click from their apps rather than being asked to sign in again.
+ * Signing in lands you back here, not inside a product: FXU Home is the
+ * platform, the apps live behind it. When signed in the nav greets you by name
+ * and "Explore the apps" opens the app chooser with your entitlements.
  */
 export const metadata: Metadata = {
   title: "FXU · The toolkit for serious traders",
@@ -15,7 +17,7 @@ export const metadata: Metadata = {
     "Journal every trade and grow every partnership. Trade Journal and Affiliate CRM, under one account.",
 };
 
-// Reads the session, so it must never be statically cached.
+// Reads the session — must never be statically cached.
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
@@ -24,5 +26,28 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  return <Landing signedIn={user !== null} />;
+  let homeUser: HomeUser | null = null;
+
+  if (user) {
+    const [{ data: profile }, entitlements] = await Promise.all([
+      supabase
+        .from("users")
+        .select("full_name")
+        .eq("id", user.id)
+        .single<{ full_name: string | null }>(),
+      getEntitlements(),
+    ]);
+
+    const displayName =
+      profile?.full_name?.trim() || user.email?.split("@")[0] || "there";
+
+    homeUser = {
+      firstName: displayName.split(" ")[0],
+      products: (entitlements?.products ?? []) as ProductKey[],
+      tierLabel: entitlements ? TIER_LABEL[entitlements.platformRole] : "",
+      tierBlurb: entitlements ? TIER_BLURB[entitlements.platformRole] : "",
+    };
+  }
+
+  return <Landing user={homeUser} />;
 }
