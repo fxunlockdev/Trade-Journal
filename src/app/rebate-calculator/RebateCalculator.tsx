@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { createClient } from "@/lib/supabase/client";
 import {
-  ASSET_RATES, estimateRebate, formatUsd, rateFor, type AssetClass,
+  ASSET_RATES, RATES_ARE_ILLUSTRATIVE, estimateRebate, formatUsd, rateFor, type AssetClass,
 } from "@/lib/rebate/rates";
 import "../_home/fxu-home.css";
 
@@ -39,18 +38,19 @@ export function RebateCalculator() {
     setError(null);
     setSaving(true);
     try {
-      const supabase = createClient();
-      const { error: rpcError } = await supabase.rpc("capture_rebate_lead", {
-        p_name: name,
-        p_email: email,
-        p_phone: phone,
-        p_asset_class: asset,
-        p_monthly_lots: lots,
-        p_estimated_rebate: Math.round(est.monthlyMid),
-        p_meta: { source: "rebate-calculator" },
+      const res = await fetch("/api/rebate/lead", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name, email, phone,
+          assetClass: asset,
+          monthlyLots: lots,
+          estimatedRebate: Math.round(est.monthlyMid),
+        }),
       });
-      if (rpcError) {
-        setError(rpcError.message.replace(/^.*?:\s*/, ""));
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Could not save your details.");
         return;
       }
       setUnlocked(true);
@@ -183,8 +183,9 @@ export function RebateCalculator() {
           </div>
 
           <p className="rc-disclaimer">
-            Estimates only, for illustration — not an offer or a guarantee of earnings. Actual rebates
-            depend on the broker, instrument, account type and your agreement with FXU.
+            {RATES_ARE_ILLUSTRATIVE
+              ? "Indicative figures based on typical industry rates — not an offer or a guarantee of earnings. Your actual rebate is confirmed with FXU and depends on the broker, instrument, account type and your agreement."
+              : "Estimates only — not an offer or a guarantee of earnings. Actual rebates depend on the broker, instrument, account type and your agreement with FXU."}
           </p>
         </div>
       </main>

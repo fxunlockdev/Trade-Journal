@@ -5,6 +5,7 @@ import { getEntitlements } from "@/lib/auth/entitlements";
 import { matchKnowledge } from "@/lib/assistant/knowledge";
 import { parseMention } from "@/lib/assistant/mentions";
 import { getOpenAIClient, OPENAI_MODEL } from "@/lib/openai/client";
+import { allowRequest, clientIp, maybePrune, LIMITS } from "@/lib/rate-limit";
 
 /**
  * POST /api/assistant  { message }
@@ -121,6 +122,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         action: { kind: "signin", href: "/login" },
       });
     }
+
+    // Only the model path is metered — the KB and cache above are free, so a
+    // curious visitor never hits this. Keyed to the account when we have one so
+    // shared office IPs don't throttle each other.
+    if (!(await allowRequest(supabase, LIMITS.assistant, user.id || clientIp(request)))) {
+      return NextResponse.json(
+        { error: "You're asking faster than I can think — give me a minute." },
+        { status: 429 },
+      );
+    }
+    void maybePrune(supabase);
 
     const openai = getOpenAIClient();
     const completion = await openai.chat.completions.create({

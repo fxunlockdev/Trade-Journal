@@ -1,11 +1,14 @@
 /**
  * Rebate rates used by the Rebate Calculator.
  *
- * ⚠️ THESE ARE ILLUSTRATIVE PLACEHOLDERS, NOT FXU'S COMMERCIAL TERMS.
- * They are industry-typical ranges so the tool is usable today; replace them
- * with the real per-lot rebates before promoting the calculator to partners.
- * This is the ONLY file that needs editing — the UI, the estimate and the
- * captured lead all read from here.
+ * ⚠️ The defaults below are ILLUSTRATIVE, industry-typical ranges — NOT FXU's
+ * commercial terms. Set the real ones without a code change via the env var
+ * NEXT_PUBLIC_REBATE_RATES (Vercel → Settings → Environment Variables):
+ *
+ *   NEXT_PUBLIC_REBATE_RATES=gold:6-9,forex:4-7,crypto:3-6,mixed:4-8
+ *
+ * Anything omitted keeps its default. Malformed entries are ignored rather than
+ * crashing the page — a broken env var must not take a public tool down.
  *
  * Rates are USD per standard lot (1.0 lot) of round-turn volume.
  */
@@ -22,7 +25,7 @@ export interface AssetRate {
   readonly note: string;
 }
 
-export const ASSET_RATES: readonly AssetRate[] = [
+const DEFAULT_RATES: readonly AssetRate[] = [
   {
     key: "gold",
     label: "Gold (XAUUSD)",
@@ -52,6 +55,35 @@ export const ASSET_RATES: readonly AssetRate[] = [
     note: "A blended rate across a typical multi-asset book.",
   },
 ];
+
+/**
+ * Parse "gold:6-9,forex:4-7" into per-asset overrides. Tolerant by design:
+ * a bad pair is skipped, never thrown.
+ */
+function parseOverrides(raw: string | undefined): ReadonlyMap<string, { min: number; max: number }> {
+  const out = new Map<string, { min: number; max: number }>();
+  if (!raw) return out;
+  for (const pair of raw.split(",")) {
+    const [key, range] = pair.split(":").map((x) => x?.trim().toLowerCase());
+    if (!key || !range) continue;
+    const [minRaw, maxRaw] = range.split("-");
+    const min = Number(minRaw);
+    const max = Number(maxRaw ?? minRaw);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min) continue;
+    out.set(key, { min, max });
+  }
+  return out;
+}
+
+const OVERRIDES = parseOverrides(process.env.NEXT_PUBLIC_REBATE_RATES);
+
+export const ASSET_RATES: readonly AssetRate[] = DEFAULT_RATES.map((r) => {
+  const o = OVERRIDES.get(r.key);
+  return o ? { ...r, min: o.min, max: o.max } : r;
+});
+
+/** True while the illustrative defaults are still in play — the UI says so. */
+export const RATES_ARE_ILLUSTRATIVE = OVERRIDES.size === 0;
 
 export function rateFor(asset: AssetClass): AssetRate {
   return ASSET_RATES.find((r) => r.key === asset) ?? ASSET_RATES[3];
