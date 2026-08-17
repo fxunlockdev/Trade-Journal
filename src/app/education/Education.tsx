@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
+import { useAppleMotion } from "../_home/useAppleMotion";
 import "../_home/fxu-home.css";
 
 /**
@@ -13,55 +14,7 @@ export function Education() {
   const { resolvedTheme, setTheme } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    root.querySelectorAll<HTMLElement>("[data-split]").forEach((el) => {
-      if (el.dataset.split === "done") return;
-      const nodes = Array.from(el.childNodes);
-      let wi = 0;
-      el.textContent = "";
-      for (const node of nodes) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          for (const part of (node.textContent ?? "").split(/(\s+)/)) {
-            if (!part) continue;
-            if (/^\s+$/.test(part)) {
-              el.appendChild(document.createTextNode(part));
-              continue;
-            }
-            const s = document.createElement("span");
-            s.className = "w";
-            s.style.setProperty("--wi", String(wi++));
-            s.textContent = part;
-            el.appendChild(s);
-          }
-        } else {
-          el.appendChild(node);
-        }
-      }
-      el.dataset.split = "done";
-    });
-
-    const revealEls = root.querySelectorAll<HTMLElement>(".reveal");
-    if ("IntersectionObserver" in window && !reduced) {
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              e.target.classList.add("in");
-              io.unobserve(e.target);
-            }
-          }
-        },
-        { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
-      );
-      revealEls.forEach((el) => io.observe(el));
-      return () => io.disconnect();
-    }
-    revealEls.forEach((el) => el.classList.add("in"));
-  }, []);
+  useAppleMotion(rootRef);
 
   const isDark = resolvedTheme === "dark";
 

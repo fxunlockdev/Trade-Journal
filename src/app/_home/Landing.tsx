@@ -1,112 +1,40 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useTheme } from "next-themes";
+import { EDUCATION_URL, isExternalEducation } from "@/lib/education-url";
+import { useAppleMotion } from "./useAppleMotion";
 import "./fxu-home.css";
 
 /**
  * FXU Home landing — the public face of the platform.
  *
- * Ported from the standalone FXNUHOME marketing site. Changes from the original:
- *  - The Risk Calculator *product* is removed (tile, feature block, asset, links)
- *    per the platform scope. The Trade Journal's internal calculators stay.
- *  - CTAs point at real in-app auth (/login, /login?mode=signup) instead of the
- *    external Vercel apps and the old GitHub-issues waitlist.
- *  - Dark mode is driven by next-themes (the app's provider), not localStorage.
+ * A faithful port of the standalone FXNUHOME marketing site: same structure,
+ * copy, device screenshots and Apple-style scroll choreography (see
+ * useAppleMotion). The only product change is that the Risk Calculator is gone
+ * — everything else matches the original.
+ *
+ * Wiring differences from the static site (behaviour, not design):
+ *  - CTAs point at the real in-app SSO (/login) instead of external Vercel apps
+ *    and the old GitHub-issues waitlist.
+ *  - Dark mode is driven by next-themes, not localStorage.
+ *  - Live Education points at EDUCATION_URL (external when configured).
  */
-export function Landing() {
+export function Landing({ signedIn = false }: { signedIn?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-
-    // Split [data-split] headings into per-word spans for the stagger effect.
-    root.querySelectorAll<HTMLElement>("[data-split]").forEach((el) => {
-      if (el.dataset.split === "done") return;
-      const nodes = Array.from(el.childNodes);
-      let wi = 0;
-      el.textContent = "";
-      for (const node of nodes) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          for (const part of (node.textContent ?? "").split(/(\s+)/)) {
-            if (!part) continue;
-            if (/^\s+$/.test(part)) {
-              el.appendChild(document.createTextNode(part));
-              continue;
-            }
-            const s = document.createElement("span");
-            s.className = "w";
-            s.style.setProperty("--wi", String(wi++));
-            s.textContent = part;
-            el.appendChild(s);
-          }
-        } else {
-          el.appendChild(node);
-        }
-      }
-      el.dataset.split = "done";
-    });
-
-    // Reveal-on-scroll.
-    const revealEls = root.querySelectorAll<HTMLElement>(".reveal");
-    if ("IntersectionObserver" in window && !reduced) {
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              e.target.classList.add("in");
-              io.unobserve(e.target);
-            }
-          }
-        },
-        { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
-      );
-      revealEls.forEach((el) => io.observe(el));
-
-      // Spotlight-follow on .spot cards.
-      const spots = root.querySelectorAll<HTMLElement>(".spot");
-      const onMove = (e: PointerEvent) => {
-        const card = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        (e.currentTarget as HTMLElement).style.setProperty(
-          "--mx",
-          `${e.clientX - card.left}px`,
-        );
-        (e.currentTarget as HTMLElement).style.setProperty(
-          "--my",
-          `${e.clientY - card.top}px`,
-        );
-      };
-      spots.forEach((c) => c.addEventListener("pointermove", onMove));
-
-      // Nav border on scroll.
-      const nav = root.querySelector<HTMLElement>(".nav");
-      const onScroll = () => nav?.classList.toggle("scrolled", window.scrollY > 8);
-      window.addEventListener("scroll", onScroll, { passive: true });
-      onScroll();
-
-      return () => {
-        io.disconnect();
-        spots.forEach((c) => c.removeEventListener("pointermove", onMove));
-        window.removeEventListener("scroll", onScroll);
-      };
-    }
-
-    revealEls.forEach((el) => el.classList.add("in"));
-  }, []);
+  useAppleMotion(rootRef);
 
   const isDark = resolvedTheme === "dark";
+  const eduExternal = isExternalEducation();
+  // Signed-in visitors go straight to their app hub; visitors sign in first.
+  const appHref = signedIn ? "/apps" : "/login";
 
   return (
     <div className="fxu-home" ref={rootRef}>
-      {/* Nav */}
+      {/* ══ Nav ══ */}
       <header className="nav" id="nav">
         <div className="nav-inner">
           <a className="nav-brand" href="#top" aria-label="FXU home">
@@ -119,7 +47,12 @@ export function Landing() {
           <nav className="nav-links" aria-label="Primary">
             <a href="#apps">Apps</a>
             <a href="#affiliates">For Affiliates</a>
-            <Link href="/education">Live Education</Link>
+            <a
+              href={EDUCATION_URL}
+              {...(eduExternal ? { target: "_blank", rel: "noopener" } : {})}
+            >
+              Live Education
+            </a>
           </nav>
           <div className="nav-right">
             <button
@@ -131,45 +64,34 @@ export function Landing() {
                 <path d="M12 8.5A5 5 0 1 1 6.5 3 4 4 0 0 0 12 8.5z" fill="currentColor" />
               </svg>
             </button>
-            <Link href="/login" className="nav-signin">
-              Sign in
-            </Link>
+            <Link href={appHref} className="nav-signin">{signedIn ? "Your apps" : "Sign in"}</Link>
           </div>
         </div>
       </header>
 
       <main id="top">
-        {/* Hero */}
+        {/* ══ Hero ══ */}
         <section className="hero">
           <div className="orbs" aria-hidden="true">
-            <span className="orb o1" />
-            <span className="orb o2" />
-            <span className="orb o3" />
+            <span className="orb o1" /><span className="orb o2" /><span className="orb o3" />
           </div>
           <div className="hero-inner">
             <div className="pill hero-el" style={{ ["--d" as string]: 0 }}>
               <span className="pill-dot" /> The FXU app suite
             </div>
             <h1 className="hero-el" style={{ ["--d" as string]: 1 }}>
-              The toolkit for
-              <br />
-              <span className="grad-text">serious traders.</span>
+              The toolkit for<br /><span className="grad-text">serious traders.</span>
             </h1>
             <p className="hero-sub hero-el" style={{ ["--d" as string]: 2 }}>
-              Journal every trade. Size every risk. Grow every partnership.
-              <br className="bp" />
-              One account, the tools and a community, built for the way you
-              actually work.
+              Journal every trade. Track every partner. Grow every partnership.<br className="bp" />
+              Two apps and a community, built for the way you actually work.
             </p>
             <div className="hero-ctas hero-el" style={{ ["--d" as string]: 3 }}>
-              <a className="btn-primary" href="#apps">
-                Explore the apps
-              </a>
-              <Link className="btn-ghost" href="/login?mode=signup">
-                Create your account <span className="chev">›</span>
-              </Link>
+              <a className="btn-primary" href="#apps">Explore the apps</a>
+              <Link className="btn-ghost" href={appHref}>{signedIn ? "Go to your apps" : "Sign in"} <span className="chev">›</span></Link>
             </div>
 
+            {/* FX ticker marquee */}
             <div className="ticker hero-el" style={{ ["--d" as string]: 4 }} aria-hidden="true">
               <div className="ticker-track">
                 {TICKER.concat(TICKER).map((t, i) => (
@@ -182,7 +104,7 @@ export function Landing() {
           </div>
 
           <div className="hero-shot hero-el" style={{ ["--d" as string]: 5 }}>
-            <div className="device">
+            <div className="device tilt" data-tilt data-hero>
               <div className="device-bar">
                 <span /><span /><span />
                 <div className="device-url">trade-journal.fxu</div>
@@ -199,88 +121,90 @@ export function Landing() {
           </div>
         </section>
 
-        {/* Apps */}
+        {/* ══ Apps intro ══ */}
         <section className="section" id="apps">
           <div className="section-head reveal">
             <div className="kicker">The apps</div>
             <h2 data-split>Two apps. One workflow.</h2>
             <p>
-              Everything talks the same language. Sign in once and move between
-              your journal and your partnerships without missing a beat. And when
-              you&apos;re ready to level up, join a live session.
+              Everything talks the same language. Sign in once and move between journal and
+              partnerships without missing a beat. And when you&apos;re ready to level up, join a
+              live session.
             </p>
           </div>
 
+          {/* Quick switcher tiles */}
           <div className="app-row">
-            <Link className="chip-tile reveal" style={{ ["--d" as string]: 0 }} href="/login">
+            <Link className="chip-tile reveal" style={{ ["--d" as string]: 0 }} href={appHref}>
               <span className="chip-icon journal" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><rect x="9" y="14" width="4" height="20" rx="1" fill="#fff" opacity=".55"/><rect x="22" y="20" width="4" height="14" rx="1" fill="#fff"/><rect x="35" y="10" width="4" height="24" rx="1" fill="#fff" opacity=".85"/></svg>
               </span>
               <span className="chip-name">Trade Journal</span>
               <span className="chip-arrow">›</span>
             </Link>
-            <Link className="chip-tile reveal" style={{ ["--d" as string]: 1 }} href="/login">
+            <Link className="chip-tile reveal" style={{ ["--d" as string]: 1 }} href={appHref}>
               <span className="chip-icon crm" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><circle cx="14" cy="17" r="5" fill="#fff"/><circle cx="34" cy="17" r="5" fill="#fff" opacity=".75"/><path d="M5 36c0-5 4-9 9-9s9 4 9 9v3H5v-3z" fill="#fff"/><path d="M25 36c0-5 4-9 9-9s9 4 9 9v3H25v-3z" fill="#fff" opacity=".75"/></svg>
               </span>
               <span className="chip-name">Affiliate CRM</span>
               <span className="chip-arrow">›</span>
             </Link>
-            <Link className="chip-tile reveal" style={{ ["--d" as string]: 2 }} href="/education">
+            <a
+              className="chip-tile reveal"
+              style={{ ["--d" as string]: 2 }}
+              href={EDUCATION_URL}
+              {...(eduExternal ? { target: "_blank", rel: "noopener" } : {})}
+            >
               <span className="chip-icon edu" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><path d="M24 8L4 18l20 10 20-10L24 8z" fill="#fff"/><path d="M12 23v9c0 3.3 5.4 6 12 6s12-2.7 12-6v-9" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" opacity=".75"/></svg>
               </span>
               <span className="chip-name">Live Education</span>
               <span className="chip-arrow">›</span>
-            </Link>
+            </a>
           </div>
 
-          {/* Trade Journal */}
+          {/* ── Trade Journal feature ── */}
           <article className="feature" data-accent="ink">
             <div className="feature-copy reveal">
               <div className="kicker">Trade Journal</div>
               <h3 data-split>Every trade, examined.</h3>
               <p>
-                Log positions, tag setups and let the patterns surface. Your
-                equity curve, win rate and drawdown are always one glance away.
+                Log positions, tag setups and let the patterns surface. Your equity curve, win
+                rate and drawdown are always one glance away.
               </p>
               <ul className="feature-list">
                 <li>P&amp;L, win rate, profit factor &amp; max drawdown</li>
                 <li>Filters for range, direction and asset, forex or crypto</li>
                 <li>AI insights, signals and a built-in risk calc</li>
               </ul>
-              <Link className="text-link" href="/login">
-                Open Trade Journal <span className="chev">›</span>
-              </Link>
+              <Link className="text-link" href={signedIn ? "/dashboard" : "/login"}>Open Trade Journal <span className="chev">›</span></Link>
             </div>
             <div className="feature-shot reveal">
-              <div className="device">
+              <div className="device tilt" data-tilt>
                 <div className="device-bar"><span /><span /><span /><div className="device-url">trade-journal.fxu</div></div>
                 <Image src="/trade-journal.png" alt="Trade Journal dashboard" width={2454} height={1662} loading="lazy" />
               </div>
             </div>
           </article>
 
-          {/* Affiliate CRM */}
+          {/* ── Affiliate CRM feature ── */}
           <article className="feature flip" data-accent="blue">
             <div className="feature-copy reveal">
               <div className="kicker crm-k">Affiliate CRM</div>
               <h3 data-split>Partnerships, under control.</h3>
               <p>
-                Built for introducing brokers. Track every affiliate from lead to
-                active, log commissions monthly, and see who is actually trading.
+                Built for introducing brokers. Track every affiliate from lead to active, log
+                commissions monthly, and see who is actually trading.
               </p>
               <ul className="feature-list">
                 <li>Affiliates with status, terms &amp; joining dates</li>
                 <li>Commission ledger: pending, paid and cancelled</li>
                 <li>See which of your affiliates are active in the app</li>
               </ul>
-              <Link className="text-link" href="/login">
-                Open Affiliate CRM <span className="chev">›</span>
-              </Link>
+              <Link className="text-link" href={signedIn ? "/crm" : "/login"}>Open Affiliate CRM <span className="chev">›</span></Link>
             </div>
             <div className="feature-shot reveal">
-              <div className="device">
+              <div className="device tilt" data-tilt>
                 <div className="device-bar"><span /><span /><span /><div className="device-url">affiliate-crm.fxu</div></div>
                 <Image src="/affiliate-crm.png" alt="Affiliate CRM dashboard" width={2940} height={1662} loading="lazy" />
               </div>
@@ -288,16 +212,16 @@ export function Landing() {
           </article>
         </section>
 
-        {/* Affiliates dark band */}
+        {/* ══ For affiliates (dark band) ══ */}
         <section className="dark-band" id="affiliates">
           <div className="dark-inner">
             <div className="section-head light reveal">
               <div className="kicker">For affiliates &amp; IBs</div>
               <h2 data-split>You bring the community. We bring everything else.</h2>
               <p>
-                We sit in the middle of the FX ecosystem, matching educators,
-                creators and introducing brokers with the right regulated
-                brokers, then backing them with software and support.
+                We sit in the middle of the FX ecosystem, matching educators, creators and
+                introducing brokers with the right regulated brokers, then backing them with
+                software and support.
               </p>
             </div>
             <div className="bento">
@@ -331,20 +255,20 @@ export function Landing() {
               </div>
             </div>
             <div className="dark-cta reveal">
-              <Link className="btn-light" href="/login?mode=signup">Become a partner</Link>
+              <Link className="btn-light" href={appHref}>Become a partner</Link>
               <span className="dark-cta-note">Educators · Content creators · Introducing brokers</span>
             </div>
           </div>
         </section>
 
-        {/* Education */}
+        {/* ══ Education ══ */}
         <section className="section" id="education">
           <div className="section-head reveal">
             <div className="kicker">Education</div>
             <h2 data-split>Sessions that make you a better trader.</h2>
             <p>
-              Live, practical sessions for our partner communities. No indicator
-              sales, no signal hype. Just the craft of trading, taught properly.
+              Live, practical sessions for our partner communities. No indicator sales, no signal
+              hype. Just the craft of trading, taught properly.
             </p>
           </div>
           <div className="edu-grid">
@@ -358,27 +282,32 @@ export function Landing() {
           </div>
           <div className="edu-note reveal">
             <p>Sessions run live with Q&amp;A inside partner communities, and every concept plugs straight into the FXU apps you already use.</p>
-            <Link className="text-link" href="/education" style={{ marginTop: 14, display: "inline-flex" }}>
+            <a
+              className="text-link"
+              href={EDUCATION_URL}
+              style={{ marginTop: 14, display: "inline-flex" }}
+              {...(eduExternal ? { target: "_blank", rel: "noopener" } : {})}
+            >
               See the live sessions &amp; schedule <span className="chev">›</span>
-            </Link>
+            </a>
           </div>
         </section>
 
-        {/* CTA band */}
+        {/* ══ Get started band ══ */}
         <section className="waitband" id="get-started">
           <div className="orbs" aria-hidden="true">
-            <span className="orb o1" />
-            <span className="orb o2" />
+            <span className="orb o1" /><span className="orb o2" />
           </div>
           <div className="waitband-inner reveal">
             <div className="kicker">Get started</div>
             <h2 data-split>Your trading, in one place.</h2>
-            <p>Create your free account and start journaling in minutes. Partner tooling unlocks when you join as an IB.</p>
-            <Link className="btn-primary lg" href="/login?mode=signup">Create your account</Link>
+            <p>One account for the journal and your partnerships. Sign in and pick up where you left off.</p>
+            <Link className="btn-primary lg" href={appHref}>{signedIn ? "Go to your apps" : "Sign in to FXU"}</Link>
           </div>
         </section>
       </main>
 
+      {/* ══ Footer ══ */}
       <div className="footer-outer">
         <footer className="footer">
           <span>Copyright © {new Date().getFullYear()} FXU. All rights reserved.</span>
@@ -406,7 +335,7 @@ const TICKER: readonly { sym: string; px: string; up: boolean }[] = [
 
 const EDU: readonly { n: string; hue: string; title: string; body: string }[] = [
   { n: "01", hue: "blue", title: "Identifying patterns", body: "Read structure instead of guessing: trends, ranges, liquidity and the handful of repeatable setups worth trading. Learn to see what the chart is actually telling you." },
-  { n: "02", hue: "green", title: "Risk management", body: "The part that keeps you in the game. Position sizing, risk-reward, drawdown control, plus how to make the numbers work before every entry." },
+  { n: "02", hue: "green", title: "Risk management", body: "The part that keeps you in the game. Position sizing, risk-reward, drawdown control, plus how to make the built-in calculators do the math before every entry." },
   { n: "03", hue: "orange", title: "Trading psychology", body: "Discipline over dopamine. Handling losing streaks, avoiding revenge trades, and building rules you can actually follow when it matters." },
   { n: "04", hue: "purple", title: "Review & journaling", body: "Your own data is your best teacher. Journal every trade, tag your setups, then review sessions turn those entries into your edge." },
 ];

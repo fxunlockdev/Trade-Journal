@@ -23,6 +23,7 @@ import {
   Plus,
   FileUp,
   Cable,
+  LayoutGrid,
 } from "lucide-react";
 
 interface UserProfile {
@@ -55,6 +56,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
+  // Back to the FXU Home hub — the platform has more than one app now, so the
+  // switcher has to be reachable from inside the journal.
+  { label: "Your apps", href: "/apps", icon: LayoutGrid, section: "main" },
   {
     label: "Dashboard",
     href: "/dashboard",

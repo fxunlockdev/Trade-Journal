@@ -61,10 +61,10 @@ html { scroll-behavior: smooth; }
   transition: background .4s, color .4s;
   overflow-x: hidden;
 }
-.fxu-home a { color: inherit; }
-.fxu-home button { font: inherit; }
-.fxu-home img { max-width: 100%; height: auto; display: block; }
-.fxu-home h1, .fxu-home h2, .fxu-home h3, .fxu-home h4 { margin: 0; text-wrap: balance; }
+:where(.fxu-home) a { color: inherit; }
+:where(.fxu-home) button { font: inherit; }
+:where(.fxu-home) img { max-width: 100%; height: auto; display: block; }
+:where(.fxu-home) :is(h1,h2,h3,h4) { margin: 0; text-wrap: balance; }
 
 .kicker {
   font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;

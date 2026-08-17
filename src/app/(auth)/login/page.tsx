@@ -75,7 +75,7 @@ function LoginContent() {
   // Post-auth destination — guarded to a relative in-app path so a crafted
   // ?next=//evil.com can't bounce the user off-site. Middleware sets ?next
   // when it redirects an unauthenticated user here from /crm or /admin.
-  const safeNext = safeInternalPath(searchParams.get("next"));
+  const safeNext = safeInternalPath(searchParams.get("next"), "/apps");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -203,25 +203,25 @@ function LoginContent() {
       />
 
       <div className="relative z-10 w-full max-w-md px-4">
-        {/* Brand */}
+        {/* Brand — this is the platform-wide sign-in, not a per-app login */}
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-[#f1f5ef]">
-            FX Unlock
+            FXU Home
           </h1>
           <p className="mt-2 text-sm font-medium uppercase tracking-widest text-[#9fe0ad]">
-            Trade Journal
+            One account · Trade Journal &amp; Affiliate CRM
           </p>
         </div>
 
         <Card className="border-border bg-card shadow-xl shadow-border/50 backdrop-blur-xl">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-xl text-foreground">
-              {mode === "login" ? "Welcome back" : "Create account"}
+              {mode === "login" ? "Sign in to FXU" : "Create your FXU account"}
             </CardTitle>
             <CardDescription className="text-muted-foreground">
               {mode === "login"
-                ? "Sign in to access your trading dashboard"
-                : "Get started with your trading journey"}
+                ? "One sign-in unlocks every app your access level includes."
+                : "One account for the journal and your partnerships."}
             </CardDescription>
           </CardHeader>
 
@@ -240,6 +240,13 @@ function LoginContent() {
               )}
               Continue with Google
             </Button>
+
+            {/* Existing FXU accounts were created with Google and have no
+                password — say so, or email/password sign-in just fails with a
+                generic "invalid credentials". */}
+            <p className="text-center text-xs text-muted-foreground">
+              Existing FXU accounts sign in with Google.
+            </p>
 
             {/* Divider */}
             <div className="relative flex items-center gap-4">
