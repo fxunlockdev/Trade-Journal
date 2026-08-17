@@ -47,6 +47,13 @@ export interface FlowDef {
 const DIRECTIONS = ["buy", "sell"] as const;
 const ASSETS = ["gold", "forex", "crypto", "mixed"] as const;
 
+/** Parse, or null when it isn't a usable number. */
+function numOrNull(v: string | undefined): number | null {
+  if (v === undefined || isSkip(v)) return null;
+  const n = num(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function num(v: string): number {
   // Tolerates "1,000", "$10k", "1.0850", "2%".
   const cleaned = v.replace(/[$,%\s]/g, "").toLowerCase();
@@ -109,8 +116,12 @@ export const FLOWS: Readonly<Record<FlowId, FlowDef>> = {
         validate: (v) => (DIRECTIONS.includes(v.toLowerCase() as never) ? undefined : "Say buy or sell.") },
       { key: "entry", kind: "number", prompt: "Entry price?", validate: positive("Entry") },
       { key: "lots", kind: "number", prompt: "Size, in lots?", options: ["0.1", "0.5", "1"], validate: positive("Size") },
-      { key: "stop", kind: "number", prompt: "Stop loss? (or say skip)", optional: true },
-      { key: "target", kind: "number", prompt: "Take profit? (or say skip)", optional: true },
+      // Optional, but still validated: a typo must be caught here rather than
+      // silently becoming NaN in the draft.
+      { key: "stop", kind: "number", prompt: "Stop loss? (or say skip)", optional: true,
+        validate: (v) => (isSkip(v) || Number.isFinite(num(v)) ? undefined : "That doesn't look like a price. Give me a number, or say skip.") },
+      { key: "target", kind: "number", prompt: "Take profit? (or say skip)", optional: true,
+        validate: (v) => (isSkip(v) || Number.isFinite(num(v)) ? undefined : "That doesn't look like a price. Give me a number, or say skip.") },
     ],
   },
 };
@@ -218,8 +229,8 @@ export function computeFlow(flow: FlowId, slots: Slots): FlowResult | { error: s
 
   // trade
   const entry = num(slots.entry!);
-  const stop = slots.stop && !isSkip(slots.stop) ? num(slots.stop) : null;
-  const target = slots.target && !isSkip(slots.target) ? num(slots.target) : null;
+  const stop = numOrNull(slots.stop);
+  const target = numOrNull(slots.target);
   const rr =
     stop !== null && target !== null && Math.abs(entry - stop) > 0
       ? Math.abs(target - entry) / Math.abs(entry - stop)

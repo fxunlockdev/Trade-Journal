@@ -190,7 +190,7 @@ function LoginContent() {
             <rect width="24" height="24" rx="6" className="logo-bg" />
             <path d="M7 7h10M7 12h7M7 17h4" className="logo-fg" strokeWidth="2.2" strokeLinecap="round" />
           </svg>
-          <span>FXU</span>
+          <span>FXU Apps</span>
         </a>
 
         <h1 className={mode === "login" ? "auth-title auth-title-solo" : "auth-title"}>

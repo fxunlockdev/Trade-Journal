@@ -1,0 +1,70 @@
+import { describe, it, expect } from "vitest";
+import { FLOWS, computeFlow, nextMissingSlot, seedSlots, isSkip } from "@/lib/assistant/flows";
+
+describe("agent flows", () => {
+  it("seeds what the opening message already said", () => {
+    expect(seedSlots(FLOWS.rebate, "gold")).toEqual({ asset: "gold" });
+    const t = seedSlots(FLOWS.risk, "EURUSD buy");
+    expect(t.instrument).toBe("EURUSD");
+    expect(t.direction).toBe("buy");
+  });
+
+  it("asks for the first missing slot only", () => {
+    expect(nextMissingSlot(FLOWS.rebate, { asset: "gold" })?.key).toBe("lots");
+    expect(nextMissingSlot(FLOWS.rebate, { asset: "gold", lots: "100" })).toBeNull();
+  });
+
+  it("computes a rebate", () => {
+    const r = computeFlow("rebate", { asset: "gold", lots: "100" });
+    expect(r).toMatchObject({ kind: "rebate", lots: 100 });
+    if ("monthlyMid" in r) expect(r.monthlyMid).toBe(750);
+  });
+
+  it("computes a position size", () => {
+    const r = computeFlow("risk", {
+      instrument: "EURUSD", direction: "buy", balance: "10000",
+      risk: "1", entry: "1.0850", stop: "1.0800",
+    });
+    expect(r).toHaveProperty("kind", "risk");
+    if ("lots" in r) {
+      expect(r.lots).toBeGreaterThan(0);
+      expect(Math.round(r.riskAmount)).toBe(100); // 1% of 10k
+    }
+  });
+
+  it("tolerates messy numeric input", () => {
+    const r = computeFlow("rebate", { asset: "gold", lots: "1,000" });
+    if ("lots" in r) expect(r.lots).toBe(1000);
+    const k = computeFlow("risk", {
+      instrument: "EURUSD", direction: "buy", balance: "$10k",
+      risk: "1%", entry: "1.0850", stop: "1.0800",
+    });
+    if ("balance" in k) expect(k.balance).toBe(10000);
+  });
+
+  it("rejects a stop on the wrong side", () => {
+    const slot = FLOWS.risk.slots.find((s) => s.key === "stop")!;
+    expect(slot.validate!("1.0900", { direction: "buy", entry: "1.0850" })).toMatch(/below entry/);
+    expect(slot.validate!("1.0800", { direction: "buy", entry: "1.0850" })).toBeUndefined();
+  });
+
+  it("recognises skip words for optional slots", () => {
+    for (const v of ["skip", "none", "no", "-"]) expect(isSkip(v)).toBe(true);
+    expect(isSkip("1.08")).toBe(false);
+  });
+
+  it("validates optional slots so a typo is caught, not turned into NaN", () => {
+    const stop = FLOWS.trade.slots.find((s) => s.key === "stop")!;
+    expect(stop.validate!("banana", {})).toMatch(/number, or say skip/);
+    expect(stop.validate!("skip", {})).toBeUndefined();
+    expect(stop.validate!("1.0800", {})).toBeUndefined();
+  });
+
+  it("never produces NaN from an optional slot", () => {
+    const r = computeFlow("trade", {
+      instrument: "EURUSD", direction: "buy", entry: "1.0850",
+      lots: "1", stop: "banana", target: "skip",
+    });
+    if ("stop" in r) expect(Number.isNaN(r.stop as number)).toBe(false);
+  });
+});

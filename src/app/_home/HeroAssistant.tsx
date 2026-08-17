@@ -75,8 +75,19 @@ export function HeroAssistant({
     return () => clearTimeout(timer);
   }, [turns.length]);
 
+  // Bring the newest reply's TOP into view rather than slamming to the bottom:
+  // a result card is taller than the viewport slice, and landing mid-card hides
+  // the headline number that is the whole point.
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+    const log = logRef.current;
+    if (!log) return;
+    const last = log.lastElementChild as HTMLElement | null;
+    if (!last) return;
+    const target =
+      last.offsetHeight > log.clientHeight - 24
+        ? last.offsetTop - 12                       // tall: show its top
+        : log.scrollHeight;                          // short: normal bottom
+    log.scrollTo({ top: target, behavior: "smooth" });
   }, [turns, busy]);
 
   // "@" alone lists everything; "@tra" narrows to Trade Journal. Matching the
@@ -173,8 +184,13 @@ export function HeroAssistant({
       return;
     }
 
+    // A fresh @mention always wins, even mid-conversation: someone typing
+    // "@risk calculator" while half-way through another flow means switch, not
+    // "here's my answer".
+    const switching = /^@/.test(q);
+
     // 1. Mid-conversation: treat the message as the answer to the pending slot.
-    if (flow) {
+    if (flow && !switching) {
       const def = FLOWS[flow.id];
       const slot = nextMissingSlot(def, flow.slots) as SlotDef | null;
       if (slot) {

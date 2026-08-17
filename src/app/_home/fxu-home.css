@@ -851,13 +851,15 @@ body.modal-open { overflow: hidden; }
 
 /* Conversation. Elements here sit ON glass -> plain fills, no second blur. */
 .agent-log {
-  max-height: 316px; overflow-y: auto;
+  /* Scales with the viewport instead of a fixed height: ~38% of the visible
+     window, floored so it never collapses to a sliver and capped so it doesn't
+     swallow a tall monitor. dvh so mobile browser chrome doesn't break it. */
+  max-height: clamp(220px, 46dvh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain; /* don't scroll the page when the log ends */
   padding: 16px 16px 6px; text-align: left;
   display: flex; flex-direction: column; gap: 12px;
   scrollbar-width: thin; scrollbar-color: var(--border-2) transparent;
-  /* soft scroll-edge fade, the web equivalent of a scroll edge effect */
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px);
-  mask-image: linear-gradient(180deg, transparent 0, #000 14px);
 }
 .agent-turn { display: flex; flex-direction: column; gap: 8px; animation: agentIn .5s var(--ease) both; }
 @keyframes agentIn { from { opacity: 0; transform: translateY(9px) scale(.985); } to { opacity: 1; transform: none; } }
@@ -920,6 +922,7 @@ body.modal-open { overflow: hidden; }
   background: var(--surface); border: .5px solid var(--border-2); border-radius: 18px;
   box-shadow: 0 24px 56px -22px rgba(16, 32, 64, .34), inset 0 1px 0 rgba(255,255,255,.6);
   padding: 6px; z-index: 5; display: grid; gap: 2px; text-align: left;
+  max-height: min(52dvh, 360px); overflow-y: auto;
   animation: agentIn .24s var(--ease) both;
 }
 .dark .agent-mentions { box-shadow: 0 24px 56px -22px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.07); }
@@ -975,9 +978,16 @@ body.modal-open { overflow: hidden; }
   .agent-send:hover:not(:disabled), .agent-chip:hover { transform: none; }
 }
 
+/* Short viewports (laptops with browser chrome, landscape phones): give the
+   conversation less room so the input and chips stay reachable. */
+@media (max-height: 720px) {
+  .agent-log { max-height: clamp(180px, 38dvh, 330px); }
+  .agent { margin-top: 22px; }
+}
+
 @media (max-width: 640px) {
   .agent { margin-top: 26px; }
-  .agent-log { max-height: 250px; }
+  .agent-log { max-height: clamp(200px, 44dvh, 360px); }
   .agent-chip { font-size: 12px; padding: 6px 11px; }
   .agent-input { padding: 12px; gap: 9px; }
   .agent-input input { font-size: 16px; } /* prevents iOS zoom-on-focus */
@@ -1119,3 +1129,7 @@ body.modal-open { overflow: hidden; }
   .ares-grid { gap: 8px; }
   .ares-grid dd { font-size: 13px; }
 }
+/* "FXU Apps" is wider than "FXU": keep the lockup from crowding the nav links. */
+.nav-brand { white-space: nowrap; }
+.nav-brand span { letter-spacing: -.015em; }
+@media (max-width: 400px) { .nav-brand span { font-size: 13px; } }

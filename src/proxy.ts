@@ -4,6 +4,13 @@ import { createMiddlewareClient } from "@/lib/supabase/middleware";
 /**
  * Route gating for the FXU Home platform.
  *
+ * Next 16 renamed `middleware.ts` to `proxy.ts` with a default export. Under the
+ * old filename this file silently never executed — verified with a response
+ * header, which never appeared. Nothing was insecure (every /crm and /admin
+ * entry point re-checks entitlement against the database, and RLS is the
+ * backstop), but the cheap claim-based gate and the ?next deep-link
+ * preservation were dead code.
+ *
  * This is UX, NOT authorization. It reads the `platform_role` claim that the
  * database mirrors into app_metadata, so it can gate a route without a DB
  * round-trip on every request. A claim can be stale (a token issued before a
@@ -30,7 +37,7 @@ function claimGrants(role: string | undefined, product: string): boolean {
   return ROLE_PRODUCTS[role].includes(product);
 }
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { supabase, response } = createMiddlewareClient(request);
 
   // Refresh the session cookie on every request so access tokens don't expire.
@@ -56,6 +63,12 @@ export async function middleware(request: NextRequest) {
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
 
   if (!isCrm && !isAdmin) return response;
+
+  // /admin must stay invisible even to signed-out visitors: redirecting to
+  // login would confirm the route exists. 404 tells them nothing.
+  if (!user && isAdmin) {
+    return NextResponse.rewrite(new URL("/404", request.url));
+  }
 
   // Signed out: send to login with a relative-only return path.
   if (!user) {
