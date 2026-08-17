@@ -71,3 +71,28 @@ describe("agent flows", () => {
     }
   });
 });
+
+describe("one-shot parsing", () => {
+  it("fills a whole risk request from one sentence", () => {
+    const s = seedSlots(
+      FLOWS.risk,
+      "XAUUSD buy, 25k account, 1% risk, entry 2388, stop 2380",
+    );
+    expect(s).toMatchObject({
+      instrument: "XAUUSD", direction: "buy",
+      balance: "25k", risk: "1", entry: "2388", stop: "2380",
+    });
+    expect(nextMissingSlot(FLOWS.risk, s)).toBeNull(); // nothing left to ask
+  });
+
+  it("computes that one-shot correctly", () => {
+    const s = seedSlots(FLOWS.risk, "XAUUSD buy, 25k account, 1% risk, entry 2388, stop 2380");
+    const r = computeFlow("risk", s);
+    if ("kind" in r && r.kind === "risk") {
+      expect(Math.round(r.riskAmount)).toBe(250); // 1% of 25k
+      expect(r.lots).toBeGreaterThan(0);
+    } else {
+      throw new Error("expected a risk result");
+    }
+  });
+});

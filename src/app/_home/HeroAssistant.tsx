@@ -8,6 +8,7 @@ import {
   type FlowId, type Slots, type FlowResult, type SlotDef,
 } from "@/lib/assistant/flows";
 import { AgentResult } from "./AgentResult";
+import { useAgentDemo } from "./useAgentDemo";
 
 interface Turn {
   readonly role: "user" | "assistant";
@@ -45,12 +46,20 @@ export function HeroAssistant({
   const [placeholder, setPlaceholder] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [flow, setFlow] = useState<FlowState | null>(null);
+  // The demo runs until the first real interaction, then never returns.
+  const [live, setLive] = useState(false);
+  const demo = useAgentDemo(!live);
+  const demoing = !live && (demo.typed !== "" || demo.sent);
+
+  function goLive() {
+    if (!live) setLive(true);
+  }
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   // Typewriter placeholder — the "it's alive" cue, disabled for reduced motion.
   useEffect(() => {
-    if (turns.length > 0) return;
+    if (turns.length > 0 || !live) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setPlaceholder("Ask about FXU, or type @ to open an app");
       return;
@@ -175,6 +184,7 @@ export function HeroAssistant({
   async function ask(question: string) {
     const q = question.trim();
     if (!q || busy) return;
+    goLive();
     setTurns((t) => [...t, { role: "user", text: q }]);
     setValue("");
 
@@ -255,6 +265,33 @@ export function HeroAssistant({
       <div className="agent-ambient" aria-hidden="true" />
 
       <div className="agent-shell">
+        {demoing && (
+          <div className="agent-log agent-log-demo" aria-hidden="true">
+            {demo.sent && (
+              <div className="agent-turn user">
+                <div className="agent-bubble">
+                  <p>{demo.query}</p>
+                </div>
+              </div>
+            )}
+            {demo.thinking && (
+              <div className="agent-turn assistant">
+                <div className="agent-bubble">
+                  <span className="agent-typing"><i /><i /><i /></span>
+                </div>
+              </div>
+            )}
+            {demo.reply && (
+              <div className="agent-turn assistant">
+                <div className="agent-bubble">
+                  <p>{demo.reply}</p>
+                  {demo.result && <AgentResult result={demo.result} />}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {turns.length > 0 && (
           <div className="agent-log" ref={logRef}>
             {turns.map((t, i) => (
@@ -299,9 +336,10 @@ export function HeroAssistant({
           </span>
           <input
             ref={inputRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={placeholder || "Ask about FXU, or type @ to open an app"}
+            value={live ? value : demo.typed}
+            onFocus={goLive}
+            onChange={(e) => { goLive(); setValue(e.target.value); }}
+            placeholder={live ? (placeholder || "Ask about FXU, or type @ to open an app") : "Ask about FXU, or type @ to open an app"}
             aria-label="Ask the FXU agent"
             onKeyDown={onKeyDown}
             enterKeyHint="send"
@@ -314,7 +352,7 @@ export function HeroAssistant({
 
         </form>
 
-        {turns.length === 0 && !showMentions && (
+        {live && turns.length === 0 && !showMentions && (
           <div className="agent-chips">
             {STARTER_QUESTIONS.map((q) => (
               <button key={q} className="agent-chip" onClick={() => ask(q)}>{q}</button>

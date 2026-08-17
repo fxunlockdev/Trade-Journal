@@ -270,5 +270,37 @@ export function seedSlots(flow: FlowDef, text: string): Slots {
   const lots = t.match(/([\d.]+)\s*lots?\b/);
   if (lots && flow.slots.some((s) => s.key === "lots")) out.lots = lots[1];
 
+  const has = (k: string) => flow.slots.some((s) => s.key === k);
+
+  // "25k account", "$10,000 balance", "balance 5000"
+  if (has("balance")) {
+    // "25k account" first: the keyword-then-number form was skipping across a
+    // comma and grabbing the "1" out of "1% risk".
+    const m =
+      t.match(/\$?([\d.,]+k?)\s*(?:account|balance)/) ??
+      t.match(/(?:balance|account)\s*(?:of|is|:)?\s*\$?([\d.,]+k?)/);
+    if (m) out.balance = m[1];
+  }
+  // "1% risk", "risking 0.5%"
+  if (has("risk")) {
+    const m = t.match(/([\d.]+)\s*%/) ?? t.match(/risk(?:ing)?\D{0,4}([\d.]+)/);
+    if (m) out.risk = m[1];
+  }
+  // "entry 2388" / "@ 1.0850" / "in at 2388"
+  if (has("entry")) {
+    const m = t.match(/(?:entry|enter|in at|@)\D{0,3}([\d.]+)/);
+    if (m) out.entry = m[1];
+  }
+  // "stop 2380" / "sl 2380"
+  if (has("stop")) {
+    const m = t.match(/(?:stop(?:\s*loss)?|sl)\D{0,3}([\d.]+)/);
+    if (m) out.stop = m[1];
+  }
+  // "target 2410" / "tp 2410"
+  if (has("target")) {
+    const m = t.match(/(?:target|take\s*profit|tp)\D{0,3}([\d.]+)/);
+    if (m) out.target = m[1];
+  }
+
   return out;
 }
