@@ -4,19 +4,9 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safeInternalPath } from "@/lib/safe-next";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import "@/app/_home/fxu-home.css";
 
 type AuthMode = "login" | "signup";
 
@@ -185,169 +175,100 @@ function LoginContent() {
   }
 
   return (
-    <div className="bg-hero-forest relative flex min-h-screen items-center justify-center overflow-hidden">
-      {/* Ambient lime glows */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="glow-lime absolute -top-40 right-[-60px] h-[360px] w-[420px] opacity-20" />
-        <div className="glow-lime absolute -bottom-48 left-[10%] h-[320px] w-[380px] opacity-[0.14]" />
+    <div className="fxu-home auth-page">
+      {/* Same ambient orbs as the landing hero — one visual system. */}
+      <div className="orbs" aria-hidden="true">
+        <span className="orb o1" />
+        <span className="orb o2" />
+        <span className="orb o3" />
       </div>
 
-      {/* Grid pattern overlay */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)`,
-          backgroundSize: "64px 64px",
-        }}
-      />
+      <div className="auth-inner">
+        {/* Brand — the platform sign-in, not a per-app login */}
+        <a className="auth-brand" href="/" aria-label="FXU home">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect width="24" height="24" rx="6" className="logo-bg" />
+            <path d="M7 7h10M7 12h7M7 17h4" className="logo-fg" strokeWidth="2.2" strokeLinecap="round" />
+          </svg>
+          <span>FXU</span>
+        </a>
 
-      <div className="relative z-10 w-full max-w-md px-4">
-        {/* Brand — this is the platform-wide sign-in, not a per-app login */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-[#f1f5ef]">
-            FXU Home
-          </h1>
-          <p className="mt-2 text-sm font-medium uppercase tracking-widest text-[#9fe0ad]">
-            One account · Trade Journal &amp; Affiliate CRM
+        <h1 className="auth-title">
+          {mode === "login" ? <>Welcome back to <span className="grad-text">FXU.</span></> : <>Join <span className="grad-text">FXU.</span></>}
+        </h1>
+        <p className="auth-sub">
+          {mode === "login"
+            ? "One sign-in unlocks every app your access level includes."
+            : "One account for the journal and your partnerships."}
+        </p>
+
+        <div className="auth-card">
+          <button
+            className="auth-google"
+            onClick={handleGoogleLogin}
+            disabled={googleLoading || loading}
+            type="button"
+          >
+            {googleLoading ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />}
+            Continue with Google
+          </button>
+          <p className="auth-hint">Existing FXU accounts sign in with Google.</p>
+
+          <div className="auth-divider"><span>or</span></div>
+
+          <form onSubmit={handleSubmit} className="auth-form">
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                autoComplete="email"
+              />
+            </label>
+
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+            </label>
+
+            {mode === "signup" && (
+              <label className="field">
+                <span>Confirm password</span>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  autoComplete="new-password"
+                />
+              </label>
+            )}
+
+            <button type="submit" className="btn-primary full" disabled={loading || googleLoading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : mode === "login" ? "Sign in" : "Create account"}
+            </button>
+          </form>
+
+          <p className="auth-toggle">
+            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+            <button type="button" onClick={toggleMode}>
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </button>
           </p>
         </div>
 
-        <Card className="border-border bg-card shadow-xl shadow-border/50 backdrop-blur-xl">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl text-foreground">
-              {mode === "login" ? "Sign in to FXU" : "Create your FXU account"}
-            </CardTitle>
-            <CardDescription className="text-muted-foreground">
-              {mode === "login"
-                ? "One sign-in unlocks every app your access level includes."
-                : "One account for the journal and your partnerships."}
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-4">
-            {/* Google OAuth */}
-            <Button
-              variant="outline"
-              className="w-full border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
-              onClick={handleGoogleLogin}
-              disabled={googleLoading || loading}
-            >
-              {googleLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <GoogleIcon />
-              )}
-              Continue with Google
-            </Button>
-
-            {/* Existing FXU accounts were created with Google and have no
-                password — say so, or email/password sign-in just fails with a
-                generic "invalid credentials". */}
-            <p className="text-center text-xs text-muted-foreground">
-              Existing FXU accounts sign in with Google.
-            </p>
-
-            {/* Divider */}
-            <div className="relative flex items-center gap-4">
-              <Separator className="flex-1 bg-muted" />
-              <span className="text-xs font-medium uppercase text-muted-foreground">
-                or
-              </span>
-              <Separator className="flex-1 bg-muted" />
-            </div>
-
-            {/* Email form */}
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-foreground">
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="trader@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/30"
-                  disabled={loading}
-                  autoComplete="email"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-foreground">
-                  Password
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/30"
-                  disabled={loading}
-                  autoComplete={
-                    mode === "login" ? "current-password" : "new-password"
-                  }
-                />
-              </div>
-
-              {mode === "signup" && (
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password" className="text-foreground">
-                    Confirm Password
-                  </Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/30"
-                    disabled={loading}
-                    autoComplete="new-password"
-                  />
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                variant="lime"
-                size="lg"
-                className="w-full"
-                disabled={loading || googleLoading}
-              >
-                {loading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : mode === "login" ? (
-                  "Sign In"
-                ) : (
-                  "Create Account"
-                )}
-              </Button>
-            </form>
-
-            {/* Toggle mode */}
-            <p className="text-center text-sm text-muted-foreground">
-              {mode === "login"
-                ? "Don't have an account?"
-                : "Already have an account?"}{" "}
-              <button
-                type="button"
-                onClick={toggleMode}
-                className="font-medium text-primary underline-offset-4 transition-colors hover:text-primary/90 hover:underline"
-              >
-                {mode === "login" ? "Sign Up" : "Sign In"}
-              </button>
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Footer */}
-        <p className="mt-6 text-center text-xs text-[#b3c4b8]">
-          Secure, encrypted, and private by design.
-        </p>
+        <p className="auth-foot">Secure, encrypted, and private by design.</p>
       </div>
     </div>
   );

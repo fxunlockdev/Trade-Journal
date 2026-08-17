@@ -98,15 +98,6 @@ export function AppChooser({
               external={eduExternal}
               accent="edu"
             />
-            {has("admin") && (
-              <ChooserItem
-                href="/admin"
-                name="Platform Admin"
-                desc="Manage members and access levels."
-                unlocked
-                accent="admin"
-              />
-            )}
           </div>
 
           <button className="chooser-signout" onClick={signOut}>Sign out</button>
@@ -123,7 +114,7 @@ interface ChooserItemProps {
   readonly unlocked: boolean;
   readonly lockedNote?: string;
   readonly external?: boolean;
-  readonly accent: "journal" | "crm" | "edu" | "admin";
+  readonly accent: "journal" | "crm" | "edu";
 }
 
 function ChooserItem({ href, name, desc, unlocked, lockedNote, external, accent }: ChooserItemProps) {
@@ -167,8 +158,5 @@ const ICONS: Record<string, React.ReactNode> = {
   ),
   edu: (
     <svg width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M24 8L4 18l20 10 20-10L24 8z" fill="#fff"/><path d="M12 23v9c0 3.3 5.4 6 12 6s12-2.7 12-6v-9" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" opacity=".75"/></svg>
-  ),
-  admin: (
-    <svg width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M24 6l14 6v10c0 9-6 16.5-14 20-8-3.5-14-11-14-20V12l14-6z" fill="#fff"/></svg>
   ),
 };

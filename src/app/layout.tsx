@@ -21,9 +21,9 @@ const hanken = Hanken_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "FX Unlock Trade Journal",
+  title: "FXU · One account for Trade Journal & Affiliate CRM",
   description:
-    "Professional forex trading journal, analytics, and signal management platform.",
+    "FXU Home — one sign-in for the Trade Journal and the Affiliate CRM.",
 };
 
 export default function RootLayout({
