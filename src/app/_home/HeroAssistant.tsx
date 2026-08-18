@@ -40,6 +40,7 @@ export function HeroAssistant({
   /** Products this user can actually open; drives the locked state in the @ menu. */
   products?: readonly string[];
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState("");
   const [turns, setTurns] = useState<readonly Turn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -48,7 +49,7 @@ export function HeroAssistant({
   const [flow, setFlow] = useState<FlowState | null>(null);
   // The demo runs until the first real interaction, then never returns.
   const [live, setLive] = useState(false);
-  const demo = useAgentDemo(!live);
+  const demo = useAgentDemo(!live, rootRef);
   const demoing = !live && demo.started;
 
   function goLive() {
@@ -267,7 +268,7 @@ export function HeroAssistant({
   }
 
   return (
-    <div className="agent" data-open={turns.length > 0 || demoing ? "true" : "false"}>
+    <div className="agent" ref={rootRef} data-open={turns.length > 0 || demoing ? "true" : "false"}>
       <div className="agent-ambient" aria-hidden="true" />
 
       <div className="agent-shell">

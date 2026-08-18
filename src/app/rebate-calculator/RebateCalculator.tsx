@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import {
-  ASSET_RATES, RATES_ARE_ILLUSTRATIVE, estimateRebate, formatUsd, rateFor, type AssetClass,
+  ASSET_RATES, RATES_ARE_ILLUSTRATIVE, isConfirmedRate, estimateRebate, formatUsd, rateFor, type AssetClass,
 } from "@/lib/rebate/rates";
 import "../_home/fxu-home.css";
 
@@ -115,7 +115,10 @@ export function RebateCalculator() {
                     </button>
                   ))}
                 </div>
-                <p className="rc-note">{rate.note}</p>
+                <p className="rc-note">
+                  {rate.note}
+                  {!isConfirmedRate(asset) && " Indicative rate, confirmed with FXU before you sign."}
+                </p>
               </label>
 
               <label className="rc-field">
@@ -183,9 +186,10 @@ export function RebateCalculator() {
           </div>
 
           <p className="rc-disclaimer">
-            {RATES_ARE_ILLUSTRATIVE
-              ? "Indicative figures based on typical industry rates. Not an offer or a guarantee of earnings. Your actual rebate is confirmed with FXU and depends on the broker, instrument, account type and your agreement."
-              : "Estimates only. Not an offer or a guarantee of earnings. Actual rebates depend on the broker, instrument, account type and your agreement with FXU."}
+            Estimates, not an offer or a guarantee of earnings. Your actual rebate depends on the
+            broker, instrument, account type and your agreement with FXU.
+            {RATES_ARE_ILLUSTRATIVE &&
+              " Gold is a confirmed FXU rate; the other asset classes show indicative industry ranges until yours are set."}
           </p>
         </div>
       </main>

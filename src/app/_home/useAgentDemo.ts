@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type React from "react";
 import { computeFlow, seedSlots, FLOWS, type FlowResult } from "@/lib/assistant/flows";
 
 /**
@@ -50,12 +51,27 @@ const FRAMES = SCENARIOS.map((s) => {
   return { ...s, result: "kind" in out ? out : null };
 }).filter((s) => s.result !== null);
 
-export function useAgentDemo(enabled: boolean) {
+export function useAgentDemo(enabled: boolean, hostRef?: React.RefObject<HTMLElement | null>) {
   const [frame, setFrame] = useState<DemoFrame>(EMPTY);
+  const [visible, setVisible] = useState(true);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Only run while the hero is actually on screen. Scrolled away, the loop is
+  // pure cost: it burns timers and any reflow it causes yanks the page under
+  // the reader.
   useEffect(() => {
-    if (!enabled || FRAMES.length === 0) return;
+    const el = hostRef?.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([entry]) => setVisible(entry?.isIntersecting ?? true),
+      { threshold: 0.15 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hostRef]);
+
+  useEffect(() => {
+    if (!enabled || !visible || FRAMES.length === 0) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       // Reduced motion: show the finished frame, no typing, no cycling.
       const f = FRAMES[0]!;
@@ -100,7 +116,7 @@ export function useAgentDemo(enabled: boolean) {
       for (const id of timers.current) clearTimeout(id);
       timers.current = [];
     };
-  }, [enabled]);
+  }, [enabled, visible]);
 
   return frame;
 }

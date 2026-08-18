@@ -29,9 +29,11 @@ const DEFAULT_RATES: readonly AssetRate[] = [
   {
     key: "gold",
     label: "Gold (XAUUSD)",
-    min: 6,
-    max: 9,
-    note: "Metals usually carry the highest per-lot rebate.",
+    // Confirmed FXU rate. The others below are still illustrative until you
+    // give me their real numbers.
+    min: 25,
+    max: 35,
+    note: "Gold carries the strongest per-lot rebate on the book.",
   },
   {
     key: "forex",
@@ -82,8 +84,20 @@ export const ASSET_RATES: readonly AssetRate[] = DEFAULT_RATES.map((r) => {
   return o ? { ...r, min: o.min, max: o.max } : r;
 });
 
-/** True while the illustrative defaults are still in play — the UI says so. */
-export const RATES_ARE_ILLUSTRATIVE = OVERRIDES.size === 0;
+/**
+ * Gold is a confirmed FXU rate; forex, crypto and the blended book are still
+ * industry-typical placeholders. The calculator says so rather than implying
+ * every figure is contractual.
+ */
+export const CONFIRMED_ASSETS: readonly AssetClass[] = ["gold"];
+
+export function isConfirmedRate(asset: AssetClass): boolean {
+  return OVERRIDES.has(asset) || CONFIRMED_ASSETS.includes(asset);
+}
+
+/** True while ANY asset is still on a placeholder rate. */
+export const RATES_ARE_ILLUSTRATIVE =
+  ASSET_RATES.some((r) => !OVERRIDES.has(r.key) && !CONFIRMED_ASSETS.includes(r.key));
 
 export function rateFor(asset: AssetClass): AssetRate {
   return ASSET_RATES.find((r) => r.key === asset) ?? ASSET_RATES[3];
