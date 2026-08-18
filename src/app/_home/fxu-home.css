@@ -226,7 +226,9 @@ html { scroll-behavior: smooth; }
 
 /* Hero shot */
 .hero-shot { position: relative; max-width: 1080px; margin: 58px auto -6vw; padding: 0 8px; }
-.hero-inner { will-change: transform, opacity; }
+/* will-change is applied by useAppleMotion only while the loop is actually
+   running. Holding it here pinned a compositor layer for the life of the page. */
+.hero-inner { will-change: auto; }
 .hero-glow {
   position: absolute; inset: 6% -8% -12%;
   background:
@@ -1141,10 +1143,24 @@ body.modal-open { overflow: hidden; }
    scenarios so the loop reads as one continuous take. */
 .agent-log-demo {
   pointer-events: none;
-  /* One reserved height for the whole loop: the rebate and risk cards differ in
-     height, and letting the shell resize between them moved every section below
-     the hero. */
-  min-height: clamp(200px, calc(100dvh - 500px), 440px);
+  /* Pinned, not floored. The loop moves through states whose natural heights
+     differ by ~300px (an empty box, a typing line, a tall result card), and the
+     two scenarios' cards differ again. A floor alone still let the tall states
+     push the shell open, so every section below the hero rose and fell on a 7s
+     cycle. One exact height for every state means nothing below can move. */
+  height: clamp(200px, calc(100dvh - 500px), 440px);
+  max-height: none;
+  /* Content sits at the bottom and grows upward, the way a real transcript
+     does, so the reserved space reads as intentional rather than empty. */
+  justify-content: flex-end;
+  overflow: hidden;
+}
+/* `margin: auto` beats the container's flex-end, centring this in the reserved
+   space while real turns still stack up from the bottom. */
+.agent-demo-idle {
+  margin: auto; text-align: center;
+  font-size: 14px; color: var(--text-2); opacity: .5;
+  animation: demoIn .6s var(--ease) both;
 }
 .agent-log-demo .agent-turn { animation: demoIn .5s var(--ease) both; }
 @keyframes demoIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }

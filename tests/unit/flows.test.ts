@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FLOWS, computeFlow, nextMissingSlot, seedSlots, isSkip } from "@/lib/assistant/flows";
+import { rateFor } from "@/lib/rebate/rates";
 
 describe("agent flows", () => {
   it("seeds what the opening message already said", () => {
@@ -15,9 +16,17 @@ describe("agent flows", () => {
   });
 
   it("computes a rebate", () => {
+    // Derived from the rate table rather than hardcoded: a literal here went
+    // stale the moment gold was corrected to its real $25-35/lot, and the test
+    // failed for a number that was never the thing under test.
+    const gold = rateFor("gold");
     const r = computeFlow("rebate", { asset: "gold", lots: "100" });
     expect(r).toMatchObject({ kind: "rebate", lots: 100 });
-    if ("kind" in r && r.kind === "rebate") expect(r.monthlyMid).toBe(750);
+    if ("kind" in r && r.kind === "rebate") {
+      expect(r.monthlyLow).toBe(100 * gold.min);
+      expect(r.monthlyHigh).toBe(100 * gold.max);
+      expect(r.monthlyMid).toBe((100 * (gold.min + gold.max)) / 2);
+    }
   });
 
   it("computes a position size", () => {

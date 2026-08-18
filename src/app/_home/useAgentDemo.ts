@@ -86,16 +86,25 @@ export function useAgentDemo(enabled: boolean, hostRef?: React.RefObject<HTMLEle
 
     function play(i: number) {
       const s = FRAMES[i % FRAMES.length]!;
+      // The previous scenario's answer stays on screen while the next question
+      // types itself, exactly as a real transcript behaves. Clearing it left the
+      // reserved panel empty for the whole typing pass -- several seconds of
+      // void every cycle.
+      const prev = i === 0 ? null : FRAMES[(i - 1) % FRAMES.length]!;
       let t = 0;
-
-      // Deliberately no blank frame here: clearing to EMPTY between scenarios
-      // collapsed the shell and bounced the hero. The first typed character
-      // replaces the previous answer instead.
 
       // Type it out.
       for (let c = 1; c <= s.query.length; c++) {
         t += c < 12 ? 34 : 21; // eases off after the mention
-        at(t, () => setFrame({ ...EMPTY, started: true, typed: s.query.slice(0, c), query: s.query }));
+        at(t, () => setFrame({
+          started: true,
+          typed: s.query.slice(0, c),
+          query: s.query,
+          sent: false,
+          thinking: false,
+          reply: prev?.reply ?? null,
+          result: prev?.result ?? null,
+        }));
       }
 
       t += 520;

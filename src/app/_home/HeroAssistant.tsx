@@ -50,7 +50,18 @@ export function HeroAssistant({
   // The demo runs until the first real interaction, then never returns.
   const [live, setLive] = useState(false);
   const demo = useAgentDemo(!live, rootRef);
-  const demoing = !live && demo.started;
+
+  // Mounted from the FIRST paint, not from demo.started. The demo box is a few
+  // hundred pixels tall, so mounting it 1.4s in (when the loop begins) reflowed
+  // everything below the hero right as the reader was scrolling into it. The
+  // space is reserved up front and demo.started only gates what goes inside.
+  const showDemo = !live && turns.length === 0;
+
+  // Latched open. data-open feeds a :has() rule that changes font-size and
+  // margins -- layout, not paint -- so every flip reflows the page below the
+  // fold. It opens once, at first paint, and never closes: without the latch,
+  // clicking into the input un-compacted the hero and shoved the page down.
+  const panelOpen = showDemo || turns.length > 0 || live;
 
   function goLive() {
     if (!live) setLive(true);
@@ -268,12 +279,18 @@ export function HeroAssistant({
   }
 
   return (
-    <div className="agent" ref={rootRef} data-open={turns.length > 0 || demoing ? "true" : "false"}>
+    <div className="agent" ref={rootRef} data-open={panelOpen ? "true" : "false"}>
       <div className="agent-ambient" aria-hidden="true" />
 
       <div className="agent-shell">
-        {demoing && (
+        {showDemo && (
           <div className="agent-log agent-log-demo" aria-hidden="true">
+            {/* The panel's height is reserved before the loop starts, so the very
+                first typing pass would otherwise stare back as empty glass. From
+                the second scenario on, the previous answer fills this space. */}
+            {!demo.sent && !demo.reply && (
+              <p className="agent-demo-idle">Watch it work, or just start typing.</p>
+            )}
             {demo.sent && (
               <div className="agent-turn user">
                 <div className="agent-bubble">
