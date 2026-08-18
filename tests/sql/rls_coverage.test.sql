@@ -4,10 +4,15 @@
 -- covered by >=1 policy OR on the documented intentional-deny-all allowlist.
 --
 -- A table with RLS on and zero policies is fail-closed (deny-all to non-owner
--- roles); `public.trades` is deliberately in that state — all trade access goes
--- through server routes using the service-role client, never the browser
--- client. It is allowlisted so the check stays meaningful: any OTHER table that
--- loses its policies, or any new table shipped without RLS, fails the run.
+-- roles). Two tables are deliberately in that state, and both are listed below
+-- so the check stays meaningful: any OTHER table that loses its policies, or
+-- any new table shipped without RLS, fails the run.
+--
+--   trades          — all trade access goes through server routes using the
+--                     service-role client, never the browser client.
+--   api_rate_limits — counters, not user data. Only check_rate_limit() (SECURITY
+--                     DEFINER) touches them. Granting any policy would let a
+--                     client read or reset its own limit, which defeats it.
 --
 -- Run with:  psql "$DB_URL" -v ON_ERROR_STOP=1 -f tests/sql/rls_coverage.test.sql
 -- A gap raises an exception -> psql exits non-zero -> CI fails.
@@ -32,7 +37,7 @@ begin
             select 1 from pg_policies p
             where p.schemaname = 'public' and p.tablename = c.relname
           )
-          and c.relname <> all (array['trades'])  -- documented deny-all
+          and c.relname <> all (array['trades', 'api_rate_limits'])  -- documented deny-all
         )
       )
   ) gaps;
