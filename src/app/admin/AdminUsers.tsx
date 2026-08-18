@@ -13,6 +13,9 @@ interface AdminUserRow {
   platform_role: PlatformRole;
   last_active_at: string | null;
   created_at: string;
+  signup_intent: "trader" | "ib" | null;
+  ib_request_status: "none" | "pending" | "approved" | "declined";
+  ib_requested_at: string | null;
 }
 
 const ROLE_LABEL: Record<PlatformRole, string> = {
@@ -46,6 +49,30 @@ export function AdminUsers({ selfId }: { selfId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function decide(target: AdminUserRow, approve: boolean) {
+    setBusyId(target.id);
+    try {
+      const res = await fetch("/api/admin/ib-requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ targetUserId: target.id, approve }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not update the request.");
+        return;
+      }
+      toast.success(
+        approve
+          ? `${target.email ?? "User"} now has IB access.`
+          : `Request declined.`,
+      );
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function changeRole(target: AdminUserRow, role: PlatformRole) {
     if (role === target.platform_role) return;
     setBusyId(target.id);
@@ -67,7 +94,53 @@ export function AdminUsers({ selfId }: { selfId: string }) {
     }
   }
 
+  const pending = rows.filter((u) => u.ib_request_status === "pending");
+
   return (
+    <>
+      {pending.length > 0 && (
+        <section className="admin-section">
+          <div className="admin-section-head">
+            <div>
+              <h2>IB requests · {pending.length}</h2>
+              <p>
+                These people said they introduce clients when they signed up. They have
+                journal access already; approving adds the Affiliate CRM.
+              </p>
+            </div>
+          </div>
+          <div className="admin-table">
+            {pending.map((u) => (
+              <div className="admin-tr cols-3" key={u.id}>
+                <span>
+                  <strong>{u.full_name ?? u.email ?? u.id}</strong>
+                  <em className="muted block">{u.email}</em>
+                </span>
+                <span className="muted">
+                  {u.ib_requested_at ? new Date(u.ib_requested_at).toLocaleDateString() : "–"}
+                </span>
+                <span className="admin-decide">
+                  <button
+                    className="btn-primary admin-approve"
+                    disabled={busyId === u.id}
+                    onClick={() => decide(u, true)}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    className="admin-link-btn"
+                    disabled={busyId === u.id}
+                    onClick={() => decide(u, false)}
+                  >
+                    Decline
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
     <section className="admin-section">
       <div className="admin-section-head">
         <div>
@@ -87,7 +160,11 @@ export function AdminUsers({ selfId }: { selfId: string }) {
             <div className="admin-tr cols-3" key={u.id}>
               <span>
                 <strong>{u.full_name ?? u.email ?? u.id}</strong>
-                <em className="muted block">{u.email}{u.id === selfId ? " · you" : ""}</em>
+                <em className="muted block">
+                  {u.email}{u.id === selfId ? " · you" : ""}
+                  {u.signup_intent === "ib" && " · said IB"}
+                  {u.signup_intent === "trader" && " · said trader"}
+                </em>
               </span>
               <span className="muted">
                 {u.last_active_at ? new Date(u.last_active_at).toLocaleDateString() : "–"}
@@ -109,5 +186,6 @@ export function AdminUsers({ selfId }: { selfId: string }) {
         )}
       </div>
     </section>
+    </>
   );
 }

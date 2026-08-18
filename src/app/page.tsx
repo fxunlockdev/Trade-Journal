@@ -33,9 +33,9 @@ export default async function HomePage() {
     const [{ data: profile }, entitlements] = await Promise.all([
       supabase
         .from("users")
-        .select("full_name")
+        .select("full_name, signup_intent")
         .eq("id", user.id)
-        .single<{ full_name: string | null }>(),
+        .single<{ full_name: string | null; signup_intent: string | null }>(),
       getEntitlements(),
     ]);
 
@@ -48,6 +48,8 @@ export default async function HomePage() {
       isAdmin: entitlements?.platformRole === "admin",
       tierLabel: entitlements ? TIER_LABEL[entitlements.platformRole] : "",
       tierBlurb: entitlements ? TIER_BLURB[entitlements.platformRole] : "",
+      // Null means they have never answered the "who are you?" question.
+      needsIntent: profile?.signup_intent == null,
     };
   }
 

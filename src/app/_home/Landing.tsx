@@ -8,6 +8,7 @@ import { EDUCATION_URL, isExternalEducation } from "@/lib/education-url";
 import { useAppleMotion } from "./useAppleMotion";
 import { AppChooser } from "./AppChooser";
 import { HeroAssistant } from "./HeroAssistant";
+import { IntentPrompt } from "./IntentPrompt";
 import type { ProductKey } from "@/lib/auth/entitlements";
 import "./fxu-home.css";
 
@@ -31,6 +32,8 @@ export interface HomeUser {
   readonly tierLabel: string;
   readonly tierBlurb: string;
   readonly isAdmin: boolean;
+  /** They have not told us whether they trade or introduce clients yet. */
+  readonly needsIntent: boolean;
 }
 
 export function Landing({ user = null }: { user?: HomeUser | null }) {
@@ -121,6 +124,12 @@ export function Landing({ user = null }: { user?: HomeUser | null }) {
               <a className="btn-primary" href="#apps" onClick={openApps}>Explore the apps</a>
               <Link className="btn-ghost" href={appHref} onClick={openApps}>{signedIn ? "Open an app" : "Sign in"} <span className="chev">›</span></Link>
             </div>
+
+            {signedIn && user.needsIntent && (
+              <div className="hero-el" style={{ ["--d" as string]: 4 }}>
+                <IntentPrompt firstName={user.firstName} />
+              </div>
+            )}
 
             <div className="hero-el" style={{ ["--d" as string]: 4 }}>
               <HeroAssistant signedIn={signedIn} products={user?.products ?? []} />
