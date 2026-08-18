@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { TradeJournalMark } from "@/components/brand/trade-journal-mark";
 import {
   LayoutDashboard,
   BookOpen,
@@ -158,11 +159,9 @@ function SidebarContent({
       {/* Brand + Collapse toggle */}
       <div className="flex h-16 shrink-0 items-center justify-between px-4">
         {!collapsed && (
-          <Link href="/dashboard" className="flex flex-col">
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <TradeJournalMark size={26} />
             <span className="text-lg font-bold tracking-tight text-sidebar-accent-foreground">
-              FX Unlock
-            </span>
-            <span className="text-[10px] font-medium uppercase tracking-widest text-leaf">
               Trade Journal
             </span>
           </Link>
