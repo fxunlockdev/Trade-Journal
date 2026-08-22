@@ -1263,6 +1263,63 @@ body.modal-open { overflow: hidden; }
   .hero h1, .hero-sub, .pill, .agent { transition: none; }
 }
 
+/* ── /welcome: the one-time blocking step ──────────────────
+   Deliberately its own page rather than a card. The answer decides whether
+   someone is ever offered the CRM, and as a dismissible prompt on the landing
+   it went unanswered often enough to be useless. There is no close affordance
+   and no nav, because there is nothing else to do here. */
+.welcome-page {
+  min-height: 100dvh; position: relative; overflow: hidden;
+  display: grid; place-items: center; padding: 40px 20px;
+}
+.welcome-inner {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 560px; text-align: center;
+  display: grid; gap: 18px; justify-items: center;
+}
+.welcome-title {
+  font-size: clamp(30px, 4.4vw, 44px); font-weight: 800;
+  letter-spacing: -.035em; line-height: 1.05; margin: 0;
+}
+.welcome-card {
+  width: 100%; text-align: left;
+  background: var(--surface);
+  border: .5px solid var(--border-2); border-radius: 24px;
+  padding: 24px 22px;
+  box-shadow: 0 40px 100px -30px rgba(0, 0, 0, .35);
+  display: grid; gap: 6px;
+  animation: agentIn .45s var(--ease) both;
+}
+.welcome-q { font-size: 16.5px; font-weight: 600; color: var(--text); margin: 0; text-wrap: pretty; }
+.welcome-sub { font-size: 13.5px; line-height: 1.55; color: var(--text-2); margin: 0; text-wrap: pretty; }
+.welcome-options { display: grid; gap: 10px; margin-top: 14px; }
+.welcome-opt {
+  display: grid; gap: 2px; text-align: left; cursor: pointer;
+  padding: 14px 16px; border-radius: 16px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  font: inherit;
+  transition: transform .2s var(--ease), border-color .2s, background .2s, box-shadow .2s;
+}
+.welcome-opt:hover:not(:disabled) {
+  background: var(--surface); border-color: var(--blue-bright);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3.5px rgba(10, 132, 255, .14);
+}
+.welcome-opt:focus-visible { outline: none; border-color: var(--blue-bright); box-shadow: 0 0 0 3.5px rgba(10, 132, 255, .22); }
+.welcome-opt:disabled { opacity: .55; cursor: default; }
+.welcome-opt strong { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.welcome-opt span { font-size: 13px; color: var(--text-2); }
+.welcome-busy { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; }
+.welcome-error { font-size: 13px; color: #e5484d; margin: 12px 0 0; }
+.welcome-foot {
+  font-size: 12px; line-height: 1.55; color: var(--text-2);
+  margin: 16px 0 0; padding-top: 14px;
+  border-top: .5px solid var(--border-2); text-wrap: pretty;
+}
+.welcome-done { text-align: center; justify-items: center; gap: 10px; }
+.welcome-spin { color: var(--text-2); margin-top: 4px; }
+
 /* ── "Who are you?" prompt ──────────────────────────────── */
 .intent {
   max-width: 620px; margin: 26px auto 0; padding: 18px 20px;

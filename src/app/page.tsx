@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, getEntitlements, type ProductKey } from "@/lib/auth/entitlements";
 import { TIER_LABEL, TIER_BLURB } from "@/lib/copy/tiers";
@@ -42,14 +43,19 @@ export default async function HomePage() {
     const displayName =
       profile?.full_name?.trim() || user.email?.split("@")[0] || "there";
 
+    // Null means they have never answered the "who are you?" question. It is a
+    // blocking step rather than a card here, because the answer decides whether
+    // someone is ever offered the CRM and a dismissible prompt went unanswered
+    // too often. /welcome redirects straight back once it is set, so the two
+    // cannot loop.
+    if (profile?.signup_intent == null) redirect("/welcome");
+
     homeUser = {
       firstName: displayName.split(" ")[0],
       products: (entitlements?.products ?? []) as ProductKey[],
       isAdmin: entitlements?.platformRole === "admin",
       tierLabel: entitlements ? TIER_LABEL[entitlements.platformRole] : "",
       tierBlurb: entitlements ? TIER_BLURB[entitlements.platformRole] : "",
-      // Null means they have never answered the "who are you?" question.
-      needsIntent: profile?.signup_intent == null,
     };
   }
 

@@ -36,7 +36,9 @@ export default async function AppLayout({
     await Promise.allSettled([
       supabase
         .from("users")
-        .select("id, email, full_name, avatar_url, role")
+        // signup_intent rides along on a query that already runs, so gating on
+        // it below costs nothing extra.
+        .select("id, email, full_name, avatar_url, role, signup_intent")
         .eq("id", user.id)
         .single(),
       supabase
@@ -48,6 +50,13 @@ export default async function AppLayout({
 
   const profile =
     profileResult.status === "fulfilled" ? profileResult.value.data : null;
+
+  // The same gate FXU Home applies, so deep-linking to /dashboard cannot walk
+  // around it. Only when the row actually loaded: a failed read must not send
+  // someone who already answered back to a step they have finished.
+  if (profile !== null && profile.signup_intent == null) {
+    redirect("/welcome");
+  }
 
   const userProfile = profile ?? {
     id: user.id,

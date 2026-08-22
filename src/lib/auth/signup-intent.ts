@@ -16,7 +16,7 @@
  * 2. sessionStorage, which survives a cross-origin redirect in the same tab and
  *    so covers Google. Lost if the tab is closed, hence the fallback below.
  *
- * If both miss, IntentPrompt still asks after sign-in, so the answer is never
+ * If both miss, the /welcome gate still asks after sign-in, so the answer is never
  * simply dropped. Nothing here grants access: recording "ib" files a request
  * that an admin has to approve. See record_signup_intent().
  */
@@ -34,7 +34,7 @@ export function stashSignupIntent(intent: SignupIntent): void {
   try {
     window.sessionStorage.setItem(STORAGE_KEY, intent);
   } catch {
-    // Private mode, or storage disabled. IntentPrompt will ask instead.
+    // Private mode, or storage disabled. The /welcome gate will ask instead.
   }
 }
 

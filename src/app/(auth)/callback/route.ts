@@ -60,7 +60,7 @@ export async function GET(request: Request) {
   // record_signup_intent is write-once and validates the value itself, so a
   // forged metadata field escalates nothing: "ib" records a REQUEST an admin
   // still has to approve. A failure is deliberately swallowed, because
-  // IntentPrompt will simply ask, and nobody should be locked out of signing in
+  // the /welcome gate will simply ask, and nobody should be locked out of signing in
   // over a preference that did not save.
   const intent = exchanged?.user?.user_metadata?.signup_intent;
   if (intent === "trader" || intent === "ib") {
