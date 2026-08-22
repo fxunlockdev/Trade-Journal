@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     },
   );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error("[TRDR Auth] exchangeCodeForSession failed:", error.message);
@@ -50,6 +50,26 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       new URL(`/login?error=auth&detail=${encodeURIComponent(error.message)}`, origin),
     );
+  }
+
+  // The trader/IB answer chosen on the sign-up form rides along in
+  // user_metadata, the only carrier that survives a confirmation link opened
+  // hours later in a different browser. Applied here rather than on the client
+  // so it lands even if the user never reaches the home page.
+  //
+  // record_signup_intent is write-once and validates the value itself, so a
+  // forged metadata field escalates nothing: "ib" records a REQUEST an admin
+  // still has to approve. A failure is deliberately swallowed, because
+  // IntentPrompt will simply ask, and nobody should be locked out of signing in
+  // over a preference that did not save.
+  const intent = exchanged?.user?.user_metadata?.signup_intent;
+  if (intent === "trader" || intent === "ib") {
+    const { error: intentError } = await supabase.rpc("record_signup_intent", {
+      p_intent: intent,
+    });
+    if (intentError) {
+      console.warn("[FXU Auth] could not record signup intent:", intentError.message);
+    }
   }
 
   return NextResponse.redirect(new URL(next, origin));

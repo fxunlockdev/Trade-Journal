@@ -4,11 +4,12 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safeInternalPath } from "@/lib/safe-next";
+import { stashSignupIntent, type SignupIntent } from "@/lib/auth/signup-intent";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import "@/app/_home/fxu-home.css";
 
-type AuthMode = "login" | "signup";
+type AuthMode = "login" | "signup" | "reset";
 
 function GoogleIcon() {
   return (
@@ -71,6 +72,10 @@ function LoginContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  // Defaults to trader because that is the overwhelming majority and it is the
+  // choice that grants nothing beyond the journal everyone already gets.
+  const [intent, setIntent] = useState<SignupIntent>("trader");
+  const [resetSent, setResetSent] = useState(false);
 
   const supabase = createClient();
 
@@ -87,6 +92,10 @@ function LoginContent() {
 
   async function handleGoogleLogin() {
     setGoogleLoading(true);
+    // OAuth carries no payload of our own, so the answer goes to sessionStorage
+    // and is picked up after the redirect lands. Only meaningful when signing
+    // up; an existing user already has an intent recorded and it is write-once.
+    if (mode === "signup") stashSignupIntent(intent);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -140,11 +149,16 @@ function LoginContent() {
 
     setLoading(true);
 
+    // Two carriers, deliberately. user_metadata survives the confirmation link
+    // being opened later in another browser; sessionStorage covers the case
+    // where the account is confirmed in this same tab.
+    stashSignupIntent(intent);
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/callback`,
+        data: { signup_intent: intent },
       },
     });
 
@@ -159,19 +173,57 @@ function LoginContent() {
     setMode("login");
   }
 
+  /**
+   * Password reset, step one.
+   *
+   * The recovery link is pointed at /callback, which exchanges the code and
+   * then forwards to /reset-password. Reusing the callback rather than landing
+   * on the reset page directly means the session is established by the same
+   * hardened path as every other sign-in.
+   *
+   * Success is reported the same way whether or not the address has an account.
+   * Saying "no account found" here would turn this form into a way to test
+   * which email addresses are registered.
+   */
+  async function handleResetRequest() {
+    if (!email) {
+      toast.error("Enter the email you signed up with.");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/callback?next=%2Freset-password`,
+    });
+    setLoading(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setResetSent(true);
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (mode === "login") {
-      handleEmailLogin();
+    if (mode === "reset") {
+      void handleResetRequest();
+    } else if (mode === "login") {
+      void handleEmailLogin();
     } else {
-      handleSignUp();
+      void handleSignUp();
     }
   }
 
-  function toggleMode() {
-    setMode((prev) => (prev === "login" ? "signup" : "login"));
+  function goToMode(next: AuthMode) {
+    setMode(next);
     setPassword("");
     setConfirmPassword("");
+    setResetSent(false);
+  }
+
+  function toggleMode() {
+    goToMode(mode === "login" ? "signup" : "login");
   }
 
   return (
@@ -194,12 +246,56 @@ function LoginContent() {
         </a>
 
         <h1 className={mode === "login" ? "auth-title auth-title-solo" : "auth-title"}>
-          {mode === "login" ? <>Welcome back to <span className="grad-text">FXU.</span></> : <>Join <span className="grad-text">FXU.</span></>}
+          {mode === "login" && <>Welcome back to <span className="grad-text">FXU.</span></>}
+          {mode === "signup" && <>Join <span className="grad-text">FXU.</span></>}
+          {mode === "reset" && <>Reset your <span className="grad-text">password.</span></>}
         </h1>
         {mode === "signup" && (
           <p className="auth-sub">One account for the journal and your partnerships.</p>
         )}
+        {mode === "reset" && (
+          <p className="auth-sub">We&apos;ll email you a link to choose a new one.</p>
+        )}
 
+        {mode === "reset" ? (
+          <div className="auth-card">
+            {resetSent ? (
+              <div className="auth-sent">
+                <p className="auth-sent-title">Check your inbox.</p>
+                <p className="auth-sent-body">
+                  If an FXU account uses <strong>{email}</strong>, a reset link is on its
+                  way. It expires in an hour.
+                </p>
+                <button type="button" className="btn-ghost full" onClick={() => goToMode("login")}>
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <>
+                <form onSubmit={handleSubmit} className="auth-form">
+                  <label className="field">
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      placeholder="you@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={loading}
+                      autoComplete="email"
+                    />
+                  </label>
+                  <button type="submit" className="btn-primary full" disabled={loading}>
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : "Send reset link"}
+                  </button>
+                </form>
+                <p className="auth-toggle">
+                  Remembered it?{" "}
+                  <button type="button" onClick={() => goToMode("login")}>Sign in</button>
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
         <div className="auth-card">
           <button
             className="auth-google"
@@ -214,6 +310,41 @@ function LoginContent() {
 
           <div className="auth-divider"><span>or</span></div>
 
+          {mode === "signup" && (
+            <fieldset className="auth-intent">
+              <legend>What brings you to FXU?</legend>
+              {(
+                [
+                  { id: "trader", title: "I trade my own account", sub: "Journal, analytics and the calculators" },
+                  { id: "ib", title: "I introduce clients", sub: "Also request the Affiliate CRM" },
+                ] as const
+              ).map((option) => (
+                <label
+                  key={option.id}
+                  className={`auth-intent-opt ${intent === option.id ? "on" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="signup-intent"
+                    value={option.id}
+                    checked={intent === option.id}
+                    onChange={() => setIntent(option.id)}
+                    disabled={loading || googleLoading}
+                  />
+                  <span>
+                    <strong>{option.title}</strong>
+                    <em>{option.sub}</em>
+                  </span>
+                </label>
+              ))}
+              {/* Said plainly, so nobody picks IB expecting the CRM to appear. */}
+              <p className="auth-intent-note">
+                Either way your Trade Journal is ready straight away. The Affiliate CRM
+                opens once an FXU admin approves you.
+              </p>
+            </fieldset>
+          )}
+
           <form onSubmit={handleSubmit} className="auth-form">
             <label className="field">
               <span>Email</span>
@@ -227,9 +358,26 @@ function LoginContent() {
               />
             </label>
 
-            <label className="field">
-              <span>Password</span>
+            {/* A div, not a label: "Forgot password?" is a real button, and a
+                button nested inside a label never receives its own click. The
+                browser forwards it to the labelled input instead, so the
+                handler silently never ran. The input keeps its association
+                through htmlFor. */}
+            <div className="field">
+              <span className="field-label-row">
+                <label htmlFor="auth-password">Password</label>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    className="field-aside"
+                    onClick={() => goToMode("reset")}
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </span>
               <input
+                id="auth-password"
                 type="password"
                 placeholder="••••••••"
                 value={password}
@@ -237,7 +385,7 @@ function LoginContent() {
                 disabled={loading}
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
               />
-            </label>
+            </div>
 
             {mode === "signup" && (
               <label className="field">
@@ -265,6 +413,7 @@ function LoginContent() {
             </button>
           </p>
         </div>
+        )}
 
         <p className="auth-foot">Secure, encrypted, and private by design.</p>
       </div>

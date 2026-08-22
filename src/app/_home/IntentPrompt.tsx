@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { takeSignupIntent } from "@/lib/auth/signup-intent";
 
 /**
  * The one-time "who are you?" question.
@@ -18,17 +19,35 @@ import { createClient } from "@/lib/supabase/client";
 export function IntentPrompt({ firstName }: { firstName: string }) {
   const [busy, setBusy] = useState<"trader" | "ib" | null>(null);
   const [done, setDone] = useState<"trader" | "ib" | null>(null);
+  // Nothing renders until we know whether the answer was already given on the
+  // sign-up form. Without this the question flashes up for a frame and is then
+  // yanked away, which reads as a glitch on every Google sign-up.
+  const [checked, setChecked] = useState(false);
   const router = useRouter();
 
-  async function choose(intent: "trader" | "ib") {
-    setBusy(intent);
-    const { error } = await createClient().rpc("record_signup_intent", { p_intent: intent });
-    setBusy(null);
-    if (error) return;
-    setDone(intent);
-    // Traders are finished; refresh so the prompt drops away.
-    if (intent === "trader") setTimeout(() => router.refresh(), 900);
-  }
+  const choose = useCallback(
+    async (intent: "trader" | "ib") => {
+      setBusy(intent);
+      const { error } = await createClient().rpc("record_signup_intent", { p_intent: intent });
+      setBusy(null);
+      if (error) return;
+      setDone(intent);
+      // Traders are finished; refresh so the prompt drops away.
+      if (intent === "trader") setTimeout(() => router.refresh(), 900);
+    },
+    [router],
+  );
+
+  // Answers chosen on the sign-up form travel here through sessionStorage,
+  // because at the moment of choosing there was no account to write them to.
+  // See lib/auth/signup-intent.
+  useEffect(() => {
+    const stashed = takeSignupIntent();
+    setChecked(true);
+    if (stashed) void choose(stashed);
+  }, [choose]);
+
+  if (!checked) return null;
 
   if (done === "ib") {
     return (
