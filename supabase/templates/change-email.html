@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Confirm your new address</title>
+</head>
+<body style="margin:0; padding:0; background:#f5f6f8; -webkit-font-smoothing:antialiased;">
+
+<!-- Inbox preview text. Hidden in the body, but it is the second line every
+     client shows next to the subject, so it is worth writing deliberately. -->
+<div style="display:none; max-height:0; overflow:hidden; opacity:0;">Confirm your new FXU email address.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f6f8;">
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px; margin:0 auto;">
+
+        <tr>
+          <td align="center" style="padding-bottom:24px;">
+            <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:17px; font-weight:700; color:#0b1220; letter-spacing:-0.01em;">FXU Apps</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:#ffffff; border:1px solid #e6e9ef; border-radius:16px; padding:36px 32px;">
+
+            <h1 style="margin:0 0 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:23px; line-height:1.25; font-weight:700; color:#0b1220; letter-spacing:-0.02em;">Confirm your new address</h1>
+
+            <p style="margin:0 0 26px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:15px; line-height:1.6; color:#5b6472;">Confirm that {{ .NewEmail }} is yours and it becomes the address you sign in with.</p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-radius:10px; background:#0071e3;">
+                  <a href="{{ .ConfirmationURL }}" style="display:inline-block; padding:13px 26px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:10px;">Confirm the change</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:26px 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; line-height:1.6; color:#5b6472;">If you did not ask to change your email, ignore this and your address stays as it is. We recommend changing your password too.</p>
+
+            <!-- Some clients strip or rewrite buttons, and some people simply
+                 do not trust them. The raw URL is the fallback. -->
+            <p style="margin:18px 0 0; padding-top:18px; border-top:1px solid #e6e9ef; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#5b6472; word-break:break-all;">
+              Button not working? Paste this into your browser:<br>
+              <span style="color:#0071e3;">{{ .ConfirmationURL }}</span>
+            </p>
+
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="padding-top:22px;">
+            <p style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#5b6472;">
+              FXU Apps &middot; Trade Journal and Affiliate CRM, one account.<br>
+              You received this because someone used this address at fx-apps.com.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
