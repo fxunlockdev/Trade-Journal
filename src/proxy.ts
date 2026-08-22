@@ -38,7 +38,12 @@ function claimGrants(role: string | undefined, product: string): boolean {
 }
 
 export default async function proxy(request: NextRequest) {
-  const { supabase, response } = createMiddlewareClient(request);
+  // getResponse() rather than a destructured `response`: refreshing the token
+  // replaces the response object, and a snapshot taken here would be the
+  // pre-refresh one. withAuthCookies() carries those cookies onto every
+  // redirect and rewrite below, since each of those is a new response that
+  // would otherwise drop them and sign the user out.
+  const { supabase, getResponse, withAuthCookies } = createMiddlewareClient(request);
 
   // Refresh the session cookie on every request so access tokens don't expire.
   // Do NOT remove this — it's how Supabase SSR keeps sessions alive.
@@ -56,18 +61,18 @@ export default async function proxy(request: NextRequest) {
     const next = request.nextUrl.searchParams.get("next");
     url.pathname = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
     url.search = "";
-    return NextResponse.redirect(url);
+    return withAuthCookies(NextResponse.redirect(url));
   }
 
   const isCrm = pathname === "/crm" || pathname.startsWith("/crm/");
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
 
-  if (!isCrm && !isAdmin) return response;
+  if (!isCrm && !isAdmin) return getResponse();
 
   // /admin must stay invisible even to signed-out visitors: redirecting to
   // login would confirm the route exists. 404 tells them nothing.
   if (!user && isAdmin) {
-    return NextResponse.rewrite(new URL("/404", request.url));
+    return withAuthCookies(NextResponse.rewrite(new URL("/404", request.url)));
   }
 
   // Signed out: send to login with a relative-only return path.
@@ -75,7 +80,7 @@ export default async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = `?next=${encodeURIComponent(pathname)}`;
-    return NextResponse.redirect(url);
+    return withAuthCookies(NextResponse.redirect(url));
   }
 
   const role = (user.app_metadata as { platform_role?: string } | null)
@@ -91,7 +96,7 @@ export default async function proxy(request: NextRequest) {
 
   // Admin is invisible to everyone else: 404, not 403.
   if (isAdmin && claimKnown && !claimGrants(role, "admin")) {
-    return NextResponse.rewrite(new URL("/404", request.url));
+    return withAuthCookies(NextResponse.rewrite(new URL("/404", request.url)));
   }
 
   // CRM is a product they could legitimately be granted: explain, don't 404.
@@ -99,10 +104,10 @@ export default async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/locked";
     url.search = "?product=crm";
-    return NextResponse.rewrite(url);
+    return withAuthCookies(NextResponse.rewrite(url));
   }
 
-  return response;
+  return getResponse();
 }
 
 export const config = {
