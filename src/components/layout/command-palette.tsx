@@ -114,13 +114,6 @@ const NAV_ACTIONS: readonly CommandAction[] = [
     ],
   },
   {
-    id: "mt5-sync",
-    label: "MT5 Sync",
-    icon: Cable,
-    href: "/mt5-sync",
-    keywords: ["mt5", "metatrader", "myfxbook", "broker", "connect", "sync"],
-  },
-  {
     id: "posters",
     label: "Create a Poster",
     icon: ImageIcon,

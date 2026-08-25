@@ -1,9 +1,9 @@
 /**
  * Canonical MT5-shaped trade event — the common currency for every ingest
- * source (Myfxbook bridge, report import). Times are unix SECONDS in UTC.
+ * source (report import). Times are unix SECONDS in UTC.
  *
  * A plain type (not a zod schema): events are constructed by our own trusted
- * mappers (`lib/myfxbook/map.ts`, `lib/import/mt5-report.ts`), never parsed
+ * mappers (`lib/import/mt5-report.ts`), never parsed
  * from untrusted request bodies, so there is nothing to validate at runtime.
  * Invariant kept by the producers: a `close` event always carries
  * `exit_price`, `close_time` and `profit`.

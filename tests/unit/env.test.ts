@@ -5,7 +5,6 @@ const complete: Record<string, string> = {
   NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "a".repeat(40),
   SUPABASE_SERVICE_ROLE_KEY: "b".repeat(40),
-  CREDENTIALS_ENCRYPTION_KEY: "0".repeat(64),
 };
 
 const REQUIRED_KEYS = Object.keys(complete);
@@ -39,9 +38,4 @@ describe("env validation (fail-fast, P8)", () => {
     ).toThrow(/URL/);
   });
 
-  it("refuses to boot when the encryption key is not 64 hex chars", () => {
-    expect(() =>
-      validateEnv({ ...complete, CREDENTIALS_ENCRYPTION_KEY: "short" }),
-    ).toThrow(/hex/);
-  });
 });

@@ -9,7 +9,7 @@ import { z } from "zod";
  * so it runs once on server start.
  *
  * Only the vars whose absence makes the app unsafe/broken are required here.
- * Optional integrations (OpenAI, Telegram, Myfxbook proxy, cron/bootstrap
+ * Optional integrations (OpenAI, Telegram, cron/bootstrap
  * secrets) are validated where they are used, not at boot, so a missing
  * optional integration degrades that feature instead of downing the server.
  */
@@ -26,12 +26,6 @@ const serverEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().refine(isUrl, "must be a valid URL"),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20, "too short (or unset)"),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20, "too short (or unset)"),
-  CREDENTIALS_ENCRYPTION_KEY: z
-    .string()
-    .regex(
-      /^[0-9a-fA-F]{64}$/,
-      "must be 64 hex chars (32 bytes for AES-256-GCM)",
-    ),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

@@ -8,17 +8,16 @@ import {
 } from "@/lib/mt5/ingest";
 
 /**
- * Transport-agnostic trade-event processor. The EA webhook, the Myfxbook
- * bridge and the manual report import all map their inputs into `Mt5Event`s
- * and run them through here, sharing one idempotent upsert keyed on
- * (journal_id, mt5_account, mt5_ticket) — backed by the unique index
+ * Transport-agnostic trade-event processor. The report import maps its rows
+ * into `Mt5Event`s and runs them through here, using an idempotent upsert
+ * keyed on (journal_id, mt5_account, mt5_ticket), backed by the unique index
  * `trades_mt5_dedupe`, with a 23505 race fallback.
  */
 
 export interface IngestTarget {
   readonly journalId: string;
   readonly userId: string;
-  /** Dedupe namespace, e.g. "Server:login", "myfxbook:123", "statement:555". */
+  /** Dedupe namespace, e.g. "Server:login", "statement:555". */
   readonly accountKey: string;
   /** Trade source persisted on inserted rows. */
   readonly source: "mt5_webhook" | "csv";

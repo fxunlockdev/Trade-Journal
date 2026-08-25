@@ -41,7 +41,6 @@ const PAGE_TITLES: Record<string, string> = {
   "/ai-chat": "AI Chat",
   "/import": "Import",
   "/posters": "Posters",
-  "/mt5-sync": "MT5 Sync",
   "/settings": "Settings",
 };
 

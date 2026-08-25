@@ -141,7 +141,6 @@ export const config = {
     "/signals/:path*",
     "/settings/:path*",
     "/import/:path*",
-    "/mt5-sync/:path*",
     "/ai-chat/:path*",
     "/risk-calculator/:path*",
     "/lot-calculator/:path*",

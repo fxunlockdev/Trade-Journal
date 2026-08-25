@@ -26,7 +26,7 @@ const MAX_MESSAGE_CHARS = 500;
 
 /** Product answers only — never user data — which is what makes the cache shareable. */
 const SYSTEM_PROMPT = `You are the assistant on FXU Home, a platform with two apps:
-- Trade Journal: trade logging, analytics (P&L, win rate, profit factor, drawdown), MT5/Myfxbook import, AI trade entry. Free with any account.
+- Trade Journal: trade logging, analytics (P&L, win rate, profit factor, drawdown), MT4/MT5 statement import, AI trade entry. Free with any account.
 - Affiliate CRM: for introducing brokers. Affiliate roster, monthly commission ledger, partner activity tracking. Invite-only (IB tier).
 There is also a free Rebate Calculator that estimates an IB's monthly rebate, and Live Education sessions.
 
