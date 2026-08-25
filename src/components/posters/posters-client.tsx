@@ -41,31 +41,97 @@ import {
   posterFilename,
   posterToBlob,
 } from "@/lib/posters/export";
-import type { Trade } from "@/types/database";
+import { FilterChips } from "@/components/analytics/filter-chips";
+import { COLOR_CLASS } from "@/components/journals/journal-switcher";
+import {
+  combinedDisclaimerNote,
+  contributingJournalCount,
+  defaultGroupName,
+  groupStorageKey,
+  instrumentOptions,
+  perJournalCounts,
+  scopeByJournal,
+  scopeTrades,
+} from "@/lib/posters/scope";
+import type { JournalWithRole, Trade } from "@/types/database";
 
 interface PostersClientProps {
+  /** Every trade from every journal the user belongs to, within the lookback. */
   readonly trades: readonly Trade[];
-  readonly journalId: string;
-  readonly journalName: string;
+  readonly journals: readonly JournalWithRole[];
+  readonly activeJournalId: string | null;
   readonly loadError: string | null;
 }
 
 export function PostersClient({
   trades,
-  journalId,
-  journalName,
+  journals,
+  activeJournalId,
   loadError,
 }: PostersClientProps) {
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [period, setPeriod] = useState<PeriodId>("today");
-  const [group, setGroup] = useState(journalName);
   const [busy, setBusy] = useState<"download" | "copy" | null>(null);
   const posterRef = useRef<HTMLDivElement>(null);
 
-  // Scoped per journal: a single global key would brand one journal's poster
-  // with another journal's group name after switching.
-  const groupKey = `trdr_poster_group:${journalId}`;
+  // Defaults to the active journal alone, so anyone who just wants their own
+  // poster sees exactly what they saw before journals could be combined.
+  const [journalSel, setJournalSel] = useState<ReadonlySet<string>>(
+    () => new Set(activeJournalId ? [activeJournalId] : []),
+  );
+  const [instrumentSel, setInstrumentSel] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  // Journals first, then the instruments those journals actually traded —
+  // the same two-stage narrowing the Portfolio view uses.
+  const journalScoped = useMemo(
+    () => scopeByJournal(trades, journalSel),
+    [trades, journalSel],
+  );
+  const scoped = useMemo(
+    () => scopeTrades(trades, journalSel, instrumentSel),
+    [trades, journalSel, instrumentSel],
+  );
+  const assetOptions = useMemo(
+    () => instrumentOptions(journalScoped),
+    [journalScoped],
+  );
+
+  // A journal change can invalidate the asset selection — Chris may not trade
+  // the pair picked while Yohan was scoped. Left alone, the poster silently
+  // reports "no closed trades" with no visible filter to blame, and if the new
+  // scope has a single instrument the whole row (including "All") unmounts, so
+  // there is no way back without a reload.
+  useEffect(() => {
+    setInstrumentSel((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(assetOptions.map((o) => o.value));
+      const next = new Set([...prev].filter((v) => valid.has(v)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [assetOptions]);
+
+  const selectedJournals = useMemo(
+    () =>
+      journalSel.size === 0
+        ? journals
+        : journals.filter((j) => journalSel.has(j.id)),
+    [journals, journalSel],
+  );
+
+  // One journal uses its own name; a combination joins them ("YOHAN + CHRIS").
+  const defaultGroup = defaultGroupName(selectedJournals);
+  const [group, setGroup] = useState(defaultGroup);
+
+  // Remembered per COMBINATION, sorted so ticking Yohan-then-Chris and
+  // Chris-then-Yohan share one entry. For a single journal this is byte-for-byte
+  // the key the single-journal version used, so saved names survive.
+  const groupKey = useMemo(
+    () => groupStorageKey(selectedJournals.map((j) => j.id)),
+    [selectedJournals],
+  );
 
   // Day boundaries depend on the VIEWER'S timezone, which the server doesn't
   // know — on Vercel it is UTC. Resolving the range during render would compute
@@ -80,9 +146,9 @@ export function PostersClient({
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(groupKey);
-    setGroup(saved ?? journalName);
-  }, [groupKey, journalName]);
+    const saved = groupKey ? window.localStorage.getItem(groupKey) : null;
+    setGroup(saved ?? defaultGroup);
+  }, [groupKey, defaultGroup]);
 
   useEffect(() => {
     // Re-resolved when the period changes AND when `nonce` is bumped just
@@ -91,13 +157,24 @@ export function PostersClient({
     setRange(resolvePeriod(period, new Date()));
   }, [period, nonce]);
 
-  const stats = useMemo(
-    () =>
-      range
-        ? computePosterStats(tradesInRange(trades, range), localTimeZone())
-        : null,
-    [trades, range],
+  const inRange = useMemo(
+    () => (range ? tradesInRange(scoped, range) : []),
+    [scoped, range],
   );
+  const stats = useMemo(
+    () => (range ? computePosterStats(inRange, localTimeZone()) : null),
+    [inRange, range],
+  );
+  const breakdown = useMemo(
+    () => perJournalCounts(inRange, journals),
+    [inRange, journals],
+  );
+  // The poster's headline names the journals the user SELECTED, so the note
+  // that qualifies it must count the same set. Counting only the journals that
+  // happened to trade would let "YOHAN + CHRIS" print Yohan's numbers alone
+  // with nothing on the artefact admitting it.
+  const journalsClaimed = selectedJournals.length;
+  const journalsContributing = contributingJournalCount(inRange);
 
   const theme = getTheme(themeId);
   const template = getTemplate(templateId);
@@ -107,7 +184,8 @@ export function PostersClient({
 
   const onGroupChange = (value: string) => {
     setGroup(value);
-    if (value.trim() === "" || value === journalName) {
+    if (!groupKey) return;
+    if (value.trim() === "" || value === defaultGroup) {
       window.localStorage.removeItem(groupKey);
     } else {
       window.localStorage.setItem(groupKey, value);
@@ -123,6 +201,11 @@ export function PostersClient({
   const disclaimer = useMemo(() => {
     if (!stats) return POSTER_DISCLAIMER;
     const notes: string[] = [];
+    // A poster carrying two traders' results has to say so ON the artefact:
+    // the on-screen breakdown is not published, and a reader would otherwise
+    // take these figures for one person's record.
+    const combined = combinedDisclaimerNote(journalsClaimed);
+    if (combined) notes.push(combined);
     if (stats.rCovered > 0 && stats.rCovered < stats.tradeCount) {
       notes.push(
         `Avg R covers the ${stats.rCovered} of ${stats.tradeCount} trades that had a stop loss.`,
@@ -139,7 +222,7 @@ export function PostersClient({
       );
     }
     return [...notes, POSTER_DISCLAIMER].join(" ");
-  }, [stats, fallbackCount]);
+  }, [stats, fallbackCount, journalsClaimed]);
 
   const render = useCallback(
     async (mode: "download" | "copy") => {
@@ -183,7 +266,7 @@ export function PostersClient({
           Posters
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Share your results. Every figure comes from this journal&apos;s closed
+          Share your results. Every figure comes from your journals&apos; closed
           trades — nothing on a poster is typed in except the group name.
         </p>
       </div>
@@ -207,6 +290,61 @@ export function PostersClient({
         <div className="space-y-4">
           <Card className="border-border bg-card">
             <CardContent className="space-y-5 pt-6">
+              {/*
+                Journals first: everything below is scoped by this choice, and
+                the asset list is derived from whatever is ticked here.
+              */}
+              {journals.length > 1 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Journals
+                  </p>
+                  <FilterChips
+                    options={journals.map((j) => ({
+                      value: j.id,
+                      label: j.name,
+                    }))}
+                    selected={journalSel}
+                    testIdPrefix="poster-journal"
+                    renderDot={(id) => {
+                      const j = journals.find((x) => x.id === id);
+                      return j ? COLOR_CLASS[j.color] : null;
+                    }}
+                    onToggle={(id) =>
+                      setJournalSel((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                    }
+                    onAll={() => setJournalSel(new Set())}
+                  />
+                </div>
+              )}
+
+              {assetOptions.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Assets
+                  </p>
+                  <FilterChips
+                    options={assetOptions}
+                    selected={instrumentSel}
+                    testIdPrefix="poster-asset"
+                    onToggle={(v) =>
+                      setInstrumentSel((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(v)) next.delete(v);
+                        else next.add(v);
+                        return next;
+                      })
+                    }
+                    onAll={() => setInstrumentSel(new Set())}
+                  />
+                </div>
+              )}
+
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Template
@@ -305,7 +443,7 @@ export function PostersClient({
                   value={group}
                   onChange={(e) => onGroupChange(e.target.value)}
                   maxLength={40}
-                  placeholder={journalName}
+                  placeholder={defaultGroup}
                 />
                 <p className="text-xs text-muted-foreground">
                   The only editable text — every statistic comes from your trades.
@@ -337,7 +475,32 @@ export function PostersClient({
                       value={`${stats.rCovered} of ${stats.tradeCount}`}
                     />
                     <Row label="Day boundary" value={stats.timeZone} />
+                    {/*
+                      Per-journal split, so a combined poster can be checked
+                      against each journal before it is published.
+                    */}
+                    {breakdown.length > 1 &&
+                      breakdown.map((j) => (
+                        <Row
+                          key={j.id}
+                          label={`  ${j.name}`}
+                          value={j.count}
+                        />
+                      ))}
                   </dl>
+
+                  {journalsClaimed > 1 && (
+                    <p
+                      data-testid="poster-combine-caution"
+                      className="rounded-md border border-warn/30 bg-warn/10 p-2 text-warn"
+                    >
+                      Combining {journalsClaimed} journals
+                      {journalsContributing < journalsClaimed &&
+                        ` — only ${journalsContributing} traded in this period`}
+                      . If any of them track the same account, those trades are
+                      counted twice — only you can tell.
+                    </p>
+                  )}
 
                   {stats.breakeven > 0 && (
                     <p className="pt-1 text-muted-foreground">
@@ -406,7 +569,7 @@ export function PostersClient({
                 <Template
                   stats={stats}
                   theme={theme}
-                  group={group.trim() || journalName}
+                  group={group.trim() || defaultGroup}
                   periodKind={kind}
                   dateLabel={formatPeriodLabel(period, range)}
                   disclaimer={disclaimer}
