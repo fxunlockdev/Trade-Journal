@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, Manrope } from "next/font/google";
+import { Hanken_Grotesk, Jost, Manrope, Space_Grotesk } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToasterProvider } from "@/components/toaster-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -20,6 +20,23 @@ const hanken = Hanken_Grotesk({
   display: "swap",
 });
 
+// Space Grotesk + Jost — the poster templates only. Self-hosted by next/font so
+// the PNG rasteriser can embed them same-origin; a CORS-blocked webfont would
+// silently fall back to a system face and change every poster's look.
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-poster-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const jost = Jost({
+  variable: "--font-poster-body",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "FXU · One account for Trade Journal & Affiliate CRM",
   description:
@@ -34,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${hanken.variable} h-full antialiased`}
+      className={`${manrope.variable} ${hanken.variable} ${spaceGrotesk.variable} ${jost.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full bg-background text-foreground">

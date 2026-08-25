@@ -231,6 +231,29 @@
     -webkit-backdrop-filter: blur(18px);
   }
 
+  /*
+   * Poster hero numerals — gradient-filled text with a guaranteed fallback.
+   *
+   * `background-clip: text` only reveals the gradient when the text itself is
+   * transparent, so an unsupporting renderer would show NOTHING where the
+   * headline number should be. The @supports gate keeps a solid accent colour
+   * (passed in as --poster-num-fallback) unless clipping is actually available.
+   *
+   * This lives in CSS rather than a JS `CSS.supports()` branch on purpose: a
+   * runtime branch renders differently on the server than in the browser and
+   * trips React's hydration check.
+   */
+  .poster-gradient-text {
+    color: var(--poster-num-fallback, currentColor);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .poster-gradient-text {
+      color: transparent;
+    }
+  }
+
   /* Ambient lime glow blob */
   .glow-lime {
     background: radial-gradient(
