@@ -200,6 +200,45 @@ export function computePosterStats(
   };
 }
 
+export interface LogWindow {
+  /** The rows a template should print, in chronological order. */
+  readonly visible: readonly PosterTradeRow[];
+  /** How many rows were left out. */
+  readonly hiddenCount: number;
+  /** Net pips carried by the rows left out. */
+  readonly hiddenPips: number;
+}
+
+/**
+ * The slice of the trade log a fixed-size poster can actually print.
+ *
+ * Two decisions worth stating, because both are visible on the artefact:
+ *
+ * 1. It keeps the MOST RECENT rows. The log is chronological, so a naive
+ *    `slice(0, n)` on a busy week prints Monday to Thursday and silently drops
+ *    the weekend — the opposite of what "this week's results" should lead with.
+ *
+ * 2. It returns the pips carried by the dropped rows, so the template can say
+ *    so. Without that, a reader adding up a truncated column lands well short
+ *    of the headline and the poster looks like it is inflating its own total.
+ */
+export function windowTradeLog(
+  log: readonly PosterTradeRow[],
+  limit: number,
+): LogWindow {
+  if (limit <= 0 || log.length <= limit) {
+    return { visible: log, hiddenCount: 0, hiddenPips: 0 };
+  }
+  const cut = log.length - limit;
+  const hidden = log.slice(0, cut);
+  let hiddenPips = 0;
+  for (const row of hidden) {
+    // Rows with no computable pips are skipped, matching computeTotalPips.
+    if (row.pips !== null && Number.isFinite(row.pips)) hiddenPips += row.pips;
+  }
+  return { visible: log.slice(cut), hiddenCount: cut, hiddenPips };
+}
+
 /**
  * The headline pip total: always signed, whole pips.
  *

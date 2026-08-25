@@ -4,6 +4,7 @@ import {
   formatAvgR,
   formatPips,
   formatRowPips,
+  windowTradeLog,
   formatWinRate,
   resolveCloseDate,
   tradeResult,
@@ -401,5 +402,69 @@ describe("formatting", () => {
     expect(formatAvgR(1.25)).toBe("1.3R");
     expect(formatAvgR(-0.4)).toBe("-0.4R");
     expect(formatAvgR(null)).toBe("—");
+  });
+});
+
+describe("windowTradeLog — what a fixed-size poster can print", () => {
+  const row = (i: number, pips: number | null) =>
+    ({
+      id: `r${i}`,
+      date: `${String(i + 1).padStart(2, "0")} Aug`,
+      pair: "EURUSD",
+      direction: "buy" as const,
+      entry: "1.10000",
+      pips,
+      result: "win" as const,
+    });
+
+  it("prints everything when it fits", () => {
+    const log = [row(0, 10), row(1, 20)];
+    const w = windowTradeLog(log, 20);
+    expect(w.visible).toHaveLength(2);
+    expect(w.hiddenCount).toBe(0);
+    expect(w.hiddenPips).toBe(0);
+  });
+
+  it("keeps the MOST RECENT rows, not the earliest", () => {
+    // Chronological log; a naive slice(0, n) would print the start of the week
+    // and drop the weekend — the opposite of "this week's results".
+    const log = Array.from({ length: 30 }, (_, i) => row(i, 1));
+    const w = windowTradeLog(log, 20);
+    expect(w.visible).toHaveLength(20);
+    expect(w.visible[0].id).toBe("r10");
+    expect(w.visible[19].id).toBe("r29");
+    expect(w.hiddenCount).toBe(10);
+  });
+
+  it("reports the pips carried by the dropped rows", () => {
+    const log = Array.from({ length: 25 }, (_, i) => row(i, i < 5 ? -8 : 4));
+    const w = windowTradeLog(log, 20);
+    // The 5 dropped rows are the earliest, at -8 each.
+    expect(w.hiddenCount).toBe(5);
+    expect(w.hiddenPips).toBeCloseTo(-40, 6);
+  });
+
+  it("visible pips + hidden pips reconcile with the whole log", () => {
+    // This is the property the note exists to preserve: a reader adding the
+    // printed column and the note lands on the headline.
+    const log = Array.from({ length: 30 }, (_, i) => row(i, i % 4 === 3 ? -12 : 9));
+    const w = windowTradeLog(log, 20);
+    const visibleSum = w.visible.reduce((a, r) => a + (r.pips ?? 0), 0);
+    const total = log.reduce((a, r) => a + (r.pips ?? 0), 0);
+    expect(visibleSum + w.hiddenPips).toBeCloseTo(total, 6);
+  });
+
+  it("skips rows with no computable pips, like the total does", () => {
+    const log = [row(0, null), row(1, 10), row(2, 5), row(3, 5)];
+    const w = windowTradeLog(log, 2);
+    expect(w.hiddenCount).toBe(2);
+    expect(w.hiddenPips).toBeCloseTo(10, 6);
+  });
+
+  it("is safe at the boundary and with a nonsense limit", () => {
+    const log = Array.from({ length: 20 }, (_, i) => row(i, 1));
+    expect(windowTradeLog(log, 20).hiddenCount).toBe(0);
+    expect(windowTradeLog(log, 0).visible).toHaveLength(20);
+    expect(windowTradeLog([], 20).visible).toHaveLength(0);
   });
 });
