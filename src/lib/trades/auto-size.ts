@@ -35,6 +35,8 @@ export interface AutoSizeResult {
   /** Money at risk in account currency — what the user is actually betting. */
   readonly riskAmount: number;
   readonly pipsAtRisk: number;
+  /** The balance the risk was taken from — the live one when compounding. */
+  readonly basisBalance: number;
   /** Non-blocking notes (e.g. a cross-pair rate approximation). */
   readonly notes: readonly string[];
 }
@@ -75,6 +77,7 @@ export function computeAutoSize(input: AutoSizeInput): AutoSizeResult | null {
     lots: result.standardLots,
     riskAmount: result.dollarRisk,
     pipsAtRisk: result.pipsAtRisk,
+    basisBalance: capital,
     // Only surface notes the trader can act on; the >2% risk nag belongs to
     // the calculator page, not to every trade they log.
     notes: result.warnings

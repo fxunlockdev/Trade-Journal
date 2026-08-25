@@ -16,6 +16,7 @@ import { createTradeFormSchema } from "@/lib/validators/trade";
 import { EMOTIONS } from "@/lib/constants/emotions";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { computeAutoSize } from "@/lib/trades/auto-size";
+import { effectiveRiskPercent, riskBaseBalance } from "@/lib/trades/balance";
 import { parseSignalText } from "@/lib/trades/signal-parser";
 import {
   ALL_INSTRUMENTS,
@@ -199,6 +200,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
         quantity: trade.quantity,
         stop_loss: trade.stop_loss ?? undefined,
         sl_pips: trade.sl_pips ?? undefined,
+        risk_percent: trade.risk_percent ?? undefined,
         take_profit: trade.take_profit ?? undefined,
         tp1: trade.tp1 ?? trade.take_profit ?? undefined,
         tp2: trade.tp2 ?? undefined,
@@ -295,12 +297,30 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
    */
   const sizingJournal = availableJournals.find((j) => j.id === journalId);
   const [quantityTouched, setQuantityTouched] = useState(isEditMode);
+
+  // Which balance the risk % comes off: the live one when the journal
+  // compounds, the starting capital when it's set to fixed.
+  const riskBasis = sizingJournal?.risk_basis ?? "compounding";
+  const { base: basisBalance, depleted: accountDepleted } = riskBaseBalance({
+    startingCapital: sizingJournal?.initial_capital,
+    currentBalance: sizingJournal?.current_balance,
+    basis: riskBasis,
+  });
+  // Per-trade money management: this trade's own risk %, else the journal's.
+  const tradeRiskPercent = effectiveRiskPercent({
+    tradeRiskPercent:
+      watched.risk_percent == null || watched.risk_percent === ("" as unknown)
+        ? null
+        : Number(watched.risk_percent),
+    journalDefault: sizingJournal?.default_risk_percent,
+  });
+
   const autoSize = useMemo(
     () =>
       computeAutoSize({
-        capital: sizingJournal?.initial_capital,
+        capital: basisBalance,
         accountCurrency: sizingJournal?.account_currency ?? "USD",
-        riskPercent: sizingJournal?.default_risk_percent ?? 1,
+        riskPercent: tradeRiskPercent,
         instrument: watched.instrument ?? "",
         direction: direction ?? "buy",
         entryPrice: Number(watched.entry_price),
@@ -310,9 +330,9 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
             : Number(watched.stop_loss),
       }),
     [
-      sizingJournal?.initial_capital,
+      basisBalance,
       sizingJournal?.account_currency,
-      sizingJournal?.default_risk_percent,
+      tradeRiskPercent,
       watched.instrument,
       watched.entry_price,
       watched.stop_loss,
@@ -623,6 +643,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
           lot_size: null,
           stop_loss: data.stop_loss || null,
           sl_pips: data.sl_pips || null,
+          risk_percent: data.risk_percent || null,
           take_profit: legacyTp,
           tp1: tp1Value,
           tp2: data.tp2 || null,
@@ -1242,7 +1263,19 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               {autoSize !== null && !quantityTouched && (
                 <p className="text-xs text-primary">
                   Auto-sized: {autoSize.lots.toFixed(2)} lots — risking{" "}
+                  {tradeRiskPercent}% of{" "}
                   {sizingJournal?.account_currency ?? "USD"}{" "}
+                  {autoSize.basisBalance.toLocaleString("en-US", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  (
+                  {accountDepleted
+                    ? "starting capital — balance is at or below zero"
+                    : riskBasis === "compounding"
+                      ? "balance at page load"
+                      : "starting capital"}
+                  )
+                  ={" "}
                   {autoSize.riskAmount.toLocaleString("en-US", {
                     maximumFractionDigits: 2,
                   })}{" "}
@@ -1256,6 +1289,28 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                     Add an entry price and stop loss to size this automatically.
                   </p>
                 )}
+            </div>
+            <div className="space-y-2">
+              <FieldLabel
+                htmlFor="risk_percent"
+                help="Percent of the account risked on THIS trade. Blank uses the journal's default. Drives the position size above."
+              >
+                Risk %
+              </FieldLabel>
+              <Input
+                id="risk_percent"
+                type="number"
+                step="any"
+                min="0"
+                max="100"
+                placeholder={String(sizingJournal?.default_risk_percent ?? 1)}
+                {...register("risk_percent")}
+              />
+              {errors.risk_percent && (
+                <p className="text-xs text-destructive">
+                  {errors.risk_percent.message}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <FieldLabel htmlFor="fees" help="Commissions + spread + swap. Deducted from P&L.">

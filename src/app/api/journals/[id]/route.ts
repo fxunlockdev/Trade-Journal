@@ -38,6 +38,7 @@ const patchSchema = z
       .optional(),
     account_currency: z.enum(["USD", "EUR", "GBP"]).optional(),
     default_risk_percent: z.coerce.number().positive().max(100).optional(),
+    risk_basis: z.enum(["compounding", "fixed"]).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided",

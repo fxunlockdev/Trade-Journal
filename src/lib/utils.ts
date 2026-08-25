@@ -6,10 +6,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number): string {
+/**
+ * Money formatting. `currency` defaults to USD — the denomination the P&L
+ * pipeline converts into — so passing nothing keeps historical behaviour.
+ * Pass a journal's `account_currency` when the figure is an account-level one
+ * (capital, balance) that the user entered in their own currency.
+ */
+export function formatCurrency(value: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);

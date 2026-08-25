@@ -144,12 +144,40 @@ export async function PATCH(
       Object.entries(parsed.data).filter(([k]) => bodyKeys.has(k)),
     );
 
-    const merged = { ...existing, ...sentData };
+    // CLEARING A FIELD MUST MEAN `null`, NOT `undefined`.
+    //
+    // The optional numeric fields run a `blankToUndefined` preprocess, so a
+    // cleared input ("" or null) parses to `undefined`. That breaks the update
+    // twice over:
+    //   1. `JSON.stringify` DROPS undefined keys, so Supabase never receives
+    //      them and the column keeps its old value — clearing a stop loss or a
+    //      TP appears to save and silently does nothing.
+    //   2. `{...existing, ...sentData}` overwrites the old value with
+    //      `undefined`, which slips past computeTradeFields' `!== null` guards
+    //      and yields `r_multiple: NaN` (an R multiple has no denominator
+    //      without a stop). With `null` it correctly comes out as null.
+    //
+    // A key absent from the request body was already filtered out by
+    // `bodyKeys`, so anything still here was deliberately sent: present +
+    // blank unambiguously means "clear this column".
+    //
+    // Fields carrying a Zod `.default()` (fees, tags, num_positions,
+    // split_risk, order_type, tp4_trailing, source) can never reach this pass —
+    // the default replaces undefined during parsing, or the value is rejected
+    // outright. Pinned in tests/unit/trade-patch-clearing.test.ts.
+    const normalized: Record<string, unknown> = { ...sentData };
+    for (const key of bodyKeys) {
+      if (key in normalized && normalized[key] === undefined) {
+        normalized[key] = null;
+      }
+    }
+
+    const merged = { ...existing, ...normalized };
     const computed = computeTradeFields(merged);
 
-    const updatePatch: Record<string, unknown> = { ...sentData };
-    if ("tp1" in sentData) {
-      updatePatch.take_profit = sentData.tp1 ?? sentData.take_profit ?? null;
+    const updatePatch: Record<string, unknown> = { ...normalized };
+    if ("tp1" in normalized) {
+      updatePatch.take_profit = normalized.tp1 ?? normalized.take_profit ?? null;
     }
 
     // `source` is provenance — how the trade entered the system (manual / csv

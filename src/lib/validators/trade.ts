@@ -181,6 +181,17 @@ const optionalNonnegativeNumber = z.preprocess(
   blankToUndefined,
   z.coerce.number().nonnegative().nullable().optional(),
 );
+/**
+ * A risk percentage. The `.max(100)` matters: the DB has a
+ * `risk_percent > 0 and <= 100` CHECK, so without it a payload of 500 sails
+ * through validation and fails at the constraint — surfacing as a 500 with a
+ * raw Postgres string instead of a clean 400. Mirrors the journal's
+ * `default_risk_percent` bound.
+ */
+const optionalRiskPercent = z.preprocess(
+  blankToUndefined,
+  z.coerce.number().positive().max(100).nullable().optional(),
+);
 
 const createTradeObjectSchema = z.object({
   user_id: z.string().trim().min(1),
@@ -195,6 +206,8 @@ const createTradeObjectSchema = z.object({
   lot_size: optionalPositiveNumber,
   stop_loss: optionalPositiveNumber,
   sl_pips: optionalNonnegativeNumber,
+  // Per-trade money management: blank falls back to the journal default.
+  risk_percent: optionalRiskPercent,
   // Legacy single-TP — kept in sync with tp1 when only one target is set.
   take_profit: optionalPositiveNumber,
   tp1: optionalPositiveNumber,

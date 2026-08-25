@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Layers } from "lucide-react";
 
-import type { JournalWithRole, Trade } from "@/types/database";
+import type { AccountCurrency, JournalWithRole, Trade } from "@/types/database";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   computeProfitFactor,
@@ -11,6 +11,8 @@ import {
   computeWinRate,
 } from "@/lib/trades/analytics";
 import { computeTotalPips } from "@/lib/trades/pips";
+import { combinedStartingCapital } from "@/lib/trades/balance";
+import { BalanceCard } from "@/components/analytics/balance-card";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { EquityCurve } from "@/components/analytics/equity-curve";
@@ -210,6 +212,56 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
     apply(next);
   };
 
+  // Capital of the journals in scope, so the balance card and the equity
+  // baseline reflect the selection rather than the whole account list.
+  //
+  // Adding capital across journals only means something when they're
+  // denominated in the SAME currency — "$10,000 + ¥1,000,000 = 1,010,000" is a
+  // nonsense total. When the selection mixes currencies we withhold the combined
+  // capital rather than print a made-up number; the P&L stats still work because
+  // each trade's P&L is already converted to its journal's account currency.
+  const { scopedCapital, scopedCurrency, mixedCurrency, capitalisedIds, excludedCount } =
+    useMemo(() => {
+      const inScope =
+        journalSel.size === 0
+          ? journals
+          : journals.filter((j) => journalSel.has(j.id));
+
+      // Only journals that actually HAVE capital can contribute to a balance.
+      // Including an uncapitalised journal's trades would charge its P&L against
+      // another journal's capital — e.g. Chris's -$4,000 eating Yohan's $10,000
+      // and reporting "-30% of account" on an account that is in fact up.
+      const capitalised = inScope.filter(
+        (j) => j.initial_capital != null && j.initial_capital > 0,
+      );
+      const ids = new Set(capitalised.map((j) => j.id));
+      const currencies = new Set(
+        capitalised.map((j) => j.account_currency ?? "USD"),
+      );
+      if (currencies.size > 1) {
+        return {
+          scopedCapital: null,
+          scopedCurrency: undefined,
+          mixedCurrency: true,
+          capitalisedIds: ids,
+          excludedCount: inScope.length - capitalised.length,
+        } as const;
+      }
+      return {
+        scopedCapital: combinedStartingCapital(capitalised),
+        scopedCurrency: [...currencies][0] as AccountCurrency | undefined,
+        mixedCurrency: false,
+        capitalisedIds: ids,
+        excludedCount: inScope.length - capitalised.length,
+      } as const;
+    }, [journals, journalSel]);
+
+  /** Trades of the in-scope journals that have capital — the balance's basis. */
+  const capitalisedTrades = useMemo(
+    () => journalScoped.filter((t) => capitalisedIds.has(t.journal_id)),
+    [journalScoped, capitalisedIds],
+  );
+
   const scopeLabel =
     journalSel.size === 0
       ? `all ${journals.length} journal${journals.length === 1 ? "" : "s"}`
@@ -289,7 +341,43 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
             </CardContent>
           </Card>
 
-          <StatsCards trades={filtered} />
+          {/*
+            Balance reads from every trade in the selected journals THAT HAVE
+            CAPITAL, matching exactly what `scopedCapital` sums. Narrowing to one
+            instrument must not invent a balance — that's an analysis filter, not
+            an account change.
+          */}
+          <BalanceCard
+            trades={capitalisedTrades}
+            startingCapital={scopedCapital}
+            currency={scopedCurrency}
+          />
+
+          {mixedCurrency && (
+            <p className="text-xs text-muted-foreground">
+              Account balance hidden: the selected journals use different account
+              currencies, so a combined capital figure would be meaningless.
+            </p>
+          )}
+
+          {!mixedCurrency && scopedCapital !== null && excludedCount > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Balance covers only the {capitalisedIds.size} journal
+              {capitalisedIds.size === 1 ? "" : "s"} with a starting capital —{" "}
+              {excludedCount} in view {excludedCount === 1 ? "has" : "have"} none
+              set, so {excludedCount === 1 ? "its" : "their"} P&amp;L is excluded.
+            </p>
+          )}
+
+          {/*
+            Instrument-filtered stats are a subset view, so the account-relative
+            readings (drawdown %, "% of account") would be measuring a filtered
+            slice against the whole account. Withhold the capital while filtered.
+          */}
+          <StatsCards
+            trades={filtered}
+            startingCapital={instrumentSel.size === 0 ? scopedCapital : null}
+          />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="border-border bg-card lg:col-span-2">
@@ -299,7 +387,18 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <EquityCurve trades={filtered} />
+                {/*
+                  Balance mode baselines at the full capital, so under an
+                  instrument filter its endpoint would disagree with the balance
+                  card. Drop the capital while filtered and the curve falls back
+                  to cumulative P&L, which is the honest reading of a subset.
+                */}
+                <EquityCurve
+                  trades={filtered}
+                  startingCapital={
+                    instrumentSel.size === 0 ? scopedCapital : null
+                  }
+                />
               </CardContent>
             </Card>
             <Card className="border-border bg-card">
