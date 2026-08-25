@@ -25,6 +25,7 @@ import {
   FileUp,
   Cable,
   LayoutGrid,
+  Image as ImageIcon,
 } from "lucide-react";
 
 interface UserProfile {
@@ -91,6 +92,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Portfolio",
     href: "/portfolio",
     icon: Layers,
+    section: "main",
+  },
+  {
+    label: "Posters",
+    href: "/posters",
+    icon: ImageIcon,
     section: "main",
   },
   {

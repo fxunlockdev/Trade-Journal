@@ -14,6 +14,7 @@ import {
   Radio,
   Cable,
   FileUp,
+  Image as ImageIcon,
   Settings as SettingsIcon,
   Search,
   ArrowLeft,
@@ -118,6 +119,13 @@ const NAV_ACTIONS: readonly CommandAction[] = [
     icon: Cable,
     href: "/mt5-sync",
     keywords: ["mt5", "metatrader", "myfxbook", "broker", "connect", "sync"],
+  },
+  {
+    id: "posters",
+    label: "Create a Poster",
+    icon: ImageIcon,
+    href: "/posters",
+    keywords: ["poster", "share", "social", "instagram", "image", "results"],
   },
   {
     id: "import",

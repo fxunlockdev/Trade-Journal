@@ -22,6 +22,7 @@
     "date-fns": "^4.1.0",
     "fflate": "^0.8.3",
     "lucide-react": "^1.8.0",
+    "modern-screenshot": "^4.7.0",
     "next": "16.2.4",
     "next-themes": "^0.4.6",
     "openai": "^6.34.0",
