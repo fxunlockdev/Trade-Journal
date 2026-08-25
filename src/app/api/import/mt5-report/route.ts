@@ -173,6 +173,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         userId: user.id,
         accountKey,
         source: "csv",
+        // Read straight off the statement header — every P&L figure in the file
+        // is denominated in it. When the header didn't carry one (MT4, older
+        // formats) the journal's own currency stands in, recorded as assumed.
+        accountCurrency: parsed.accountCurrency,
+        assumedCurrency: journal.account_currency ?? null,
       },
       parsed.events,
     );

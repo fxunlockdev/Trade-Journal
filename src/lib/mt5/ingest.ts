@@ -257,7 +257,20 @@ export function buildSlTpPatch(event: Mt5Event): Record<string, unknown> {
  * across all partial closes (the EA aggregates via HistorySelectByPosition),
  * so replays and out-of-order snapshots simply overwrite with the same data.
  */
-export function buildCloseFields(event: Mt5Event): Record<string, unknown> {
+export function buildCloseFields(
+  event: Mt5Event,
+  /**
+   * The account's deposit currency and how we came by it. `pnl_absolute` here
+   * is the BROKER's own figure, never converted, so it is denominated in the
+   * account's currency — not in USD, and not in the instrument's quote
+   * currency. Recording it is what stops a EUR account's euros being read as
+   * dollars downstream.
+   */
+  denomination?: {
+    readonly currency: string | null;
+    readonly quality: "broker" | "assumed";
+  },
+): Record<string, unknown> {
   const exitPrice = event.exit_price as number; // schema-enforced on close
   const commission = event.commission ?? 0;
   const swap = event.swap ?? 0;
@@ -272,6 +285,8 @@ export function buildCloseFields(event: Mt5Event): Record<string, unknown> {
     exit_price: exitPrice,
     exit_time: event.close_time != null ? toIso(event.close_time) : null,
     pnl_absolute: netPnl,
+    pnl_currency: denomination?.currency ?? null,
+    pnl_rate_quality: denomination?.currency ? denomination.quality : null,
     pnl_percentage: computePnlPercentage(
       event.entry_price,
       exitPrice,

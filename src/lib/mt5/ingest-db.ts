@@ -22,6 +22,19 @@ export interface IngestTarget {
   readonly accountKey: string;
   /** Trade source persisted on inserted rows. */
   readonly source: "mt5_webhook" | "csv";
+  /**
+   * The account's deposit currency, when the source told us — every P&L figure
+   * in the payload is denominated in it. Null when unknown (MT4 statements,
+   * older headers), in which case the caller falls back to the journal's
+   * account_currency and records that it was assumed rather than read.
+   */
+  readonly accountCurrency?: string | null;
+  /**
+   * Last-resort denomination when the source didn't say — the journal's own
+   * account_currency. Recorded as `assumed` so it is never mistaken for a fact
+   * read off the statement.
+   */
+  readonly assumedCurrency?: string | null;
 }
 
 export interface IngestResult {
@@ -150,7 +163,20 @@ async function processEvent(
     // define "closed" as pnl_absolute !== null, so exit fields wait for the
     // final snapshot. Cumulative totals make the final write authoritative.
     const patch = event.is_final
-      ? { ...buildSlTpPatch(event), ...buildCloseFields(event) }
+      ? {
+          ...buildSlTpPatch(event),
+          // The broker's P&L is denominated in the ACCOUNT's currency. When the
+          // statement told us, that is a read fact; otherwise the caller's
+          // fallback is recorded as assumed rather than passed off as read.
+          ...buildCloseFields(
+            event,
+            target.accountCurrency
+              ? { currency: target.accountCurrency, quality: "broker" }
+              : target.assumedCurrency
+                ? { currency: target.assumedCurrency, quality: "assumed" }
+                : undefined,
+          ),
+        }
       : buildSlTpPatch(event);
     await updateRow(admin, existing.id, patch);
   }
