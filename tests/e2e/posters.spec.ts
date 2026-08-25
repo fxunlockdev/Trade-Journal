@@ -180,6 +180,10 @@ test.describe("poster rendering", () => {
     ["design-c", "Trade Log"],
   ] as const) {
     test(`${label} renders a real 1080x1080 PNG`, async ({ page }) => {
+      // Rasterising 1080x1080 is CPU-heavy, and Playwright's default local
+      // parallelism points several workers at one dev server. Without the
+      // extra headroom these time out locally while passing in CI (workers: 1).
+      test.slow();
       await gotoHarness(page);
       await page.getByTestId(`poster-template-${id}`).click();
       await expect(page.getByTestId("poster-canvas")).toContainText(
@@ -216,6 +220,7 @@ test.describe("poster rendering", () => {
   }
 
   test("templates B and C show win rate and average R", async ({ page }) => {
+    test.slow();
     await gotoHarness(page);
     for (const id of ["design-b", "design-c"] as const) {
       await page.getByTestId(`poster-template-${id}`).click();
