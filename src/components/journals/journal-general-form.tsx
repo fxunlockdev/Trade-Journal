@@ -384,8 +384,13 @@ export function JournalGeneralForm({
             <p className="text-xs text-muted-foreground">
               {riskBasis === "compounding" ? (
                 <>
-                  Risk is a % of your <strong>current balance</strong> (capital +
-                  closed P&amp;L), so profits compound and a drawdown
+                  {/*
+                    The space before "(capital" is explicit: JSX strips
+                    whitespace that contains a newline, so a line break after
+                    </strong> would render "current balance(capital".
+                  */}
+                  Risk is a % of your <strong>current balance</strong>{" "}
+                  (capital + closed P&amp;L), so profits compound and a drawdown
                   automatically reduces position size.
                 </>
               ) : (
@@ -414,7 +419,12 @@ export function JournalGeneralForm({
               ({riskLineLabel}) ={" "}
               <span className="font-medium text-foreground">
                 {currency}{" "}
+                {/*
+                  Both fraction digits pinned: a money amount that renders as
+                  "124.7" next to "100" reads as a typo rather than a figure.
+                */}
                 {((riskLineBase * riskNum) / 100).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
               </span>{" "}
