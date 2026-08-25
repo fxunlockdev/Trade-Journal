@@ -41,7 +41,9 @@ import {
   posterFilename,
   posterToBlob,
 } from "@/lib/posters/export";
-import { logoStorageKey, readLogoFile } from "@/lib/posters/logo";
+import { logoStorageKey } from "@/lib/posters/logo";
+import { usePosterLogo } from "@/hooks/use-poster-logo";
+import { safeGet, safeRemove, safeSet } from "@/lib/safe-storage";
 import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import {
@@ -153,24 +155,20 @@ export function PostersClient({
     () => logoStorageKey(selectedJournals.map((j) => j.id)),
     [selectedJournals],
   );
-  const [logo, setLogo] = useState<string | null>(null);
-  const [logoBusy, setLogoBusy] = useState(false);
-  const logoInputRef = useRef<HTMLInputElement>(null);
+  const {
+    logo,
+    busy: logoBusy,
+    inputRef: logoInputRef,
+    onPicked: onLogoPicked,
+    onRemove: onLogoRemove,
+  } = usePosterLogo(logoKey);
 
   useEffect(() => {
-    const saved = groupKey ? window.localStorage.getItem(groupKey) : null;
+    // Guarded like the logo's: this effect runs FIRST, so an unprotected read
+    // here would throw in private mode before the logo's guard ever helped.
+    const saved = groupKey ? safeGet(groupKey) : null;
     setGroup(saved ?? defaultGroup);
   }, [groupKey, defaultGroup]);
-
-  useEffect(() => {
-    // localStorage throws in private mode on some browsers and when the origin
-    // quota is full. A missing logo is a cosmetic loss, never a broken page.
-    try {
-      setLogo(logoKey ? window.localStorage.getItem(logoKey) : null);
-    } catch {
-      setLogo(null);
-    }
-  }, [logoKey]);
 
   useEffect(() => {
     // Re-resolved when the period changes AND when `nonce` is bumped just
@@ -208,53 +206,11 @@ export function PostersClient({
     setGroup(value);
     if (!groupKey) return;
     if (value.trim() === "" || value === defaultGroup) {
-      window.localStorage.removeItem(groupKey);
+      safeRemove(groupKey);
     } else {
-      window.localStorage.setItem(groupKey, value);
-    }
-  };
-
-  const onLogoPicked = async (file: File | undefined) => {
-    if (!file) return;
-    setLogoBusy(true);
-    try {
-      const parsed = await readLogoFile(file);
-      setLogo(parsed.dataUrl);
-      if (logoKey) {
-        try {
-          window.localStorage.setItem(logoKey, parsed.dataUrl);
-        } catch {
-          // Over quota or blocked. The logo still applies to this session; only
-          // remembering it failed, and saying so beats a silent forget later.
-          toast.warning("Logo applied, but it couldn't be saved for next time.");
-        }
-      }
-      if (!parsed.transparent) {
-        toast.warning(
-          "That PNG has no transparency, so it will print as a solid rectangle. Export it with a transparent background.",
-        );
-      } else {
-        toast.success("Logo added");
-      }
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : "That logo couldn't be read.",
-      );
-    } finally {
-      setLogoBusy(false);
-      // Cleared so re-picking the SAME file fires change again; without this a
-      // user who fixes their PNG and re-uploads it sees nothing happen.
-      if (logoInputRef.current) logoInputRef.current.value = "";
-    }
-  };
-
-  const onLogoRemove = () => {
-    setLogo(null);
-    if (!logoKey) return;
-    try {
-      window.localStorage.removeItem(logoKey);
-    } catch {
-      // Already gone from state; a failed removal only affects the next load.
+      // Fires on every keystroke, so a quota failure here must not throw out of
+      // an onChange handler and unmount the page mid-edit.
+      safeSet(groupKey, value);
     }
   };
 
@@ -318,6 +274,15 @@ export function PostersClient({
     [group, kind, range, theme.tBg],
   );
 
+  /**
+   * Exports are blocked while a logo is decoding.
+   *
+   * Decoding a 2 MB source takes hundreds of milliseconds, and the poster shows
+   * the group NAME throughout. Without this gate, clicking Download inside that
+   * window rasterises the unbranded poster, reports success, and lands the
+   * "Logo added" toast afterwards, so the user publishes a poster they believe
+   * carries their mark.
+   */
   /** Refresh the window first, so an export always reflects "now". */
   const exportPoster = (mode: "download" | "copy") => {
     setNonce((n) => n + 1);
@@ -671,7 +636,9 @@ export function PostersClient({
           <div className="flex gap-2">
             <Button
               onClick={() => exportPoster("download")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-download"
               className="flex-1"
             >
@@ -685,7 +652,9 @@ export function PostersClient({
             <Button
               variant="outline"
               onClick={() => exportPoster("copy")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-copy"
             >
               {busy === "copy" ? (

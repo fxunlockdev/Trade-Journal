@@ -62,10 +62,26 @@ export function instrumentOptions(
  * already used, so names saved before this change survive it.
  */
 export function groupStorageKey(journalIds: readonly string[]): string | null {
+  return posterScopeKey("group", journalIds);
+}
+
+/**
+ * The one place a poster preference's storage key is built.
+ *
+ * Everything a user sets on a poster is scoped to the journal COMBINATION it
+ * was set for, and every such key has to agree on what "the same combination"
+ * means. Two hand-written implementations of the sort-and-join would only have
+ * to disagree once — a workspace id added to one, a different separator — for a
+ * logo to outlive the name it replaced, or to attach to the wrong team.
+ */
+export function posterScopeKey(
+  kind: string,
+  journalIds: readonly string[],
+): string | null {
   // No journals means no combination to remember; a bare "trdr_poster_group:"
   // would be a keyless global entry shared by every such state.
   if (journalIds.length === 0) return null;
-  return `trdr_poster_group:${[...journalIds].sort().join("+")}`;
+  return `trdr_poster_${kind}:${[...journalIds].sort().join("+")}`;
 }
 
 export interface JournalCount {

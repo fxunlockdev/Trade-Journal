@@ -5,8 +5,9 @@ import {
   fitHeadline,
   GradientNumber,
   noiseLayerStyle,
+  LOGO_SIZE,
   POSTER_SIZE,
-  PosterLogo,
+  PosterBrand,
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
@@ -101,9 +102,7 @@ export function DesignA({
             >
               Presented by
             </div>
-            {logo ? (
-              <PosterLogo src={logo} alt={group} height={44} maxWidth={300} />
-            ) : (
+            <PosterBrand logo={logo} alt={group} {...LOGO_SIZE.lead}>
               <div
                 style={{
                   fontFamily: "var(--font-poster-display), sans-serif",
@@ -114,7 +113,7 @@ export function DesignA({
               >
                 {group}
               </div>
-            )}
+            </PosterBrand>
           </div>
           <div
             style={{
