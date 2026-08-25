@@ -301,9 +301,11 @@ test.describe("poster rendering", () => {
     await page.evaluate(() => document.fonts.ready);
     await page.getByTestId("poster-template-design-c").click();
 
-    // 22 seeded trades -> 20 shown, 2 hidden, and the overflow is stated.
+    // 22 seeded trades -> the 20 most recent shown, the 2 earliest dropped,
+    // and the note carries their pips so the printed column still reconciles
+    // with the headline.
     await expect(page.getByTestId("poster-canvas")).toContainText(
-      /\+ 2 more trades not shown/i,
+      /\+ 2 earlier trades not shown \([-+][\d.]+ pips\)/i,
     );
   });
 
