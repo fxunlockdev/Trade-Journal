@@ -192,16 +192,16 @@ function buildStatsBlock(stats: TradingStats): string {
     "",
     "=== TIME ANALYSIS ===",
     stats.best_hour !== null
-      ? `Best Hour (UTC): ${stats.best_hour.hour}:00 — ${stats.best_hour.trades} trades, ${formatPct(stats.best_hour.win_rate)} win rate, PnL ${formatUsd(stats.best_hour.pnl)}`
+      ? `Best Hour (UTC): ${stats.best_hour.hour}:00 with ${stats.best_hour.trades} trades, ${formatPct(stats.best_hour.win_rate)} win rate, PnL ${formatUsd(stats.best_hour.pnl)}`
       : "Best Hour: insufficient data (need ≥2 trades per hour)",
     stats.worst_hour !== null
-      ? `Worst Hour (UTC): ${stats.worst_hour.hour}:00 — ${stats.worst_hour.trades} trades, ${formatPct(stats.worst_hour.win_rate)} win rate, PnL ${formatUsd(stats.worst_hour.pnl)}`
+      ? `Worst Hour (UTC): ${stats.worst_hour.hour}:00 with ${stats.worst_hour.trades} trades, ${formatPct(stats.worst_hour.win_rate)} win rate, PnL ${formatUsd(stats.worst_hour.pnl)}`
       : "Worst Hour: insufficient data (need ≥2 trades per hour)",
     stats.best_day !== null
-      ? `Best Day: ${stats.best_day.day} — ${stats.best_day.trades} trades, ${formatPct(stats.best_day.win_rate)} win rate, PnL ${formatUsd(stats.best_day.pnl)}`
+      ? `Best Day: ${stats.best_day.day} with ${stats.best_day.trades} trades, ${formatPct(stats.best_day.win_rate)} win rate, PnL ${formatUsd(stats.best_day.pnl)}`
       : "Best Day: insufficient data (need ≥2 trades per day)",
     stats.worst_day !== null
-      ? `Worst Day: ${stats.worst_day.day} — ${stats.worst_day.trades} trades, ${formatPct(stats.worst_day.win_rate)} win rate, PnL ${formatUsd(stats.worst_day.pnl)}`
+      ? `Worst Day: ${stats.worst_day.day} with ${stats.worst_day.trades} trades, ${formatPct(stats.worst_day.win_rate)} win rate, PnL ${formatUsd(stats.worst_day.pnl)}`
       : "Worst Day: insufficient data (need ≥2 trades per day)",
     "",
     "=== LAST 10 CLOSED TRADES ===",

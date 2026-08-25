@@ -244,7 +244,7 @@ function SuggestionsCard({
                 {s.title}
               </span>
               <span className="text-sm text-muted-foreground">
-                {" — "}
+                {": "}
                 {s.action}
               </span>
             </div>
@@ -519,7 +519,7 @@ export function InsightsPanel({
               {isStale && (
                 <p className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-xs font-medium text-warn">
                   <span className="size-1.5 rounded-full bg-warn" />
-                  Stale — {newTradesSince} new trade
+                  Stale: {newTradesSince} new trade
                   {newTradesSince === 1 ? "" : "s"} since last analysis
                 </p>
               )}

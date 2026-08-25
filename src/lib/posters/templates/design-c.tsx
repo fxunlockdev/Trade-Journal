@@ -99,7 +99,7 @@ function LogRow({
           color: resultColor,
         }}
       >
-        {row.pips === null ? "—" : formatRowPips(row.pips)}
+        {row.pips === null ? "–" : formatRowPips(row.pips)}
       </div>
       <div
         style={{

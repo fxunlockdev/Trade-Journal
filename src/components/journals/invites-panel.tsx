@@ -115,7 +115,7 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
         toast.error(body.error ?? "Failed to generate invite");
         return;
       }
-      toast.success("Invite link generated — copy and share");
+      toast.success("Invite link generated. Copy and share it.");
       await load();
     } catch {
       toast.error("Network error");
@@ -129,7 +129,7 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
       await navigator.clipboard.writeText(inviteUrl(token));
       toast.success("Link copied to clipboard");
     } catch {
-      toast.error("Couldn't copy — select the link manually");
+      toast.error("Couldn't copy. Select the link manually.");
     }
   };
 
@@ -172,7 +172,7 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
           <p className="text-sm text-muted-foreground">
             Generate a shareable link that lets a colleague join{" "}
             <span className="font-medium text-foreground">{journalName}</span>.
-            Send the link via Slack, WhatsApp, or email — no email integration
+            Send the link via Slack, WhatsApp, or email. No email integration
             required. Each link is single-use and expires automatically.
           </p>
 
@@ -190,10 +190,10 @@ export function InvitesPanel({ journalId, journalName }: InvitesPanelProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="member">
-                    Member — can log + edit trades
+                    Member: can log + edit trades
                   </SelectItem>
                   <SelectItem value="viewer">
-                    Viewer — read-only access
+                    Viewer: read-only access
                   </SelectItem>
                 </SelectContent>
               </Select>

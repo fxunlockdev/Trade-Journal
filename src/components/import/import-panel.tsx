@@ -155,7 +155,7 @@ export function ImportPanel() {
             <span className="font-medium text-foreground">Export from MT5:</span>{" "}
             Toolbox → History tab → right-click → Period: <em>All History</em> →
             <strong> Report → XLSX</strong> (or HTML). (MT4: Account History →{" "}
-            <em>Save as Report</em>.) Any report language works — English isn&apos;t
+            <em>Save as Report</em>.) Any report language works, so English isn&apos;t
             required.
             <br />
             <span className="text-xs">
@@ -325,7 +325,7 @@ export function ImportPanel() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{t.volume}</TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {t.close_time ? formatDateTime(new Date(t.close_time * 1000)) : "—"}
+                        {t.close_time ? formatDateTime(new Date(t.close_time * 1000)) : "–"}
                       </TableCell>
                       <TableCell
                         className={cn(

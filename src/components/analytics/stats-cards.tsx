@@ -116,7 +116,7 @@ function buildCards(
           ? profitFactor.toFixed(2)
           : winsOnly
             ? "∞"
-            : "—",
+            : "–",
       subtitle:
         profitFactor !== null
           ? profitFactor > 1
@@ -136,7 +136,7 @@ function buildCards(
       label: "Expectancy",
       // What one trade is worth on average — the number that says whether the
       // system is worth trading, independent of win rate.
-      value: expectancy !== null ? formatCurrency(expectancy) : "—",
+      value: expectancy !== null ? formatCurrency(expectancy) : "–",
       // The R average only covers trades that had a stop loss. When that's not
       // every closed trade, say so — otherwise one +3R trade among nine
       // stop-less losers reads as "+3.00R per trade" on a losing system.
@@ -171,7 +171,7 @@ function buildCards(
     {
       label: "Payoff Ratio",
       // Average win vs average loss — what makes a sub-50% win rate survivable.
-      value: payoff !== null ? `${payoff.toFixed(2)}:1` : winsOnly ? "∞" : "—",
+      value: payoff !== null ? `${payoff.toFixed(2)}:1` : winsOnly ? "∞" : "–",
       subtitle:
         payoff !== null
           ? `Avg win vs avg loss`

@@ -164,7 +164,7 @@ export function JournalSwitcher({
                   onSelect={() => {
                     setOpen(false);
                     toast.info(
-                      "Paste the invite link in your browser — e.g. /invite/abc123xyz",
+                      "Paste the invite link in your browser, e.g. /invite/abc123xyz",
                       { duration: 5000 },
                     );
                   }}

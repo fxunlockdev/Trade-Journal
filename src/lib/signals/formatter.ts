@@ -16,7 +16,7 @@ const FORMATTER_SYSTEM_PROMPT = [
   "- Keep the order: direction + instrument, entry, SL, TPs, then notes.",
   "- Plain text only (no markdown, no code fences). Short lines, blank lines between sections.",
   "- If notes are present, condense them to one punchy line at the end.",
-  "- Output ONLY the final message — no commentary.",
+  "- Output ONLY the final message, with no commentary.",
 ].join("\n");
 
 export async function formatSignalWithAI(signal: Signal): Promise<string> {

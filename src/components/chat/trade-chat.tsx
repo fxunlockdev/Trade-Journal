@@ -417,7 +417,7 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
     const welcome: DisplayMessage = {
       id: "welcome",
       role: "assistant",
-      content: `Welcome${userName ? `, ${userName}` : ""}! I'm your trade logging assistant. Just tell me about a trade — e.g. "Bought BTC at 77200, sold at 77431" and I'll log it instantly.`,
+      content: `Welcome${userName ? `, ${userName}` : ""}! I'm your trade logging assistant. Just tell me about a trade, e.g. "Bought BTC at 77200, sold at 77431", and I'll log it instantly.`,
       createdAt: new Date().toISOString(),
     };
     setAllMessages([welcome]);

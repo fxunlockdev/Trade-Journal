@@ -178,7 +178,7 @@ describe("computePosterStats", () => {
     // never measured at all.
     const stats = computePosterStats([mk({ r_multiple: null })]);
     expect(stats.avgR).toBeNull();
-    expect(formatAvgR(stats.avgR)).toBe("—");
+    expect(formatAvgR(stats.avgR)).toBe("–");
   });
 
   it("counts how many trades used a real close time", () => {
@@ -200,7 +200,7 @@ describe("computePosterStats", () => {
 
   it("claims no asset at all when there are no trades", () => {
     // "ALL PAIRS" over +0 pips asserts a subject that isn't there.
-    expect(computePosterStats([]).asset).toBe("—");
+    expect(computePosterStats([]).asset).toBe("–");
   });
 
   it("wins + losses + breakeven always equals tradeCount", () => {
@@ -251,7 +251,7 @@ describe("computePosterStats", () => {
     expect(stats.winRate).toBe(0);
     expect(stats.avgR).toBeNull();
     expect(stats.log).toEqual([]);
-    expect(stats.asset).toBe("—");
+    expect(stats.asset).toBe("–");
   });
 });
 
@@ -401,7 +401,7 @@ describe("formatting", () => {
   it("avg R shows one decimal and keeps its sign", () => {
     expect(formatAvgR(1.25)).toBe("1.3R");
     expect(formatAvgR(-0.4)).toBe("-0.4R");
-    expect(formatAvgR(null)).toBe("—");
+    expect(formatAvgR(null)).toBe("–");
   });
 });
 

@@ -98,6 +98,6 @@ export function quoteToUsdFactor(input: QuoteConversionInput): QuoteConversion {
   return {
     factor: 1,
     approximate: true,
-    note: `No ${quote}/USD rate available — this figure is in ${quote}, not USD.`,
+    note: `No ${quote}/USD rate available, so this figure is in ${quote}, not USD.`,
   };
 }

@@ -178,4 +178,4 @@ export function getTheme(id: string): PosterTheme {
  * to remember to add.
  */
 export const POSTER_DISCLAIMER =
-  "Past performance is not indicative of future results. Trading foreign exchange and CFDs carries a high level of risk and may not be suitable for all investors. Figures shown are the results of closed trades recorded in this journal and are provided for information only — nothing here is financial advice.";
+  "Past performance is not indicative of future results. Trading foreign exchange and CFDs carries a high level of risk and may not be suitable for all investors. Figures shown are the results of closed trades recorded in this journal and are provided for information only. Nothing here is financial advice.";

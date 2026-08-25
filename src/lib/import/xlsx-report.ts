@@ -198,7 +198,7 @@ export function parseXlsxReport(
     files = unzipSync(bytes);
   } catch {
     throw new ReportParseError(
-      "That .xlsx file couldn't be opened — it may be corrupted or password-protected. Re-export it from MT5 (History → right-click → Report → XLSX) and try again.",
+      "That .xlsx file couldn't be opened. It may be corrupted or password-protected. Re-export it from MT5 (History → right-click → Report → XLSX) and try again.",
       "not_a_report",
     );
   }

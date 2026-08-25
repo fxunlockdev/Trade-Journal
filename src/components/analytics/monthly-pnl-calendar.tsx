@@ -232,7 +232,7 @@ export function MonthlyPnlCalendar({
             <SummaryPill label="Net P&L" value={netStr} valueClass={netClass} />
             <SummaryPill
               label="Win Rate"
-              value={view.totalTrades > 0 ? `${Math.round(view.winRate)}%` : "—"}
+              value={view.totalTrades > 0 ? `${Math.round(view.winRate)}%` : "–"}
             />
             <SummaryPill
               label="Days"

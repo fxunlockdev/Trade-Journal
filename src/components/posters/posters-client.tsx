@@ -298,14 +298,14 @@ export function PostersClient({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Share your results. Every figure comes from your journals&apos; closed
-          trades — the only things you supply are the group name and your logo.
+          trades. The only things you supply are the group name and your logo.
         </p>
       </div>
 
       {loadError && (
         <Card className="border-neg/40 bg-neg/5">
           <CardContent className="pt-6 text-sm text-neg">
-            Couldn&apos;t load trades: {loadError}. Reload before generating —
+            Couldn&apos;t load trades: {loadError}. Reload before generating, because
             these numbers may be incomplete.
           </CardContent>
         </Card>
@@ -477,7 +477,7 @@ export function PostersClient({
                   placeholder={defaultGroup}
                 />
                 <p className="text-xs text-muted-foreground">
-                  The only editable text — every statistic comes from your trades.
+                  The only editable text. Every statistic comes from your trades.
                 </p>
               </div>
 
@@ -597,9 +597,9 @@ export function PostersClient({
                     >
                       Combining {journalsClaimed} journals
                       {journalsContributing < journalsClaimed &&
-                        ` — only ${journalsContributing} traded in this period`}
+                        `, only ${journalsContributing} of which traded in this period`}
                       . If any of them track the same account, those trades are
-                      counted twice — only you can tell.
+                      counted twice, and only you can tell.
                     </p>
                   )}
 
@@ -691,7 +691,7 @@ export function PostersClient({
 
           {stats?.tradeCount === 0 && (
             <p className="text-center text-sm text-muted-foreground">
-              No closed trades in this period — pick another one.
+              No closed trades in this period. Pick another one.
             </p>
           )}
         </div>

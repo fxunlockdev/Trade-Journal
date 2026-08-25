@@ -67,7 +67,7 @@ export async function getActiveJournal(
   if (!fallback) {
     throw new Error(
       "No journal found for user. Signup trigger `create_personal_journal_for_user` " +
-        "should have created a Personal journal — check migration state.",
+        "should have created a Personal journal. Check migration state.",
     );
   }
   return fallback;

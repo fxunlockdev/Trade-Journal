@@ -101,7 +101,7 @@ export function CreateJournalDialog({
             <DialogTitle>Create a new journal</DialogTitle>
             <DialogDescription>
               A journal is a workspace for organising trades. Use separate
-              journals for different accounts, strategies, or groups — invite
+              journals for different accounts, strategies, or groups, and invite
               colleagues later from journal settings.
             </DialogDescription>
           </DialogHeader>
