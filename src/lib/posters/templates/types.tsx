@@ -29,39 +29,55 @@ export interface PosterProps {
 }
 
 /**
- * An uploaded logo, standing where the group name would print.
+ * How large a logo prints, per header treatment.
  *
- * Deliberately renders ONLY the logo. Each design keeps its own text node for
- * the name, because the three headers style it differently (Design A at 30px
- * with letter-spacing, B and C at 24px with line-height 1) and folding them
- * into one component would silently restyle two of the three supplied designs.
- *
- * Sized by HEIGHT with `width: auto`, so a wordmark and a square badge sit on
- * the same baseline instead of one being letterboxed into the other's box.
- * `maxWidth` keeps a very wide wordmark from pushing the date block off the
- * canvas, and `objectFit: contain` makes that a shrink rather than a crop.
- *
- * A plain <img> with a data URL, which `domToBlob` inlines without a fetch.
- * Anything that needs the network mid-rasterisation risks snapshotting a gap.
+ * Named rather than inlined at each call site because the sizes are SHARED:
+ * Design B and Design C use identical values, and a bare literal in each file
+ * makes that look coincidental. `lead` is Design A's full-width credit block;
+ * `compact` is the bordered GROUP chip in B and C.
  */
-export function PosterLogo({
-  src,
+export const LOGO_SIZE = {
+  lead: { height: 44, maxWidth: 300 },
+  compact: { height: 34, maxWidth: 230 },
+} as const;
+
+/**
+ * The brand slot: an uploaded logo, else whatever the design passes as the name.
+ *
+ * The branch lives here ONCE while the styling stays per-design. Each template
+ * hands its own text node in as `children`, verbatim, so the three supplied
+ * designs are provably unaltered when no logo is set: Design A styles the name
+ * at 30px with letter-spacing, B and C at 24px with line-height 1, and folding
+ * those into one component would silently restyle two of the three. Keeping the
+ * branch in one place means a future change to how the slot behaves is one edit
+ * rather than three that can drift apart.
+ *
+ * The logo is sized by HEIGHT with `width: auto`, so a wordmark and a square
+ * badge sit on the same baseline instead of one being letterboxed into the
+ * other's box. `maxWidth` keeps a very wide wordmark from pushing the date
+ * block off the canvas, and `objectFit: contain` makes that a shrink, not a crop.
+ */
+export function PosterBrand({
+  logo,
   alt,
   height,
   maxWidth,
+  children,
 }: {
-  readonly src: string;
+  readonly logo?: string | null;
   readonly alt: string;
   readonly height: number;
   readonly maxWidth: number;
+  readonly children: React.ReactNode;
 }) {
+  if (!logo) return <>{children}</>;
   return (
     // A data URL must stay a literal <img>: next/image would route it through
     // the optimizer, which cannot resolve one, and the poster would rasterise
     // with an empty box where the logo belongs.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src={logo}
       alt={alt}
       style={{
         height,

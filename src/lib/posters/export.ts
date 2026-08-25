@@ -46,12 +46,44 @@ export interface RenderOptions {
  * background sits on a decorative layer can rasterise with transparent
  * corners, which most social platforms then composite onto white.
  */
+/**
+ * Every image on the poster must be painted before the snapshot.
+ *
+ * `modern-screenshot` does await media, but it RESOLVES rather than rejects
+ * when an image fails to load, decode, or times out. Left alone, a logo that
+ * did not paint yields a perfectly valid 1080x1080 PNG with an empty
+ * "Presented by" slot, handed to the user under a success toast. A poster is a
+ * public claim, so publishing one with the attribution silently missing is
+ * worse than failing the export.
+ */
+async function requirePaintedImages(node: HTMLElement): Promise<void> {
+  const images = [...node.querySelectorAll("img")];
+  await Promise.all(
+    images.map(async (img) => {
+      if (img.complete && img.naturalWidth > 0) return;
+      try {
+        await img.decode();
+      } catch {
+        throw new Error(
+          "Your logo couldn't be rendered. Re-upload it and try again.",
+        );
+      }
+      if (img.naturalWidth === 0) {
+        throw new Error(
+          "Your logo couldn't be rendered. Re-upload it and try again.",
+        );
+      }
+    }),
+  );
+}
+
 export async function posterToBlob(
   node: HTMLElement,
   backgroundColor: string,
   { scale = 1 }: RenderOptions = {},
 ): Promise<Blob> {
   await waitForPosterFonts();
+  await requirePaintedImages(node);
   const blob = await domToBlob(node, {
     width: POSTER_SIZE,
     height: POSTER_SIZE,

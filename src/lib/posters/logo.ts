@@ -1,13 +1,15 @@
+import { posterScopeKey } from "@/lib/posters/scope";
+
 /**
  * A brand logo for the poster's "Presented by" slot.
  *
  * The logo replaces the group NAME, not the label, so the three designs keep
- * their exact header rhythm. It never leaves the browser: the file is read to a
- * data URL, downscaled, and kept in localStorage beside the group name. That is
- * deliberate. Uploading to storage would mean a bucket, RLS policies, a public
- * URL and a CORS-clean fetch during rasterisation, for an asset only one browser
- * ever needs. A data URL is already inline, so `domToBlob` embeds it with no
- * network round-trip and no chance of tainting the canvas.
+ * their exact header rhythm. It never leaves the browser: the file is decoded,
+ * downscaled through a canvas, and kept in localStorage as a PNG data URL
+ * beside the group name. That is deliberate. Uploading to storage would mean a
+ * bucket, RLS policies, a public URL and a CORS-clean fetch during
+ * rasterisation, for an asset only one browser ever needs. A data URL is
+ * already inline, so `domToBlob` embeds it with no network round-trip.
  *
  * The requirement is a PNG with a transparent background. Both halves are
  * checked, but not with the same force:
@@ -29,10 +31,11 @@ export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 /**
  * Longest edge kept after downscaling.
  *
- * The logo prints at 44 CSS px tall on Design A, so 512 is already ~6x the
- * pixels a 2x export can use. It exists to bound the localStorage footprint:
- * a 3000px source PNG re-encodes to megabytes of base64 and would blow the
- * ~5 MB per-origin quota that also holds the group name.
+ * Posters print a logo at a few dozen CSS pixels tall (see LOGO_SIZE in
+ * templates/types.tsx), so 512 leaves generous headroom even for a 2x export.
+ * It exists to bound the localStorage footprint: a 3000px source PNG re-encodes
+ * to megabytes of base64 and would blow the ~5 MB per-origin quota that also
+ * holds the group name.
  */
 export const LOGO_MAX_EDGE = 512;
 
@@ -92,16 +95,43 @@ export function fitWithin(
 /**
  * Where a logo is remembered.
  *
- * Mirrors `groupStorageKey` exactly, including the sorted join, so a logo and
- * the group name it replaces are scoped to the same journal combination and
- * appear and disappear together.
+ * Built from the same scope key as the group name it replaces, so the two are
+ * scoped to the same journal combination and appear and disappear together.
  */
 export function logoStorageKey(journalIds: readonly string[]): string | null {
-  if (journalIds.length === 0) return null;
-  return `trdr_poster_logo:${[...journalIds].sort().join("+")}`;
+  return posterScopeKey("logo", journalIds);
 }
 
-export interface PosterLogo {
+/** The only shape a stored logo may have. */
+const LOGO_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/**
+ * Narrow a value read back from storage to a logo, or null.
+ *
+ * localStorage is an INPUT, even though this app is the only thing that writes
+ * it. The write path only ever stores a canvas-produced PNG data URL, but a
+ * value that has been tampered with is still handed to an <img> inside the
+ * poster, and `domToBlob` only skips its fetch step for sources beginning
+ * "data:". An http(s) URL smuggled into this key would therefore be FETCHED
+ * during export, turning a poster download into a callout to someone else's
+ * origin. Validating on read costs one comparison and removes that path.
+ */
+export function parseStoredLogo(raw: string | null): string | null {
+  return raw && raw.startsWith(LOGO_DATA_URL_PREFIX) ? raw : null;
+}
+
+/**
+ * Largest DECODED image accepted, in pixels.
+ *
+ * `LOGO_MAX_BYTES` bounds the compressed file, which is not the same bound at
+ * all: PNG is lossless but heavily compressed, so 25000x25000 of flat colour is
+ * a few hundred KB on disk and ~2.5 GB once the decoder expands it to RGBA.
+ * That passes the byte cap and the signature check and then hangs or OOMs the
+ * tab. 40 megapixels is far above any real logo and well below that cliff.
+ */
+export const LOGO_MAX_PIXELS = 40_000_000;
+
+export interface ParsedLogo {
   /** PNG data URL, downscaled and re-encoded. */
   readonly dataUrl: string;
   readonly width: number;
@@ -116,29 +146,57 @@ export interface PosterLogo {
 /** A rejection carries the reason the caller should show verbatim. */
 export class LogoError extends Error {}
 
-/** Read a File's first bytes without pulling the whole thing into memory. */
-async function readSignature(file: File): Promise<Uint8Array> {
-  const head = file.slice(0, PNG_SIGNATURE.length);
-  return new Uint8Array(await head.arrayBuffer());
-}
-
-function loadImage(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+/**
+ * Decode a PNG from bytes we have already vouched for.
+ *
+ * The Blob's type is PINNED to image/png rather than inherited from
+ * `File.type`. `readAsDataURL` builds `data:${file.type};base64,...`, so
+ * inheriting would hand the decoder a MIME string taken verbatim from the
+ * untrusted file, immediately after this module refused to trust that same
+ * attribute for the format check. The bytes decide the type here too.
+ */
+function decodePng(url: string): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () =>
-      reject(new LogoError("That PNG could not be decoded. Try re-exporting it."));
-    img.src = dataUrl;
+      reject(
+        new LogoError("That PNG could not be decoded. Try re-exporting it."),
+      );
+    img.src = url;
   });
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new LogoError("That file could not be read."));
-    reader.readAsDataURL(file);
-  });
+/**
+ * The dimensions a PNG DECLARES, read without decoding it.
+ *
+ * IHDR is mandatory and always the first chunk, so width and height sit at
+ * fixed offsets: 8 signature bytes + 4 length + 4 type = 16, then two
+ * big-endian uint32s. Reading them here is the whole point — a decompression
+ * bomb has to be refused BEFORE the decoder allocates its RGBA buffer, and a
+ * check on `naturalWidth` runs after that allocation has already happened.
+ *
+ * Null unless the chunk is genuinely an IHDR: the right length, the right type
+ * tag. Reading the offsets unconditionally would interpret whatever bytes
+ * happen to sit there, so a corrupt file whose garbage decodes to a large
+ * uint32 would be turned away as "too large" instead of "could not be decoded",
+ * pointing the user at the wrong problem. Null hands it to the decoder, which
+ * will say what is actually wrong with it.
+ */
+const IHDR_LENGTH = 13;
+
+function readDeclaredSize(
+  bytes: ArrayBuffer,
+): { readonly width: number; readonly height: number } | null {
+  if (bytes.byteLength < 24) return null;
+  const view = new DataView(bytes);
+  if (view.getUint32(8) !== IHDR_LENGTH) return null;
+  const tag = new Uint8Array(bytes, 12, 4);
+  // "IHDR"
+  if (tag[0] !== 0x49 || tag[1] !== 0x48 || tag[2] !== 0x44 || tag[3] !== 0x52) {
+    return null;
+  }
+  return { width: view.getUint32(16), height: view.getUint32(20) };
 }
 
 /**
@@ -147,45 +205,98 @@ function fileToDataUrl(file: File): Promise<string> {
  * Throws `LogoError` with a message written for the user. Every rejection here
  * is one the user can act on: wrong format, too large, undecodable.
  */
-export async function readLogoFile(file: File): Promise<PosterLogo> {
+export async function readLogoFile(file: File): Promise<ParsedLogo> {
   if (file.size > LOGO_MAX_BYTES) {
     const mb = (LOGO_MAX_BYTES / 1024 / 1024).toFixed(0);
     throw new LogoError(`That file is over ${mb} MB. Export a smaller PNG.`);
   }
   if (file.size === 0) throw new LogoError("That file is empty.");
 
-  if (!isPngSignature(await readSignature(file))) {
+  // ONE read. Checking the signature on a separate `file.slice()` and then
+  // re-reading for the content leaves a window where the file on disk changes
+  // between the two, so the bytes that were vetted are not the bytes decoded.
+  const bytes = await file.arrayBuffer();
+  // Not `new Uint8Array(bytes, 0, 8)`: that constructor throws RangeError when
+  // the buffer is shorter than the requested length, and a 1-7 byte file clears
+  // both guards above. The RangeError is not a LogoError, so it would surface
+  // to the user as a raw engine message. Hand the whole buffer over and let
+  // isPngSignature's own length check reject it with real copy.
+  if (!isPngSignature(new Uint8Array(bytes))) {
     throw new LogoError(
       "That is not a PNG. Logos must be PNG files with a transparent background.",
     );
   }
 
-  const img = await loadImage(await fileToDataUrl(file));
-  const { width, height } = fitWithin(
-    img.naturalWidth,
-    img.naturalHeight,
-    LOGO_MAX_EDGE,
-  );
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  // willReadFrequently: the alpha scan below reads the whole surface back, and
-  // without the hint Chrome keeps the canvas GPU-side and copies it to do so.
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new LogoError("This browser can't process the image.");
-  ctx.drawImage(img, 0, 0, width, height);
-
-  // getImageData throws on a tainted canvas. A data URL cannot taint one, so
-  // this only fires in exotic browser configurations; treat it as "can't tell"
-  // and let the upload through rather than rejecting a valid logo.
-  let transparent = true;
-  try {
-    transparent = hasTransparency(ctx.getImageData(0, 0, width, height).data);
-  } catch {
-    transparent = true;
+  // BEFORE the decode, from the header. A flat-colour 20000x20000 PNG is a few
+  // hundred KB on disk, so it clears LOGO_MAX_BYTES, and expands to ~1.6 GB in
+  // the decoder. Checking naturalWidth after decodePng would run this guard
+  // only once the allocation it exists to prevent had already happened.
+  const declared = readDeclaredSize(bytes);
+  if (declared && declared.width * declared.height > LOGO_MAX_PIXELS) {
+    throw new LogoError(
+      "That PNG's dimensions are too large. Export it at 2000px or smaller.",
+    );
   }
 
-  // Re-encoded as PNG, never JPEG: the whole point is the alpha channel.
-  return { dataUrl: canvas.toDataURL("image/png"), width, height, transparent };
+  // The object URL must outlive every use of the decoded image, not just the
+  // decode: WebKit has dropped an image's backing store when its blob URL was
+  // revoked before the draw, which would silently bake a blank rectangle into
+  // the poster. Revoked in the finally, after the canvas work is done with it.
+  const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+  try {
+    const img = await decodePng(url);
+
+    // Belt and braces: a header can lie, and the decoder is the authority on
+    // what it actually produced.
+    if (img.naturalWidth * img.naturalHeight > LOGO_MAX_PIXELS) {
+      throw new LogoError(
+        "That PNG's dimensions are too large. Export it at 2000px or smaller.",
+      );
+    }
+
+    const { width, height } = fitWithin(
+      img.naturalWidth,
+      img.naturalHeight,
+      LOGO_MAX_EDGE,
+    );
+    // A decoder can resolve onload with zero dimensions on malformed input, and
+    // fitWithin passes that straight through. Rejected here rather than left to
+    // throw inside the canvas work below, where the catch around getImageData
+    // would swallow it and report the logo as transparent.
+    if (width === 0 || height === 0) {
+      throw new LogoError("That PNG has no dimensions. Try re-exporting it.");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    // willReadFrequently: the alpha scan below reads the whole surface back, and
+    // without the hint Chrome keeps the canvas GPU-side and copies it to do so.
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new LogoError("This browser can't process the image.");
+    ctx.drawImage(img, 0, 0, width, height);
+
+    // getImageData throws SecurityError on a tainted canvas. A blob URL from
+    // our own origin cannot taint one, so this only fires in exotic
+    // configurations (a privacy extension blocking canvas reads). There,
+    // "can't tell" beats rejecting a valid logo, so it passes with the warning
+    // suppressed.
+    //
+    // Deliberately narrow: a bare catch would also swallow a real decode
+    // failure and silently report an opaque logo as transparent, which loses
+    // the warning for exactly the file it was written for.
+    let transparent = true;
+    try {
+      transparent = hasTransparency(ctx.getImageData(0, 0, width, height).data);
+    } catch (err: unknown) {
+      if (!(err instanceof DOMException && err.name === "SecurityError")) {
+        throw err;
+      }
+    }
+
+    // Re-encoded as PNG, never JPEG: the whole point is the alpha channel.
+    return { dataUrl: canvas.toDataURL("image/png"), width, height, transparent };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

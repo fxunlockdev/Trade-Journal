@@ -495,6 +495,9 @@ test.describe("poster rendering", () => {
 test.describe("poster logo", () => {
   const TRANSPARENT = "tests/fixtures/logo-transparent.png";
   const OPAQUE = "tests/fixtures/logo-opaque.png";
+  /** 2000x600: the only fixture that actually exercises the downscale. */
+  const WIDE = "tests/fixtures/logo-wide.png";
+  const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
   /** Magenta appears in no poster theme, so finding it proves the logo drew. */
   const MAGENTA = { r: 255, g: 0, b: 255 } as const;
@@ -598,6 +601,9 @@ test.describe("poster logo", () => {
     await expect(page.getByText(/not a PNG/i)).toBeVisible();
     await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
     await expect(page.getByTestId("poster-canvas")).toContainText("YOHAN");
+    // The input must be cleared, or re-picking the same file after fixing it
+    // fires no change event and the user sees nothing happen.
+    await expect(page.getByTestId("poster-logo-input")).toHaveValue("");
   });
 
   test("an opaque PNG is accepted but warned about", async ({ page }) => {
@@ -627,5 +633,198 @@ test.describe("poster logo", () => {
       "YOHAN + CHRIS",
     );
     await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+
+    // And it comes BACK when the original selection is restored. Clearing the
+    // stored key on a journal change would satisfy every assertion above while
+    // destroying the logo the moment someone glanced at a combined poster.
+    await page.getByTestId("poster-journal-journal-b").click();
+    await expect(page.getByTestId("poster-canvas")).not.toContainText("YOHAN");
+    await expect(page.getByTestId("poster-logo-preview")).toBeVisible();
+  });
+
+  test("every design prints the logo, not just the default one", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await uploadLogo(page, TRANSPARENT);
+    // Designs B and C render the logo through a different header at different
+    // dimensions. Without this, dropping `logo` from either one's props leaves
+    // the whole suite green while two of the three shipped designs print text.
+    for (const id of ["design-a", "design-b", "design-c"] as const) {
+      await page.getByTestId(`poster-template-${id}`).click();
+      const canvas = page.getByTestId("poster-canvas");
+      await expect(canvas.locator("img[alt='YOHAN']")).toBeVisible();
+      await expect(canvas).not.toContainText("YOHAN");
+    }
+  });
+
+  test("an oversized logo is downscaled before it is stored", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await uploadLogo(page, WIDE);
+
+    // Both other fixtures are 64x64, so the resize is a no-op in every other
+    // test. Removing the downscale entirely would keep them all passing while
+    // writing megabytes of base64 into a ~5 MB quota.
+    const shown = await page
+      .getByTestId("poster-logo-preview")
+      .evaluate((el: HTMLImageElement) => ({
+        w: el.naturalWidth,
+        h: el.naturalHeight,
+        len: el.src.length,
+      }));
+    expect(shown.w).toBe(512);
+    expect(Math.abs(shown.w / shown.h - 2000 / 600)).toBeLessThan(0.02);
+    expect(shown.len).toBeLessThan(400_000);
+  });
+
+  test("a PNG over the size cap is refused before it is decoded", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "huge.png",
+      mimeType: "image/png",
+      // A real signature, so this can only be stopped by the SIZE gate.
+      buffer: Buffer.concat([
+        Buffer.from(PNG_HEAD),
+        Buffer.alloc(2 * 1024 * 1024 + 1),
+      ]),
+    });
+    await expect(page.getByText(/over 2 MB/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+  });
+
+  test("an empty file is refused with its own message", async ({ page }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "empty.png",
+      mimeType: "image/png",
+      buffer: Buffer.alloc(0),
+    });
+    await expect(page.getByText(/file is empty/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+  });
+
+  test("a valid signature with a corrupt body reports a decode failure", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "corrupt.png",
+      mimeType: "image/png",
+      buffer: Buffer.concat([
+        Buffer.from(PNG_HEAD),
+        Buffer.from("not an IHDR chunk, at all"),
+      ]),
+    });
+    await expect(page.getByText(/could not be decoded/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+    // The spinner must clear, or the control is dead for the rest of the
+    // session behind a permanently disabled button.
+    await expect(page.getByTestId("poster-logo-upload")).toBeEnabled();
+  });
+
+  test("a full quota still applies the logo, and says it won't be remembered", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const real = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k: string, v: string) {
+        if (k.startsWith("trdr_poster_logo:")) {
+          throw new DOMException("quota", "QuotaExceededError");
+        }
+        return real.call(this, k, v);
+      };
+    });
+    await gotoHarness(page);
+    await uploadLogo(page, TRANSPARENT);
+    await expect(page.getByText(/couldn't be saved/i)).toBeVisible();
+    // Applied for this session regardless: only remembering it failed.
+    await expect(
+      page.getByTestId("poster-canvas").locator("img[alt='YOHAN']"),
+    ).toBeVisible();
+  });
+
+  test("a file shorter than the signature is refused, not crashed on", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    // 4 bytes. Reading a fixed 8-byte view of this buffer throws RangeError,
+    // which is NOT a LogoError, so it would reach the user as a raw engine
+    // string instead of copy they can act on.
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "stub.png",
+      mimeType: "image/png",
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    });
+    await expect(page.getByText(/not a PNG/i)).toBeVisible();
+    await expect(page.getByText(/typed array|RangeError/i)).toHaveCount(0);
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+  });
+
+  test("a PNG declaring huge dimensions is refused before it is decoded", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    // A valid signature and an IHDR declaring 30000x30000 (900 Mpx). Only the
+    // header is present, so if this reaches the decoder it fails as "could not
+    // be decoded" — asserting the DIMENSIONS message is what proves the cap
+    // ran first, off the header, before any RGBA buffer was allocated.
+    const ihdr = Buffer.alloc(25);
+    ihdr.writeUInt32BE(13, 0);
+    ihdr.write("IHDR", 4, "ascii");
+    ihdr.writeUInt32BE(30000, 8);
+    ihdr.writeUInt32BE(30000, 12);
+    ihdr[16] = 8;
+    ihdr[17] = 6;
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "bomb.png",
+      mimeType: "image/png",
+      buffer: Buffer.concat([Buffer.from(PNG_HEAD), ihdr]),
+    });
+    await expect(page.getByText(/dimensions are too large/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+  });
+
+  test("exports are blocked while a logo is still decoding", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    // Hold the decode open so the busy window is observable. Without the gate,
+    // Download here rasterises the poster still showing the group NAME and
+    // reports success, so the user publishes an unbranded poster.
+    await page.evaluate(() => {
+      const real = Blob.prototype.arrayBuffer;
+      Blob.prototype.arrayBuffer = function () {
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(real.call(this)), 1500),
+        );
+      };
+    });
+    await page.getByTestId("poster-logo-input").setInputFiles(TRANSPARENT);
+    await expect(page.getByTestId("poster-download")).toBeDisabled();
+    await expect(page.getByTestId("poster-copy")).toBeDisabled();
+    // And released once it lands.
+    await expect(page.getByTestId("poster-logo-preview")).toBeVisible();
+    await expect(page.getByTestId("poster-download")).toBeEnabled();
+  });
+
+  test("a tampered storage entry is ignored rather than rendered", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      // An http URL where a data URL belongs. The rasteriser only skips its
+      // fetch step for "data:", so rendering this would turn a poster export
+      // into a callout to someone else's origin.
+      window.localStorage.setItem(
+        "trdr_poster_logo:journal-a",
+        "https://example.invalid/tracker.png",
+      );
+    });
+    await gotoHarness(page);
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+    await expect(page.getByTestId("poster-canvas")).toContainText("YOHAN");
   });
 });

@@ -5,7 +5,9 @@ import {
   isPngSignature,
   LOGO_MAX_EDGE,
   logoStorageKey,
+  parseStoredLogo,
 } from "@/lib/posters/logo";
+import { groupStorageKey } from "@/lib/posters/scope";
 
 /** The 8-byte PNG signature, as a real PNG's first bytes. */
 const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -126,12 +128,43 @@ describe("logoStorageKey — scoped exactly like the name it replaces", () => {
     expect(logoStorageKey([])).toBeNull();
   });
 
-  it("does not collide with the group-name key for the same journals", () => {
-    expect(logoStorageKey(["a"])).not.toBe("trdr_poster_group:a");
-    expect(logoStorageKey(["a"])).toBe("trdr_poster_logo:a");
-  });
-
   it("gives different combinations different keys", () => {
     expect(logoStorageKey(["a"])).not.toBe(logoStorageKey(["a", "b"]));
+  });
+
+  // Asserted against the REAL groupStorageKey, not a copy of today's literal.
+  // The invariant is that a logo and the name it replaces share one scope, so a
+  // test that hardcodes "trdr_poster_group:a" proves the two differ today but
+  // cannot notice the group key changing its separator or gaining a segment.
+  it("is scoped by exactly the same suffix as the group key it mirrors", () => {
+    for (const ids of [["a"], ["b", "a"], ["a", "b", "c"]]) {
+      const logo = logoStorageKey(ids)!;
+      const group = groupStorageKey(ids)!;
+      expect(logo.split(":")[1]).toBe(group.split(":")[1]);
+      expect(logo).not.toBe(group);
+    }
+    expect(logoStorageKey([])).toBe(groupStorageKey([]));
+  });
+});
+
+describe("parseStoredLogo — storage is an input, not a trusted cache", () => {
+  it("accepts a PNG data URL", () => {
+    const url = "data:image/png;base64,iVBORw0KGgo=";
+    expect(parseStoredLogo(url)).toBe(url);
+  });
+
+  it("rejects an http URL, which the rasteriser would FETCH", () => {
+    expect(parseStoredLogo("https://example.invalid/x.png")).toBeNull();
+    expect(parseStoredLogo("//example.invalid/x.png")).toBeNull();
+  });
+
+  it("rejects other data URLs, including SVG", () => {
+    expect(parseStoredLogo("data:image/svg+xml;base64,PHN2Zz4=")).toBeNull();
+    expect(parseStoredLogo("data:text/html;base64,PGI+")).toBeNull();
+  });
+
+  it("rejects null and empty without throwing", () => {
+    expect(parseStoredLogo(null)).toBeNull();
+    expect(parseStoredLogo("")).toBeNull();
   });
 });
