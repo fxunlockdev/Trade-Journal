@@ -12,16 +12,36 @@
  * position sized on one set of assumptions can't be valued on another.
  */
 
+/**
+ * How well the factor is known. This travels with the number so a stored figure
+ * can say whether it was converted at a real rate or a hardcoded guess —
+ * without it, a P&L derived from `EUR: 1.08` is indistinguishable from one
+ * computed exactly, and neither can be found later and put right.
+ */
+export type RateQuality = "exact" | "approximate";
+
 export interface QuoteConversion {
-  /** Multiply a quote-currency amount by this to get USD. */
+  /** Multiply a quote-currency amount by this to get `currency`. */
   readonly factor: number;
   /** True when a hardcoded mid-rate was used instead of a real one. */
   readonly approximate: boolean;
+  /**
+   * The currency the CONVERTED figure is denominated in.
+   *
+   * Normally "USD". When no rate is available the factor is 1 and this is the
+   * QUOTE currency instead — the figure was never converted, so calling it
+   * dollars would be a lie.
+   */
+  readonly currency: string;
   /** Human-readable note when `approximate` — surfaced next to the number. */
   readonly note?: string;
 }
 
-const EXACT: QuoteConversion = { factor: 1, approximate: false };
+const EXACT: QuoteConversion = {
+  factor: 1,
+  approximate: false,
+  currency: "USD",
+};
 
 /**
  * Rough mid-rates for quote currencies we can't derive from the instrument's
@@ -74,13 +94,13 @@ export function quoteToUsdFactor(input: QuoteConversionInput): QuoteConversion {
 
   const explicit = input.explicitRate;
   if (explicit != null && Number.isFinite(explicit) && explicit > 0) {
-    return { factor: explicit, approximate: false };
+    return { factor: explicit, approximate: false, currency: "USD" };
   }
 
   // Indirect quote (USD/XXX): the instrument's price is the rate itself, so
   // 1 unit of quote currency = 1/price USD. Exact, no table needed.
   if (base === "USD" && Number.isFinite(input.price) && input.price > 0) {
-    return { factor: 1 / input.price, approximate: false };
+    return { factor: 1 / input.price, approximate: false, currency: "USD" };
   }
 
   const approx = QUOTE_TO_USD_APPROX[quote];
@@ -88,6 +108,7 @@ export function quoteToUsdFactor(input: QuoteConversionInput): QuoteConversion {
     return {
       factor: approx,
       approximate: true,
+      currency: "USD",
       note: `${quote} converted at an approximate rate of ${approx.toFixed(6)} ${quote}/USD.`,
     };
   }
@@ -98,6 +119,9 @@ export function quoteToUsdFactor(input: QuoteConversionInput): QuoteConversion {
   return {
     factor: 1,
     approximate: true,
+    // Unconverted, so the figure is genuinely in the quote currency. Saying so
+    // is what lets a reader, and Step 2's re-valuation, treat it correctly.
+    currency: quote,
     note: `No ${quote}/USD rate available, so this figure is in ${quote}, not USD.`,
   };
 }

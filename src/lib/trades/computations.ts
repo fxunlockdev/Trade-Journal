@@ -38,21 +38,58 @@ interface TradeForComputation {
 }
 
 /**
- * How much 1 unit of an instrument's quote currency is worth in the account
- * currency, at the given price. `instrument` absent → 1 (no scaling), which is
- * correct for every USD-quoted symbol and leaves legacy callers unchanged.
+ * How a P&L figure ends up denominated.
+ *
+ * The old version returned a bare number and threw away `approximate`/`note`,
+ * so nothing downstream could tell a figure converted at a real rate from one
+ * derived from the hardcoded `EUR: 1.08`. Both were stored as "dollars" and
+ * neither could be found again to put right.
  */
+export type PnlRateQuality = "broker" | "exact" | "approximate" | "assumed";
+
+export interface PnlDenomination {
+  /** Multiply the raw quote-currency amount by this. */
+  readonly factor: number;
+  /** What the resulting figure is in. Null when the instrument is unknown. */
+  readonly currency: string | null;
+  readonly quality: PnlRateQuality;
+}
+
+export function resolvePnlDenomination(
+  instrument: string | null | undefined,
+  price: number,
+): PnlDenomination {
+  // No instrument means no scaling — correct for every USD-quoted symbol, and
+  // the contract legacy callers rely on. But we cannot name the currency, so
+  // it is recorded as assumed rather than asserted to be USD.
+  if (!instrument) return { factor: 1, currency: null, quality: "assumed" };
+
+  const spec = getInstrumentSpec(instrument);
+  const conversion = quoteToUsdFactor({
+    quoteCurrency: spec.quoteCurrency,
+    baseCurrency: spec.baseCurrency,
+    price,
+  });
+
+  return {
+    factor: conversion.factor,
+    currency: conversion.currency,
+    // `approximate` is only true for the hardcoded table AND for an unknown
+    // currency — but the latter performs no conversion at all, so the figure is
+    // exactly what it claims to be, just in a different currency.
+    quality:
+      conversion.approximate && conversion.currency === "USD"
+        ? "approximate"
+        : "exact",
+  };
+}
+
+/** Backwards-compatible factor-only accessor for the arithmetic below. */
 function accountCurrencyFactor(
   instrument: string | null | undefined,
   price: number,
 ): number {
-  if (!instrument) return 1;
-  const spec = getInstrumentSpec(instrument);
-  return quoteToUsdFactor({
-    quoteCurrency: spec.quoteCurrency,
-    baseCurrency: spec.baseCurrency,
-    price,
-  }).factor;
+  return resolvePnlDenomination(instrument, price).factor;
 }
 
 /**
@@ -326,6 +363,13 @@ export function computeTradeFields<T extends TradeForComputation>(
   trade: T,
 ): T & {
   readonly pnl_absolute: number | null;
+  /**
+   * What `pnl_absolute` is denominated in, and how well that is known. A money
+   * figure with no unit is what let a EUR-deposit account store euros in a
+   * column every reader treated as dollars.
+   */
+  readonly pnl_currency: string | null;
+  readonly pnl_rate_quality: PnlRateQuality | null;
   readonly pnl_percentage: number | null;
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
@@ -385,9 +429,12 @@ export function computeTradeFields<T extends TradeForComputation>(
             )
           : null;
 
+      const denom = resolvePnlDenomination(trade.instrument, multi.price);
       return {
         ...trade,
         pnl_absolute: multi.value,
+        pnl_currency: denom.currency,
+        pnl_rate_quality: denom.quality,
         pnl_percentage: pnlPercentage,
         risk_reward_ratio: riskRewardRatio,
         r_multiple: rMultiple,
@@ -404,6 +451,9 @@ export function computeTradeFields<T extends TradeForComputation>(
     return {
       ...trade,
       pnl_absolute: null,
+      // No realized figure yet, so there is nothing to denominate.
+      pnl_currency: null,
+      pnl_rate_quality: null,
       pnl_percentage: null,
       risk_reward_ratio:
         trade.stop_loss !== null && primaryTp !== null
@@ -454,9 +504,12 @@ export function computeTradeFields<T extends TradeForComputation>(
         )
       : null;
 
+  const denom = resolvePnlDenomination(trade.instrument, trade.exit_price);
   return {
     ...trade,
     pnl_absolute: pnlAbsolute,
+    pnl_currency: denom.currency,
+    pnl_rate_quality: denom.quality,
     pnl_percentage: pnlPercentage,
     risk_reward_ratio: riskRewardRatio,
     r_multiple: rMultiple,

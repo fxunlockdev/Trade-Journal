@@ -54,6 +54,12 @@ export type JournalColor =
 export type TradeAuditAction = "created" | "updated" | "deleted";
 
 /** Account base currencies the position-sizing math supports. */
+/**
+ * How a stored P&L figure's currency is known. Mirrors the
+ * trades_pnl_rate_quality_allowed CHECK.
+ */
+export type PnlRateQuality = "broker" | "exact" | "approximate" | "assumed";
+
 export type AccountCurrency = "USD" | "EUR" | "GBP";
 
 export interface Journal {
@@ -227,6 +233,13 @@ export interface Trade {
   readonly entry_time: string;
   readonly exit_time: string | null;
   readonly pnl_absolute: number | null;
+  /**
+   * ISO 4217 code `pnl_absolute` is denominated in, and how well that is known.
+   * NULL on rows written before these columns existed — the currency has to be
+   * inferred there, not trusted.
+   */
+  readonly pnl_currency: string | null;
+  readonly pnl_rate_quality: PnlRateQuality | null;
   readonly pnl_percentage: number | null;
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
