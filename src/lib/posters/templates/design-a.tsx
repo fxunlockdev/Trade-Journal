@@ -303,44 +303,6 @@ export function DesignA({
               Losses
             </div>
           </div>
-          {/*
-            Shown only when there are breakevens — but then it MUST be shown, or
-            the footer reads "Trades 10 / Wins 4 / Losses 3" and a reader who
-            subtracts concludes three trades were hidden.
-          */}
-          {stats.breakeven > 0 && (
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                borderLeft: `1px solid ${theme.tFrameSoft}`,
-                paddingLeft: 40,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-poster-display), sans-serif",
-                  fontWeight: 600,
-                  fontSize: 46,
-                  color: theme.tMuted,
-                }}
-              >
-                {stats.breakeven}
-              </div>
-              <div
-                style={{
-                  fontSize: 14,
-                  letterSpacing: "0.24em",
-                  textTransform: "uppercase",
-                  color: theme.tMuted,
-                }}
-              >
-                Breakeven
-              </div>
-            </div>
-          )}
         </div>
 
         <div

@@ -16,12 +16,8 @@ import {
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
-/**
- * Rows that fit at comfortable spacing before the layout must densify.
- * Densifying at 8 used to drop the font to 14px AND stretch eight rows across
- * the full height, which looked broken for a perfectly ordinary trading day.
- */
-const COMFY_MAX = 12;
+/** Rows at comfortable spacing before the layout densifies — as designed. */
+const COMFY_MAX = 7;
 /** Hard ceiling — beyond this the log is truncated and the overflow is stated. */
 const DENSE_MAX = 20;
 
@@ -293,7 +289,7 @@ export function DesignC({
             </div>
           </div>
           <div style={statCell}>
-            <div style={statLabel}>Avg R</div>
+            <div style={statLabel}>Avg R:R</div>
             <div style={{ ...statValue, color: theme.tAccent }}>
               {formatAvgR(stats.avgR)}
             </div>
@@ -357,7 +353,7 @@ export function DesignC({
               flex: 1,
               display: "flex",
               flexDirection: "column",
-              justifyContent: "flex-start",
+              justifyContent: dense ? "space-between" : "flex-start",
               minHeight: 0,
             }}
           >

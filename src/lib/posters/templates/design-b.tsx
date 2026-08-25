@@ -228,38 +228,24 @@ export function DesignB({
                 <div style={cellLabel}>Trades</div>
               </div>
               <div style={cell}>
-                {/*
-                  Breakevens appear here when present, so wins + losses + BE
-                  reconciles with the Trades cell beside it.
-                */}
                 <div style={cellValue}>
                   <span style={{ color: theme.win }}>{stats.wins}</span>
                   <span style={{ color: theme.tMuted, fontSize: 34 }}> / </span>
                   <span style={{ color: theme.loss }}>{stats.losses}</span>
-                  {stats.breakeven > 0 && (
-                    <>
-                      <span style={{ color: theme.tMuted, fontSize: 34 }}> / </span>
-                      <span style={{ color: theme.tMuted }}>{stats.breakeven}</span>
-                    </>
-                  )}
                 </div>
-                <div style={cellLabel}>
-                  {stats.breakeven > 0 ? "Win / Loss / BE" : "Win / Loss"}
-                </div>
+                <div style={cellLabel}>Win / Loss</div>
               </div>
               <div style={cell}>
                 <div style={{ ...cellValue, color: theme.tAccent }}>
                   {formatWinRate(stats.winRate)}
                 </div>
-                <div style={cellLabel}>
-                  {stats.breakeven > 0 ? "Win Rate (ex-BE)" : "Win Rate"}
-                </div>
+                <div style={cellLabel}>Win Rate</div>
               </div>
               <div style={cell}>
                 <div style={{ ...cellValue, color: theme.tAccent }}>
                   {formatAvgR(stats.avgR)}
                 </div>
-                <div style={cellLabel}>Avg R</div>
+                <div style={cellLabel}>Avg R:R</div>
               </div>
             </div>
           </div>

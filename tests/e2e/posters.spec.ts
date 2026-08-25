@@ -302,22 +302,23 @@ test.describe("poster rendering", () => {
     );
   });
 
-  test("breakevens are shown, so wins + losses + BE reconciles", async ({
+  test("breakeven trades are disclosed in the poster's own footnote", async ({
     page,
   }) => {
     await page.goto(`${HARNESS}?seed=dense`);
     await expect(page.getByTestId("poster-canvas")).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
 
-    // Design A gains a Breakeven column when any exist — otherwise its footer
-    // reads Trades 22 / Wins 14 / Losses 6 and visibly fails to add up.
-    await expect(page.getByTestId("poster-canvas")).toContainText(/breakeven/i);
+    // The supplied designs have no breakeven cell and are reproduced exactly,
+    // so wins + losses deliberately will NOT sum to the trade count when any
+    // trade scratched. The footnote is what keeps that honest — without it a
+    // reader subtracting 13 + 7 from 22 concludes two trades were hidden.
+    const canvas = page.getByTestId("poster-canvas");
+    await expect(canvas).toContainText("22");
+    await expect(canvas).toContainText(/Win rate excludes 2 breakeven trades/i);
 
-    await page.getByTestId("poster-template-design-b").click();
-    await expect(page.getByTestId("poster-canvas")).toContainText(
-      /win \/ loss \/ be/i,
-    );
-    await expect(page.getByTestId("poster-canvas")).toContainText(/ex-BE/i);
+    // And the in-app receipt still breaks it out in full.
+    await expect(page.getByTestId("poster-receipt")).toContainText("13 / 7 / 2");
   });
 
   test("partial R coverage is disclosed on the poster itself", async ({
