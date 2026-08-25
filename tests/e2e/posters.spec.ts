@@ -411,6 +411,44 @@ test.describe("poster rendering", () => {
       .not.toBe(gold);
   });
 
+  test("every theme paints a distinct canvas", async ({ page }) => {
+    await gotoHarness(page);
+    const swatch = () =>
+      page
+        .getByTestId("poster-canvas")
+        .locator("> div")
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // A theme added by copy-pasting a sibling and forgetting to change tBg
+    // renders as a duplicate choice in the picker: two chips, one look.
+    const seen = new Map<string, string>();
+    for (const id of ["obsidian-gold", "forest-lime", "blue-violet", "ivory"]) {
+      await page.getByTestId(`poster-theme-${id}`).click();
+      const bg = await swatch();
+      expect(seen.get(bg) ?? id, `${id} paints the same canvas as ${seen.get(bg)}`).toBe(id);
+      seen.set(bg, id);
+    }
+    expect(seen.size).toBe(4);
+  });
+
+  test("Blue Violet rasterises a real 1080x1080 PNG", async ({ page }) => {
+    test.slow(); // Rasterising is CPU-bound; see the note above.
+    await gotoHarness(page);
+    await page.getByTestId("poster-theme-blue-violet").click();
+    const result = await analysePoster(page);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(1080);
+    expect(result!.height).toBe(1080);
+    // The same two signals the other render tests use: the headline must show
+    // ink AND poster background inside its own box, so a missing font (blank)
+    // and a lost background-clip (solid slab) are both caught.
+    expect(result!.distinctColors).toBeGreaterThan(3);
+    expect(result!.heroBgShare).not.toBeNull();
+    expect(result!.heroBgShare!).toBeGreaterThan(0.05);
+    expect(result!.heroBgShare!).toBeLessThan(0.95);
+  });
+
   test("the headline numeral is gradient-filled, not invisible", async ({
     page,
   }) => {
