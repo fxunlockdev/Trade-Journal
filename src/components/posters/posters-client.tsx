@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, ImageIcon, Loader2 } from "lucide-react";
+import { Copy, Download, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +41,9 @@ import {
   posterFilename,
   posterToBlob,
 } from "@/lib/posters/export";
+import { logoStorageKey } from "@/lib/posters/logo";
+import { usePosterLogo } from "@/hooks/use-poster-logo";
+import { safeGet, safeRemove, safeSet } from "@/lib/safe-storage";
 import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import {
@@ -145,8 +148,25 @@ export function PostersClient({
   const [range, setRange] = useState<DateRange | null>(null);
   const [nonce, setNonce] = useState(0);
 
+  // The logo is scoped to the same journal combination as the name it replaces,
+  // so switching journals swaps both together rather than printing one team's
+  // mark over another's numbers.
+  const logoKey = useMemo(
+    () => logoStorageKey(selectedJournals.map((j) => j.id)),
+    [selectedJournals],
+  );
+  const {
+    logo,
+    busy: logoBusy,
+    inputRef: logoInputRef,
+    onPicked: onLogoPicked,
+    onRemove: onLogoRemove,
+  } = usePosterLogo(logoKey);
+
   useEffect(() => {
-    const saved = groupKey ? window.localStorage.getItem(groupKey) : null;
+    // Guarded like the logo's: this effect runs FIRST, so an unprotected read
+    // here would throw in private mode before the logo's guard ever helped.
+    const saved = groupKey ? safeGet(groupKey) : null;
     setGroup(saved ?? defaultGroup);
   }, [groupKey, defaultGroup]);
 
@@ -186,9 +206,11 @@ export function PostersClient({
     setGroup(value);
     if (!groupKey) return;
     if (value.trim() === "" || value === defaultGroup) {
-      window.localStorage.removeItem(groupKey);
+      safeRemove(groupKey);
     } else {
-      window.localStorage.setItem(groupKey, value);
+      // Fires on every keystroke, so a quota failure here must not throw out of
+      // an onChange handler and unmount the page mid-edit.
+      safeSet(groupKey, value);
     }
   };
 
@@ -252,6 +274,15 @@ export function PostersClient({
     [group, kind, range, theme.tBg],
   );
 
+  /**
+   * Exports are blocked while a logo is decoding.
+   *
+   * Decoding a 2 MB source takes hundreds of milliseconds, and the poster shows
+   * the group NAME throughout. Without this gate, clicking Download inside that
+   * window rasterises the unbranded poster, reports success, and lands the
+   * "Logo added" toast afterwards, so the user publishes a poster they believe
+   * carries their mark.
+   */
   /** Refresh the window first, so an export always reflects "now". */
   const exportPoster = (mode: "download" | "copy") => {
     setNonce((n) => n + 1);
@@ -267,7 +298,7 @@ export function PostersClient({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Share your results. Every figure comes from your journals&apos; closed
-          trades — nothing on a poster is typed in except the group name.
+          trades — the only things you supply are the group name and your logo.
         </p>
       </div>
 
@@ -449,6 +480,76 @@ export function PostersClient({
                   The only editable text — every statistic comes from your trades.
                 </p>
               </div>
+
+              {/*
+                A logo REPLACES the group name on the poster; the name field
+                above stays live because it still names the downloaded file and
+                is what the poster reverts to when the logo is removed.
+              */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Logo
+                </Label>
+                {logo ? (
+                  <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- a
+                        data URL must stay a literal <img>. */}
+                    <img
+                      src={logo}
+                      alt="Your logo"
+                      data-testid="poster-logo-preview"
+                      // Checkerboard, so a logo with a white fill is visibly
+                      // distinguishable from one with real transparency.
+                      className="h-10 w-auto max-w-[140px] object-contain"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%),linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%)",
+                        backgroundSize: "12px 12px",
+                        backgroundPosition: "0 0, 6px 6px",
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onLogoRemove}
+                      data-testid="poster-logo-remove"
+                      className="ml-auto text-muted-foreground"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-center"
+                    disabled={logoBusy}
+                    onClick={() => logoInputRef.current?.click()}
+                    data-testid="poster-logo-upload"
+                  >
+                    {logoBusy ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    Upload logo
+                  </Button>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png"
+                  className="hidden"
+                  data-testid="poster-logo-input"
+                  onChange={(e) => void onLogoPicked(e.target.files?.[0])}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must be a PNG file with no background (transparent). It
+                  replaces the group name on the poster.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -535,7 +636,9 @@ export function PostersClient({
           <div className="flex gap-2">
             <Button
               onClick={() => exportPoster("download")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-download"
               className="flex-1"
             >
@@ -549,7 +652,9 @@ export function PostersClient({
             <Button
               variant="outline"
               onClick={() => exportPoster("copy")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-copy"
             >
               {busy === "copy" ? (
@@ -570,6 +675,7 @@ export function PostersClient({
                   stats={stats}
                   theme={theme}
                   group={group.trim() || defaultGroup}
+                  logo={logo}
                   periodKind={kind}
                   dateLabel={formatPeriodLabel(period, range)}
                   disclaimer={disclaimer}

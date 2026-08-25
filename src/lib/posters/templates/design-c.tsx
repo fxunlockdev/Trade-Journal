@@ -13,7 +13,9 @@ import {
   fitHeadline,
   GradientNumber,
   noiseLayerStyle,
+  LOGO_SIZE,
   POSTER_SIZE,
+  PosterBrand,
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
@@ -124,6 +126,7 @@ export function DesignC({
   stats,
   theme,
   group,
+  logo,
   periodKind,
   dateLabel,
   disclaimer,
@@ -242,16 +245,18 @@ export function DesignC({
             >
               Group
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-poster-display), sans-serif",
-                fontWeight: 600,
-                fontSize: 24,
-                lineHeight: 1,
-              }}
-            >
-              {group}
-            </div>
+            <PosterBrand logo={logo} alt={group} {...LOGO_SIZE.compact}>
+              <div
+                style={{
+                  fontFamily: "var(--font-poster-display), sans-serif",
+                  fontWeight: 600,
+                  fontSize: 24,
+                  lineHeight: 1,
+                }}
+              >
+                {group}
+              </div>
+            </PosterBrand>
           </div>
         </div>
 

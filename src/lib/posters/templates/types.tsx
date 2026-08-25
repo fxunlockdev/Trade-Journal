@@ -13,11 +13,81 @@ export interface PosterProps {
   readonly theme: PosterTheme;
   /** Journal name, or the user's override. The one editable string. */
   readonly group: string;
+  /**
+   * A PNG data URL that stands in for `group`. Null prints the name.
+   *
+   * `group` stays required and populated either way: it still names the
+   * download file, and it is what the poster falls back to if the logo is
+   * cleared. A template shows one or the other, never both.
+   */
+  readonly logo?: string | null;
   /** "DAILY" | "WEEKLY" | "MONTHLY". */
   readonly periodKind: string;
   /** e.g. "25 Aug 2026" or "August 2026". */
   readonly dateLabel: string;
   readonly disclaimer: string;
+}
+
+/**
+ * How large a logo prints, per header treatment.
+ *
+ * Named rather than inlined at each call site because the sizes are SHARED:
+ * Design B and Design C use identical values, and a bare literal in each file
+ * makes that look coincidental. `lead` is Design A's full-width credit block;
+ * `compact` is the bordered GROUP chip in B and C.
+ */
+export const LOGO_SIZE = {
+  lead: { height: 44, maxWidth: 300 },
+  compact: { height: 34, maxWidth: 230 },
+} as const;
+
+/**
+ * The brand slot: an uploaded logo, else whatever the design passes as the name.
+ *
+ * The branch lives here ONCE while the styling stays per-design. Each template
+ * hands its own text node in as `children`, verbatim, so the three supplied
+ * designs are provably unaltered when no logo is set: Design A styles the name
+ * at 30px with letter-spacing, B and C at 24px with line-height 1, and folding
+ * those into one component would silently restyle two of the three. Keeping the
+ * branch in one place means a future change to how the slot behaves is one edit
+ * rather than three that can drift apart.
+ *
+ * The logo is sized by HEIGHT with `width: auto`, so a wordmark and a square
+ * badge sit on the same baseline instead of one being letterboxed into the
+ * other's box. `maxWidth` keeps a very wide wordmark from pushing the date
+ * block off the canvas, and `objectFit: contain` makes that a shrink, not a crop.
+ */
+export function PosterBrand({
+  logo,
+  alt,
+  height,
+  maxWidth,
+  children,
+}: {
+  readonly logo?: string | null;
+  readonly alt: string;
+  readonly height: number;
+  readonly maxWidth: number;
+  readonly children: React.ReactNode;
+}) {
+  if (!logo) return <>{children}</>;
+  return (
+    // A data URL must stay a literal <img>: next/image would route it through
+    // the optimizer, which cannot resolve one, and the poster would rasterise
+    // with an empty box where the logo belongs.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={logo}
+      alt={alt}
+      style={{
+        height,
+        width: "auto",
+        maxWidth,
+        objectFit: "contain",
+        display: "block",
+      }}
+    />
+  );
 }
 
 /** Every poster rasterises at exactly this size. */
