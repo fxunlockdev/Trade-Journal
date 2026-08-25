@@ -144,19 +144,36 @@ export async function PATCH(
       Object.entries(parsed.data).filter(([k]) => bodyKeys.has(k)),
     );
 
-    const merged = { ...existing, ...sentData };
-    const computed = computeTradeFields(merged);
-
-    const updatePatch: Record<string, unknown> = { ...sentData };
-    if ("tp1" in sentData) {
-      updatePatch.take_profit = sentData.tp1 ?? sentData.take_profit ?? null;
+    // CLEARING A FIELD MUST MEAN `null`, NOT `undefined`.
+    //
+    // The optional numeric fields run a `blankToUndefined` preprocess, so a
+    // cleared input ("" or null) parses to `undefined`. That breaks the update
+    // twice over:
+    //   1. `JSON.stringify` DROPS undefined keys, so Supabase never receives
+    //      them and the column keeps its old value — clearing a stop loss or a
+    //      TP appears to save and silently does nothing.
+    //   2. `{...existing, ...sentData}` overwrites the old value with
+    //      `undefined`, which slips past computeTradeFields' `!== null` guards
+    //      and yields `r_multiple: NaN` (an R multiple has no denominator
+    //      without a stop). With `null` it correctly comes out as null.
+    //
+    // A key absent from the request body was already filtered out by
+    // `bodyKeys`, so anything still here was deliberately sent: present +
+    // blank unambiguously means "clear this column".
+    //
+    // Fields carrying a Zod `.default()` (fees, tags, num_positions,
+    // split_risk, order_type, tp4_trailing, source) can never reach this pass —
+    // the default replaces undefined during parsing, or the value is rejected
+    // outright. Pinned in tests/unit/trade-patch-clearing.test.ts.
+    const normalized: Record<string, unknown> = { ...sentData };
+    for (const key of bodyKeys) {
+      if (key in normalized && normalized[key] === undefined) {
+        normalized[key] = null;
+      }
     }
 
-    // `source` is provenance — how the trade entered the system (manual / csv
-    // import / mt5_webhook). It is immutable after creation: an edit must never
-    // rewrite it, or a raw PATCH `{"source":"manual"}` could strip a broker
-    // trade's provenance and disarm the P&L guard below on the next edit.
-    delete updatePatch.source;
+    const merged = { ...existing, ...normalized };
+    const computed = computeTradeFields(merged);
 
     // Broker-sourced trades — the MT5 webhook AND report imports ("csv") —
     // carry the broker's REAL money PnL (profit + commission + swap), which
@@ -168,6 +185,54 @@ export async function PATCH(
     // from the TP price.
     const isBrokerSourced =
       existing.source === "mt5_webhook" || existing.source === "csv";
+
+    const updatePatch: Record<string, unknown> = { ...normalized };
+    if ("tp1" in normalized) {
+      updatePatch.take_profit = normalized.tp1 ?? normalized.take_profit ?? null;
+    }
+
+    // Record WHEN a trade closed, but only on the genuine open -> closed
+    // transition. Multi-TP trades close by flipping a tp*_result rather than by
+    // getting an exit_price, and computeTradeFields — being pure, with no
+    // notion of "now" — has never been able to stamp a close time. Anything
+    // downstream that asks "what did I make on Tuesday" then has to fall back
+    // to the ENTRY date, which for a multi-day trade is the wrong day.
+    //
+    // Deliberately narrow, because a close time is a factual claim:
+    //   - only when `existing` was open and the result is closed, so re-editing
+    //     an old trade can never restamp it to today;
+    //   - only when the client didn't send one, so a user-supplied exit time
+    //     always wins;
+    //   - never for broker rows, which carry the real fill time already.
+    // The value means "when the close was recorded", which is accurate for a
+    // trader marking a TP as it happens and strictly better than entry date
+    // otherwise. It is not back-filled onto historical rows — that moment was
+    // never captured and inventing it would be worse than admitting the gap.
+    const wasOpen =
+      existing.pnl_absolute === null || !Number.isFinite(existing.pnl_absolute);
+    const nowClosed =
+      computed.pnl_absolute !== null && Number.isFinite(computed.pnl_absolute);
+    // Gate on the VALUE, not on key presence: the trade form always includes
+    // `exit_time` in its payload (as null when the field is empty), and a
+    // null-valued key survives JSON.stringify — so a key-presence check would
+    // make this branch permanently unreachable.
+    const clientSentExitTime =
+      bodyKeys.has("exit_time") && normalized.exit_time != null;
+    if (
+      wasOpen &&
+      nowClosed &&
+      !isBrokerSourced &&
+      existing.exit_time === null &&
+      !clientSentExitTime
+    ) {
+      updatePatch.exit_time = new Date().toISOString();
+    }
+
+    // `source` is provenance — how the trade entered the system (manual / csv
+    // import / mt5_webhook). It is immutable after creation: an edit must never
+    // rewrite it, or a raw PATCH `{"source":"manual"}` could strip a broker
+    // trade's provenance and disarm the P&L guard below on the next edit.
+    delete updatePatch.source;
 
     const { data, error } = await admin
       .from("trades")

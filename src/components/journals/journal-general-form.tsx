@@ -9,8 +9,10 @@ import type {
   AccountCurrency,
   JournalColor,
   JournalWithRole,
+  RiskBasis,
 } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { riskBaseBalance } from "@/lib/trades/balance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +50,13 @@ const COLORS: ReadonlyArray<{
 interface JournalGeneralFormProps {
   readonly journal: JournalWithRole;
   readonly canManage: boolean;
+  /**
+   * Live balance (capital + closed P&L), computed by the page. Needed because
+   * `journal` comes straight from the journals table and carries no balance —
+   * without this the compounding risk figure would silently fall back to the
+   * starting capital while the Compounding toggle claims otherwise.
+   */
+  readonly currentBalance?: number | null;
 }
 
 /**
@@ -58,6 +67,7 @@ interface JournalGeneralFormProps {
 export function JournalGeneralForm({
   journal,
   canManage,
+  currentBalance,
 }: JournalGeneralFormProps) {
   const router = useRouter();
   const [name, setName] = useState(journal.name);
@@ -72,6 +82,9 @@ export function JournalGeneralForm({
   const [riskPercent, setRiskPercent] = useState(
     String(journal.default_risk_percent ?? 1),
   );
+  const [riskBasis, setRiskBasis] = useState<RiskBasis>(
+    journal.risk_basis ?? "compounding",
+  );
   const [saving, setSaving] = useState(false);
   const [savingRisk, setSavingRisk] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -83,10 +96,30 @@ export function JournalGeneralForm({
 
   const capitalNum = capital.trim() === "" ? null : Number(capital);
   const riskNum = Number(riskPercent);
+
+  // Which balance the risk line quotes. Goes through the same helper the trade
+  // form and the balance card use, so all three agree on what a trade costs —
+  // including the depleted-account fallback.
+  const { base: riskLineBaseRaw, depleted: riskLineDepleted } = riskBaseBalance({
+    startingCapital: capitalNum,
+    // While the user is editing the capital box, the stored balance no longer
+    // corresponds to the typed capital, so only trust it when they match.
+    currentBalance:
+      capitalNum === (journal.initial_capital ?? null) ? currentBalance : null,
+    basis: riskBasis,
+  });
+  const riskLineBase = riskLineBaseRaw ?? capitalNum ?? 0;
+  const riskLineLabel = riskLineDepleted
+    ? "starting capital — balance is at or below zero"
+    : riskBasis === "compounding" && currentBalance != null
+      ? "current balance"
+      : "starting capital";
+
   const riskDirty =
     capitalNum !== (journal.initial_capital ?? null) ||
     currency !== (journal.account_currency ?? "USD") ||
-    riskNum !== (journal.default_risk_percent ?? 1);
+    riskNum !== (journal.default_risk_percent ?? 1) ||
+    riskBasis !== (journal.risk_basis ?? "compounding");
 
   const handleSaveRisk = async (): Promise<void> => {
     if (!canManage || !riskDirty || savingRisk) return;
@@ -107,6 +140,7 @@ export function JournalGeneralForm({
           initial_capital: capitalNum,
           account_currency: currency,
           default_risk_percent: riskNum,
+          risk_basis: riskBasis,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -321,20 +355,87 @@ export function JournalGeneralForm({
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <Label>Risk basis</Label>
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-muted p-0.5">
+              {(
+                [
+                  { value: "compounding" as RiskBasis, label: "Compounding" },
+                  { value: "fixed" as RiskBasis, label: "Fixed" },
+                ]
+              ).map((b) => (
+                <button
+                  key={b.value}
+                  type="button"
+                  onClick={() => setRiskBasis(b.value)}
+                  disabled={!canManage || savingRisk}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-xs font-medium transition-all",
+                    riskBasis === b.value
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                    (!canManage || savingRisk) && "opacity-50",
+                  )}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {riskBasis === "compounding" ? (
+                <>
+                  {/*
+                    The space before "(capital" is explicit: JSX strips
+                    whitespace that contains a newline, so a line break after
+                    </strong> would render "current balance(capital".
+                  */}
+                  Risk is a % of your <strong>current balance</strong>{" "}
+                  (capital + closed P&amp;L), so profits compound and a drawdown
+                  automatically reduces position size.
+                </>
+              ) : (
+                <>
+                  Risk is always a % of the <strong>starting capital</strong>, so
+                  position size stays constant as the account grows.
+                </>
+              )}
+            </p>
+          </div>
+
           {capitalNum !== null && Number.isFinite(capitalNum) && capitalNum > 0 && (
             <p className="text-xs text-muted-foreground">
+              {/*
+                The headline figure has to reflect the basis the toggle above
+                selects. Quoting a starting-capital number while Compounding is
+                lit was the bug: on a grown account it understates every trade.
+              */}
               Risking{" "}
               <span className="font-medium text-foreground">
-                {riskNum}% of {currency} {capitalNum.toLocaleString("en-US")}
+                {riskNum}% of {currency}{" "}
+                {riskLineBase.toLocaleString("en-US", {
+                  maximumFractionDigits: 2,
+                })}
               </span>{" "}
-              ={" "}
+              ({riskLineLabel}) ={" "}
               <span className="font-medium text-foreground">
                 {currency}{" "}
-                {((capitalNum * riskNum) / 100).toLocaleString("en-US", {
+                {/*
+                  Both fraction digits pinned: a money amount that renders as
+                  "124.7" next to "100" reads as a typo rather than a figure.
+                */}
+                {((riskLineBase * riskNum) / 100).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
               </span>{" "}
               per trade.
+              {riskBasis === "compounding" && currentBalance == null && (
+                <>
+                  {" "}
+                  Your balance couldn&apos;t be loaded, so this shows the
+                  starting capital.
+                </>
+              )}
             </p>
           )}
 

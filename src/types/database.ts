@@ -73,9 +73,18 @@ export interface Journal {
   readonly account_currency: AccountCurrency;
   /** Percent of capital risked per trade — drives the derived position size. */
   readonly default_risk_percent: number;
+  /**
+   * Which balance the risk % is taken from.
+   * `compounding` — the live balance (capital + closed P&L), so gains compound
+   * and drawdowns shrink position size automatically.
+   * `fixed` — always the starting capital, for constant position sizing.
+   */
+  readonly risk_basis: RiskBasis;
   readonly created_at: string;
   readonly updated_at: string;
 }
+
+export type RiskBasis = "compounding" | "fixed";
 
 export interface JournalMember {
   readonly journal_id: string;
@@ -88,6 +97,12 @@ export interface JournalMember {
 /** A journal annotated with the *current viewer's* role (server-resolved). */
 export interface JournalWithRole extends Journal {
   readonly my_role: JournalRole;
+  /**
+   * Live balance: `initial_capital` + all closed P&L. Derived on read by
+   * `GET /api/journals`, so it can't go stale. Absent when the journal has no
+   * capital configured (nothing to track).
+   */
+  readonly current_balance?: number;
 }
 
 export interface JournalInvite {
@@ -215,6 +230,11 @@ export interface Trade {
   readonly pnl_percentage: number | null;
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
+  /**
+   * Percent of the account risked on THIS trade — money management per trade.
+   * Null falls back to the journal's `default_risk_percent`.
+   */
+  readonly risk_percent: number | null;
   readonly source: TradeSource;
   /** MT5 source account as "{server}:{login}". Set only by the connector. */
   readonly mt5_account: string | null;

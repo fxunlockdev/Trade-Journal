@@ -56,5 +56,22 @@ export function useJournals(): UseJournalsReturn {
     };
   }, [load]);
 
+  // Journals now carry `current_balance`, which the trade form sizes positions
+  // from — so a mount-only fetch goes stale in every case where the form stays
+  // open: another member logs a trade, an MT5 webhook closes a position, or a
+  // second tab. Refreshing when the tab regains focus keeps the sizing basis
+  // close to reality without polling.
+  useEffect(() => {
+    const refresh = (): void => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
   return { journals, loading, error, refetch: load };
 }

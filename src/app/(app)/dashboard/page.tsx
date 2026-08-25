@@ -87,6 +87,10 @@ export default async function DashboardPage() {
         trades={trades}
         journalName={activeJournal.name}
         journalColor={activeJournal.color}
+        startingCapital={activeJournal.initial_capital}
+        accountCurrency={activeJournal.account_currency}
+        riskPercent={activeJournal.default_risk_percent}
+        riskBasis={activeJournal.risk_basis}
       />
       {/* Compact monthly P&L calendar — self-contained (own month nav), so it
           intentionally ignores the charts' Range filter above and always
