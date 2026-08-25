@@ -481,3 +481,151 @@ test.describe("poster rendering", () => {
     );
   });
 });
+
+/**
+ * Logo upload.
+ *
+ * Two things can only be proven in a browser: that the format gate rejects a
+ * file on its BYTES, and that an uploaded logo survives rasterisation. The
+ * second is the one that fails silently — `domToBlob` snapshots DOM into an SVG
+ * foreignObject, and an image the rasteriser can't inline leaves a blank gap in
+ * a PNG that still downloads at the right size and still passes every other
+ * assertion in this file.
+ */
+test.describe("poster logo", () => {
+  const TRANSPARENT = "tests/fixtures/logo-transparent.png";
+  const OPAQUE = "tests/fixtures/logo-opaque.png";
+
+  /** Magenta appears in no poster theme, so finding it proves the logo drew. */
+  const MAGENTA = { r: 255, g: 0, b: 255 } as const;
+
+  async function uploadLogo(page: Page, fixture: string): Promise<void> {
+    await page.getByTestId("poster-logo-input").setInputFiles(fixture);
+    await expect(page.getByTestId("poster-logo-preview")).toBeVisible();
+  }
+
+  test("a PNG logo replaces the group name on the poster", async ({ page }) => {
+    await gotoHarness(page);
+    const canvas = page.getByTestId("poster-canvas");
+
+    // The default group name is on the poster before any upload.
+    await expect(canvas).toContainText("YOHAN");
+
+    await uploadLogo(page, TRANSPARENT);
+
+    // Replaced, not merely accompanied: printing both would double the brand.
+    await expect(canvas.locator("img[alt='YOHAN']")).toBeVisible();
+    await expect(canvas).not.toContainText("YOHAN");
+
+    // Removing it restores the name rather than leaving the slot empty.
+    await page.getByTestId("poster-logo-remove").click();
+    await expect(canvas).toContainText("YOHAN");
+  });
+
+  test("the logo is embedded in the rasterised PNG, not left as a gap", async ({
+    page,
+  }) => {
+    test.slow(); // Rasterising 1080x1080 is CPU-bound; see the note above.
+    await gotoHarness(page);
+    await uploadLogo(page, TRANSPARENT);
+
+    const found = await page.evaluate(async (target) => {
+      let captured: Blob | null = null;
+      const realCreate = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (b: Blob) => {
+        captured = b;
+        return realCreate(b);
+      };
+      try {
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="poster-download"]')
+          ?.click();
+        const started = Date.now();
+        while (!captured && Date.now() - started < 30_000) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      } finally {
+        URL.createObjectURL = realCreate;
+      }
+      if (!captured) return null;
+
+      const bmp = await createImageBitmap(captured as Blob);
+      const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bmp, 0, 0);
+      const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
+
+      // Every pixel, not a stride: the logo prints at 44px tall, which is under
+      // 0.2% of the canvas, and a sparse sample would miss it and report a
+      // false failure.
+      let hits = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        // Tolerance absorbs the resampling the rasteriser does at the edges.
+        if (
+          Math.abs(data[i] - target.r) < 24 &&
+          Math.abs(data[i + 1] - target.g) < 24 &&
+          Math.abs(data[i + 2] - target.b) < 24
+        ) {
+          hits++;
+        }
+      }
+      return { size: [bmp.width, bmp.height] as const, hits };
+    }, MAGENTA);
+
+    expect(found).not.toBeNull();
+    expect(found!.size).toEqual([1080, 1080]);
+    // The fixture's core is 40/64 of a 44px-tall render, so several hundred
+    // magenta pixels is the floor. Zero means the image never inlined.
+    expect(found!.hits).toBeGreaterThan(200);
+  });
+
+  test("a renamed JPEG is rejected on its bytes, not its extension", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+
+    // A real JPEG handed over with a .png name and image/png MIME type: the
+    // exact file a user produces by renaming a photo in Finder.
+    await page.getByTestId("poster-logo-input").setInputFiles({
+      name: "logo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from([
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00,
+      ]),
+    });
+
+    await expect(page.getByText(/not a PNG/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+    await expect(page.getByTestId("poster-canvas")).toContainText("YOHAN");
+  });
+
+  test("an opaque PNG is accepted but warned about", async ({ page }) => {
+    await gotoHarness(page);
+    await uploadLogo(page, OPAQUE);
+
+    // Accepted — the check is a heuristic, and a caller who wants an opaque
+    // mark should not be blocked by a pixel sampler. But it must be SAID.
+    await expect(page.getByText(/no transparency/i)).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toBeVisible();
+  });
+
+  test("the logo survives a reload and is scoped to the journal selection", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await uploadLogo(page, TRANSPARENT);
+
+    await page.reload();
+    await expect(page.getByTestId("poster-canvas")).toBeVisible();
+    await expect(page.getByTestId("poster-logo-preview")).toBeVisible();
+
+    // Ticking a second journal must not carry YOHAN's mark onto a combined
+    // poster: the logo is keyed to the COMBINATION, exactly like the name.
+    await page.getByTestId("poster-journal-journal-b").click();
+    await expect(page.getByTestId("poster-canvas")).toContainText(
+      "YOHAN + CHRIS",
+    );
+    await expect(page.getByTestId("poster-logo-preview")).toHaveCount(0);
+  });
+});

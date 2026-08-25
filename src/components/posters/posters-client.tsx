@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, ImageIcon, Loader2 } from "lucide-react";
+import { Copy, Download, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +41,7 @@ import {
   posterFilename,
   posterToBlob,
 } from "@/lib/posters/export";
+import { logoStorageKey, readLogoFile } from "@/lib/posters/logo";
 import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import {
@@ -145,10 +146,31 @@ export function PostersClient({
   const [range, setRange] = useState<DateRange | null>(null);
   const [nonce, setNonce] = useState(0);
 
+  // The logo is scoped to the same journal combination as the name it replaces,
+  // so switching journals swaps both together rather than printing one team's
+  // mark over another's numbers.
+  const logoKey = useMemo(
+    () => logoStorageKey(selectedJournals.map((j) => j.id)),
+    [selectedJournals],
+  );
+  const [logo, setLogo] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const saved = groupKey ? window.localStorage.getItem(groupKey) : null;
     setGroup(saved ?? defaultGroup);
   }, [groupKey, defaultGroup]);
+
+  useEffect(() => {
+    // localStorage throws in private mode on some browsers and when the origin
+    // quota is full. A missing logo is a cosmetic loss, never a broken page.
+    try {
+      setLogo(logoKey ? window.localStorage.getItem(logoKey) : null);
+    } catch {
+      setLogo(null);
+    }
+  }, [logoKey]);
 
   useEffect(() => {
     // Re-resolved when the period changes AND when `nonce` is bumped just
@@ -189,6 +211,50 @@ export function PostersClient({
       window.localStorage.removeItem(groupKey);
     } else {
       window.localStorage.setItem(groupKey, value);
+    }
+  };
+
+  const onLogoPicked = async (file: File | undefined) => {
+    if (!file) return;
+    setLogoBusy(true);
+    try {
+      const parsed = await readLogoFile(file);
+      setLogo(parsed.dataUrl);
+      if (logoKey) {
+        try {
+          window.localStorage.setItem(logoKey, parsed.dataUrl);
+        } catch {
+          // Over quota or blocked. The logo still applies to this session; only
+          // remembering it failed, and saying so beats a silent forget later.
+          toast.warning("Logo applied, but it couldn't be saved for next time.");
+        }
+      }
+      if (!parsed.transparent) {
+        toast.warning(
+          "That PNG has no transparency, so it will print as a solid rectangle. Export it with a transparent background.",
+        );
+      } else {
+        toast.success("Logo added");
+      }
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : "That logo couldn't be read.",
+      );
+    } finally {
+      setLogoBusy(false);
+      // Cleared so re-picking the SAME file fires change again; without this a
+      // user who fixes their PNG and re-uploads it sees nothing happen.
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  };
+
+  const onLogoRemove = () => {
+    setLogo(null);
+    if (!logoKey) return;
+    try {
+      window.localStorage.removeItem(logoKey);
+    } catch {
+      // Already gone from state; a failed removal only affects the next load.
     }
   };
 
@@ -267,7 +333,7 @@ export function PostersClient({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Share your results. Every figure comes from your journals&apos; closed
-          trades — nothing on a poster is typed in except the group name.
+          trades — the only things you supply are the group name and your logo.
         </p>
       </div>
 
@@ -449,6 +515,76 @@ export function PostersClient({
                   The only editable text — every statistic comes from your trades.
                 </p>
               </div>
+
+              {/*
+                A logo REPLACES the group name on the poster; the name field
+                above stays live because it still names the downloaded file and
+                is what the poster reverts to when the logo is removed.
+              */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Logo
+                </Label>
+                {logo ? (
+                  <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- a
+                        data URL must stay a literal <img>. */}
+                    <img
+                      src={logo}
+                      alt="Your logo"
+                      data-testid="poster-logo-preview"
+                      // Checkerboard, so a logo with a white fill is visibly
+                      // distinguishable from one with real transparency.
+                      className="h-10 w-auto max-w-[140px] object-contain"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%),linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%)",
+                        backgroundSize: "12px 12px",
+                        backgroundPosition: "0 0, 6px 6px",
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onLogoRemove}
+                      data-testid="poster-logo-remove"
+                      className="ml-auto text-muted-foreground"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-center"
+                    disabled={logoBusy}
+                    onClick={() => logoInputRef.current?.click()}
+                    data-testid="poster-logo-upload"
+                  >
+                    {logoBusy ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    Upload logo
+                  </Button>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png"
+                  className="hidden"
+                  data-testid="poster-logo-input"
+                  onChange={(e) => void onLogoPicked(e.target.files?.[0])}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must be a PNG file with no background (transparent). It
+                  replaces the group name on the poster.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -570,6 +706,7 @@ export function PostersClient({
                   stats={stats}
                   theme={theme}
                   group={group.trim() || defaultGroup}
+                  logo={logo}
                   periodKind={kind}
                   dateLabel={formatPeriodLabel(period, range)}
                   disclaimer={disclaimer}

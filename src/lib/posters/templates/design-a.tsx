@@ -6,6 +6,7 @@ import {
   GradientNumber,
   noiseLayerStyle,
   POSTER_SIZE,
+  PosterLogo,
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
@@ -17,6 +18,7 @@ export function DesignA({
   stats,
   theme,
   group,
+  logo,
   periodKind,
   dateLabel,
   disclaimer,
@@ -99,16 +101,20 @@ export function DesignA({
             >
               Presented by
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-poster-display), sans-serif",
-                fontWeight: 600,
-                fontSize: 30,
-                letterSpacing: "0.01em",
-              }}
-            >
-              {group}
-            </div>
+            {logo ? (
+              <PosterLogo src={logo} alt={group} height={44} maxWidth={300} />
+            ) : (
+              <div
+                style={{
+                  fontFamily: "var(--font-poster-display), sans-serif",
+                  fontWeight: 600,
+                  fontSize: 30,
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {group}
+              </div>
+            )}
           </div>
           <div
             style={{
