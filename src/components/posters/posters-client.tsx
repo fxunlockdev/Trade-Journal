@@ -597,9 +597,9 @@ export function PostersClient({
                     >
                       Combining {journalsClaimed} journals
                       {journalsContributing < journalsClaimed &&
-                        ` — only ${journalsContributing} traded in this period`}
+                        `, only ${journalsContributing} of which traded in this period`}
                       . If any of them track the same account, those trades are
-                      counted twice — only you can tell.
+                      counted twice, and only you can tell.
                     </p>
                   )}
 

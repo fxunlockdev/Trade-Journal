@@ -28,7 +28,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     id: "journal",
     target: "journal-switcher",
     title: "Start with a journal",
-    body: "Every trade belongs to a journal — one per account or strategy. Switch between them here, add another, and open Journal settings to set your account capital and risk %.",
+    body: "Every trade belongs to a journal: one per account or strategy. Switch between them here, add another, and open Journal settings to set your account capital and risk %.",
     placement: "bottom",
   },
   {
@@ -36,7 +36,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     // Derived from the href (/journal/new), not the label.
     target: "nav-journal-new",
     title: "Log a trade",
-    body: "Enter the pair, your entry and your stop. Once a journal has capital set, the position size is worked out for you — you don't type a quantity.",
+    body: "Enter the pair, your entry and your stop. Once a journal has capital set, the position size is worked out for you, so you never type a quantity.",
     placement: "right",
   },
   {
@@ -50,7 +50,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     id: "dashboard",
     target: "nav-dashboard",
     title: "Watch it add up",
-    body: "Your balance, win rate, expectancy and equity curve — all computed from the trades you log. Nothing here is typed in by hand.",
+    body: "Your balance, win rate, expectancy and equity curve, all computed from the trades you log. Nothing here is typed in by hand.",
     placement: "right",
   },
 ];
