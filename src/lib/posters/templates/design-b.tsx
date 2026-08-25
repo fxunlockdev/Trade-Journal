@@ -10,6 +10,7 @@ import {
   GradientNumber,
   noiseLayerStyle,
   POSTER_SIZE,
+  PosterLogo,
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
@@ -21,6 +22,7 @@ export function DesignB({
   stats,
   theme,
   group,
+  logo,
   periodKind,
   dateLabel,
   disclaimer,
@@ -142,16 +144,20 @@ export function DesignB({
               >
                 Group
               </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-poster-display), sans-serif",
-                  fontWeight: 600,
-                  fontSize: 24,
-                  lineHeight: 1,
-                }}
-              >
-                {group}
-              </div>
+              {logo ? (
+                <PosterLogo src={logo} alt={group} height={34} maxWidth={230} />
+              ) : (
+                <div
+                  style={{
+                    fontFamily: "var(--font-poster-display), sans-serif",
+                    fontWeight: 600,
+                    fontSize: 24,
+                    lineHeight: 1,
+                  }}
+                >
+                  {group}
+                </div>
+              )}
             </div>
             <div
               style={{

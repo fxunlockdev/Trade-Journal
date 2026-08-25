@@ -13,11 +13,65 @@ export interface PosterProps {
   readonly theme: PosterTheme;
   /** Journal name, or the user's override. The one editable string. */
   readonly group: string;
+  /**
+   * A PNG data URL that stands in for `group`. Null prints the name.
+   *
+   * `group` stays required and populated either way: it still names the
+   * download file, and it is what the poster falls back to if the logo is
+   * cleared. A template shows one or the other, never both.
+   */
+  readonly logo?: string | null;
   /** "DAILY" | "WEEKLY" | "MONTHLY". */
   readonly periodKind: string;
   /** e.g. "25 Aug 2026" or "August 2026". */
   readonly dateLabel: string;
   readonly disclaimer: string;
+}
+
+/**
+ * An uploaded logo, standing where the group name would print.
+ *
+ * Deliberately renders ONLY the logo. Each design keeps its own text node for
+ * the name, because the three headers style it differently (Design A at 30px
+ * with letter-spacing, B and C at 24px with line-height 1) and folding them
+ * into one component would silently restyle two of the three supplied designs.
+ *
+ * Sized by HEIGHT with `width: auto`, so a wordmark and a square badge sit on
+ * the same baseline instead of one being letterboxed into the other's box.
+ * `maxWidth` keeps a very wide wordmark from pushing the date block off the
+ * canvas, and `objectFit: contain` makes that a shrink rather than a crop.
+ *
+ * A plain <img> with a data URL, which `domToBlob` inlines without a fetch.
+ * Anything that needs the network mid-rasterisation risks snapshotting a gap.
+ */
+export function PosterLogo({
+  src,
+  alt,
+  height,
+  maxWidth,
+}: {
+  readonly src: string;
+  readonly alt: string;
+  readonly height: number;
+  readonly maxWidth: number;
+}) {
+  return (
+    // A data URL must stay a literal <img>: next/image would route it through
+    // the optimizer, which cannot resolve one, and the poster would rasterise
+    // with an empty box where the logo belongs.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      style={{
+        height,
+        width: "auto",
+        maxWidth,
+        objectFit: "contain",
+        display: "block",
+      }}
+    />
+  );
 }
 
 /** Every poster rasterises at exactly this size. */
