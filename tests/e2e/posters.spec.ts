@@ -144,6 +144,146 @@ async function analysePoster(page: Page) {
   });
 }
 
+test.describe("combining journals", () => {
+  // The harness seeds two journals: YOHAN (4 trades, +130 pips, incl. one
+  // XAUUSD at +80) and CHRIS (2 XAUUSD trades, +30 and -10 => +20).
+  test("defaults to the active journal alone", async ({ page }) => {
+    await gotoHarness(page);
+    await expect(page.getByTestId("poster-canvas")).toContainText("+130");
+    // The labelled row, not a bare "4" — that also matches "4 / 2" and "4 of 4".
+    await expect(
+      page.getByTestId("poster-receipt").getByText("Closed trades in range"),
+    ).toBeVisible();
+    await expect(page.getByTestId("poster-canvas")).toContainText("4");
+    // A single journal makes no combining claim.
+    await expect(page.getByTestId("poster-combine-caution")).toHaveCount(0);
+    await expect(page.getByTestId("poster-canvas")).not.toContainText(
+      /Combined results across/i,
+    );
+  });
+
+  test("ticking a second journal sums both", async ({ page }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    // 130 + 20.
+    await expect(page.getByTestId("poster-canvas")).toContainText("+150");
+  });
+
+  test("the receipt breaks the total down per journal", async ({ page }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    const receipt = page.getByTestId("poster-receipt");
+    await expect(receipt).toContainText("YOHAN");
+    await expect(receipt).toContainText("CHRIS");
+    // 4 + 2 = 6, and the canvas is the unambiguous place to read the total.
+    await expect(page.getByTestId("poster-canvas")).toContainText("6");
+  });
+
+  test("a combined poster says so on the artefact, not just on screen", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    // Must be IN the poster — the on-screen receipt is not published.
+    await expect(page.getByTestId("poster-canvas")).toContainText(
+      /Combined results across 2 journals/i,
+    );
+    await expect(page.getByTestId("poster-combine-caution")).toBeVisible();
+  });
+
+  test("names the combination without anyone typing", async ({ page }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    await expect(page.getByTestId("poster-canvas")).toContainText(
+      "YOHAN + CHRIS",
+    );
+  });
+
+  test("Yohan + Chris on Gold — the case this was built for", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    await page.getByTestId("poster-asset-XAUUSD").click();
+
+    const canvas = page.getByTestId("poster-canvas");
+    // Yohan's one gold trade (+80) plus Chris's two (+30, -10).
+    await expect(canvas).toContainText("+100");
+    // A single instrument names itself rather than saying ALL PAIRS.
+    await expect(canvas).toContainText("XAUUSD");
+    await expect(page.getByTestId("poster-receipt")).toContainText("3");
+  });
+
+  test("the asset list only offers what the chosen journals traded", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+
+    // Both journals: every pair either of them traded is offered.
+    await page.getByTestId("poster-journal-journal-b").click();
+    await expect(page.getByTestId("poster-asset-EURUSD")).toBeVisible();
+    await expect(page.getByTestId("poster-asset-XAUUSD")).toBeVisible();
+
+    // Chris alone traded only gold, so EURUSD is no longer offered — selecting
+    // it would return an empty poster. The row itself stays, because "All" has
+    // to remain reachable no matter how the scope narrows.
+    await page.getByTestId("poster-journal-journal-a").click();
+    await expect(page.getByTestId("poster-asset-EURUSD")).toHaveCount(0);
+    await expect(page.getByTestId("poster-asset-XAUUSD")).toBeVisible();
+    await expect(page.getByTestId("poster-asset-all")).toBeVisible();
+  });
+
+  test("changing journals clears an asset filter the new scope can't satisfy", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    // Yohan traded EURUSD; Chris traded only XAUUSD.
+    await page.getByTestId("poster-journal-journal-b").click();
+    await page.getByTestId("poster-asset-EURUSD").click();
+    await expect(page.getByTestId("poster-canvas")).toContainText("+100");
+
+    // Switch to Chris alone. EURUSD is meaningless there — if the selection
+    // survived, the poster would report "no closed trades" with no visible
+    // filter to blame, and the row (with its "All" chip) can unmount entirely.
+    await page.getByTestId("poster-journal-journal-a").click();
+    await expect(page.getByTestId("poster-canvas")).toContainText("+20");
+    await expect(
+      page.getByText(/no closed trades in this period/i),
+    ).toHaveCount(0);
+  });
+
+  test("a poster naming two journals says so even if only one traded", async ({
+    page,
+  }) => {
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    // Narrow to a pair only Yohan traded: the headline still claims both, so
+    // the artefact must still carry the combined note rather than passing one
+    // trader's numbers off as the pair's.
+    await page.getByTestId("poster-asset-EURUSD").click();
+    const canvas = page.getByTestId("poster-canvas");
+    await expect(canvas).toContainText("YOHAN + CHRIS");
+    await expect(canvas).toContainText(/Combined results across 2 journals/i);
+    await expect(page.getByTestId("poster-combine-caution")).toContainText(
+      /only 1 traded in this period/i,
+    );
+  });
+
+  test("combining still produces a real 1080x1080 PNG", async ({ page }) => {
+    test.slow();
+    await gotoHarness(page);
+    await page.getByTestId("poster-journal-journal-b").click();
+    await expect(page.getByTestId("poster-canvas")).toContainText("+150");
+
+    const result = await analysePoster(page);
+    expect(result, "download produced no image").not.toBeNull();
+    expect(result!.width).toBe(1080);
+    expect(result!.height).toBe(1080);
+    expect(result!.heroBgShare).toBeGreaterThan(0.15);
+    expect(result!.heroBgShare).toBeLessThan(0.95);
+  });
+});
+
 test.describe("poster rendering", () => {
   test("the auth-gated page does not render posters to anonymous visitors", async ({
     page,
