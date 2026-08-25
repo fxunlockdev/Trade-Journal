@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { clearTourSeen } from "@/lib/tour/steps";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
 import type { UserRole } from "@/types/database";
@@ -39,6 +40,7 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Compass,
 } from "lucide-react";
 
 type SortField = "full_name" | "email" | "role" | "trade_count";
@@ -610,6 +612,37 @@ export default function SettingsPage() {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/*
+            Replaying the tour. The overlay lives in the app shell, so this
+            dispatches an event rather than lifting tour state up through the
+            whole tree for one button.
+          */}
+          <Card className="mt-4 border-border bg-card">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">
+                  Guided tour
+                </h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  A quick walk through journals, logging a trade, and where your
+                  results show up.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                data-testid="replay-tour"
+                onClick={() => {
+                  clearTourSeen(window.localStorage);
+                  window.dispatchEvent(new Event("trdr:start-tour"));
+                }}
+                className="gap-2"
+              >
+                <Compass className="h-4 w-4" />
+                Replay tour
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

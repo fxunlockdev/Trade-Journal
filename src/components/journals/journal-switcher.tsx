@@ -99,6 +99,8 @@ export function JournalSwitcher({
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
+          // Anchor for the first-run tour's opening step.
+          data-tour="journal-switcher"
           render={
             <Button
               variant="ghost"
