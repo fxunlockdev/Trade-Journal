@@ -124,7 +124,7 @@ function saveOverrides(map: OverridesMap): void {
 }
 
 function formatNumber(value: number, decimals = 2): string {
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "–";
   return value.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -136,7 +136,7 @@ function formatNumber(value: number, decimals = 2): string {
  * big ones don't. Avoids showing "0.00" for a meaningful 0.003 lot size.
  */
 function formatLots(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (!Number.isFinite(value) || value <= 0) return "–";
   if (value >= 100) return formatNumber(value, 2);
   if (value >= 1) return formatNumber(value, 3);
   return value.toFixed(Math.min(5, Math.max(3, -Math.floor(Math.log10(value)) + 2)));
@@ -278,7 +278,7 @@ export function LotCalculatorClient() {
             Lot Size Calculator
           </h1>
           <p className="text-sm text-muted-foreground">
-            Forex, metals, indices, commodities, and crypto CFDs — with
+            Forex, metals, indices, commodities, and crypto CFDs, with
             per-instrument broker overrides.
           </p>
         </div>
@@ -612,7 +612,7 @@ export function LotCalculatorClient() {
                   <div className="space-y-3 border-t border-border px-3 py-3">
                     <p className="text-[11px] text-muted-foreground">
                       These defaults match most retail brokers. Override them if
-                      your broker publishes different numbers — saved per
+                      your broker publishes different numbers. Saved per
                       instrument to this browser.
                     </p>
                     <div className="grid grid-cols-2 gap-3">

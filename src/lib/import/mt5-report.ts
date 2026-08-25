@@ -484,7 +484,7 @@ export function parseReportRows(
       );
     if (looksLikeSummary) {
       throw new ReportParseError(
-        "That's a performance summary (Gain, Profit Factor, Drawdown…) — it doesn't list individual trades, so there's nothing to import. Export the detailed history instead: MT5 → History tab → right-click → Report → XLSX (or HTML).",
+        "That's a performance summary (Gain, Profit Factor, Drawdown…). It doesn't list individual trades, so there's nothing to import. Export the detailed history instead: MT5 → History tab → right-click → Report → XLSX (or HTML).",
         "not_a_report",
       );
     }
@@ -501,7 +501,7 @@ export function parseReportRows(
 
   if (events.length === 0) {
     throw new ReportParseError(
-      "No closed trades found in this report. Set the History period to 'All History' before exporting — open positions can't be imported until they close.",
+      "No closed trades found in this report. Set the History period to 'All History' before exporting. Open positions can't be imported until they close.",
       "no_trades",
     );
   }

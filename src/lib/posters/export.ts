@@ -128,7 +128,7 @@ export async function copyPosterToClipboard(
   render: () => Promise<Blob>,
 ): Promise<void> {
   if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-    throw new Error("Your browser can't copy images — use Download instead.");
+    throw new Error("Your browser can't copy images. Use Download instead.");
   }
   try {
     await navigator.clipboard.write([
@@ -138,7 +138,7 @@ export async function copyPosterToClipboard(
     // A denied clipboard permission reads as an opaque platform string
     // ("The request is not allowed by the user agent"); point at the way out.
     if (err instanceof Error && err.name === "NotAllowedError") {
-      throw new Error("Clipboard access was blocked — use Download instead.");
+      throw new Error("Clipboard access was blocked. Use Download instead.");
     }
     throw err;
   }

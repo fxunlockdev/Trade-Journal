@@ -219,7 +219,7 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Every journal you belong to, combined. Pick journals and assets to see
-          them as one book — e.g. two traders&apos; journals on Gold alone.
+          them as one book, e.g. two traders&apos; journals on Gold alone.
         </p>
       </div>
 
@@ -306,7 +306,7 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
           {!mixedCurrency && scopedCapital !== null && excludedCount > 0 && (
             <p className="text-xs text-muted-foreground">
               Balance covers only the {capitalisedIds.size} journal
-              {capitalisedIds.size === 1 ? "" : "s"} with a starting capital —{" "}
+              {capitalisedIds.size === 1 ? "" : "s"} with a starting capital.{" "}
               {excludedCount} in view {excludedCount === 1 ? "has" : "have"} none
               set, so {excludedCount === 1 ? "its" : "their"} P&amp;L is excluded.
             </p>
@@ -440,7 +440,7 @@ function BreakdownTable({
                   <PnlCell value={r.pnl} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {r.closed > 0 ? `${r.winRate.toFixed(1)}%` : "—"}
+                  {r.closed > 0 ? `${r.winRate.toFixed(1)}%` : "–"}
                 </TableCell>
                 <TableCell
                   className={cn(

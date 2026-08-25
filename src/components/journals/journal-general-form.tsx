@@ -110,7 +110,7 @@ export function JournalGeneralForm({
   });
   const riskLineBase = riskLineBaseRaw ?? capitalNum ?? 0;
   const riskLineLabel = riskLineDepleted
-    ? "starting capital — balance is at or below zero"
+    ? "starting capital, because the balance is at or below zero"
     : riskBasis === "compounding" && currentBalance != null
       ? "current balance"
       : "starting capital";
@@ -151,7 +151,7 @@ export function JournalGeneralForm({
       toast.success(
         capitalNum === null
           ? "Auto-sizing turned off"
-          : "Saved — new trades will size themselves",
+          : "Saved. New trades will size themselves.",
       );
       router.refresh();
     } catch {
@@ -304,7 +304,7 @@ export function JournalGeneralForm({
           <p className="text-sm text-muted-foreground">
             Set this journal&apos;s account size and how much of it you risk per
             trade, and the trade form works out the position size itself from
-            your entry and stop loss — no more typing a quantity on every trade.
+            your entry and stop loss, so you never type a quantity again.
             Leave the capital blank to keep entering it by hand.
           </p>
 
@@ -461,7 +461,7 @@ export function JournalGeneralForm({
             <p className="text-sm text-muted-foreground">
               {journal.is_archived ? (
                 <>
-                  This journal is archived — it&apos;s hidden from the workspace
+                  This journal is archived, so it&apos;s hidden from the workspace
                   switcher and dashboard totals. Members cannot log new trades
                   while archived. You can restore it at any time.
                 </>
@@ -500,7 +500,7 @@ export function JournalGeneralForm({
                     <AlertDialogDescription>
                       Members won&apos;t be able to log new trades while the
                       journal is archived, and it will disappear from the
-                      workspace switcher. You can restore it at any time — no
+                      workspace switcher. You can restore it at any time, and no
                       data is deleted.
                     </AlertDialogDescription>
                   </AlertDialogHeader>

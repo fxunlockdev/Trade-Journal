@@ -116,7 +116,7 @@ function PeriodSummary({ trades }: { readonly trades: readonly Trade[] }) {
           Avg R:R
         </p>
         <p className="mt-1 text-lg font-bold text-foreground">
-          {stats.avgRR !== null ? `${stats.avgRR.toFixed(2)}R` : "—"}
+          {stats.avgRR !== null ? `${stats.avgRR.toFixed(2)}R` : "–"}
         </p>
         <p className="text-[10px] text-muted-foreground">across closed trades</p>
       </div>

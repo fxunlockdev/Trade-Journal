@@ -431,7 +431,7 @@ export function TradeTable({ trades }: TradeTableProps) {
                       {formatPrice(trade.stop_loss)}
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">–</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
@@ -449,18 +449,18 @@ export function TradeTable({ trades }: TradeTableProps) {
                       {tps.hit}/{tps.total}
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">–</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">
                   {(() => {
                     const rr = computeDisplayRR(trade);
-                    return rr !== null ? formatRR(rr) : "—";
+                    return rr !== null ? formatRR(rr) : "–";
                   })()}
                 </TableCell>
                 <TableCell className="text-right">
                   {isOpen || pips === null ? (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">–</span>
                   ) : (
                     <span
                       className={cn(

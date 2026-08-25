@@ -334,7 +334,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <p className="mt-1 text-base font-bold text-pos">
             {bestDay
               ? `${bestDay.pnl >= 0 ? "+" : "-"}$${Math.abs(bestDay.pnl).toFixed(2)}`
-              : "—"}
+              : "–"}
           </p>
           {bestDay && (
             <p className="text-[10px] text-muted-foreground">
@@ -354,7 +354,7 @@ export function PerformanceCalendar({ trades }: PerformanceCalendarProps) {
           <p className="mt-1 text-base font-bold text-neg">
             {worstDay
               ? `${worstDay.pnl >= 0 ? "+" : "-"}$${Math.abs(worstDay.pnl).toFixed(2)}`
-              : "—"}
+              : "–"}
           </p>
           {worstDay && (
             <p className="text-[10px] text-muted-foreground">

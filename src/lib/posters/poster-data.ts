@@ -192,7 +192,7 @@ export function computePosterStats(
       instruments.size === 1
         ? [...instruments][0]
         : instruments.size === 0
-          ? "—"
+          ? "–"
           : "ALL PAIRS",
     log,
     closeTimeKnown,
@@ -270,6 +270,6 @@ export function formatWinRate(winRate: number): string {
 }
 
 export function formatAvgR(avgR: number | null): string {
-  if (avgR === null) return "—";
+  if (avgR === null) return "–";
   return `${avgR >= 0 ? "" : "-"}${Math.abs(avgR).toFixed(1)}R`;
 }

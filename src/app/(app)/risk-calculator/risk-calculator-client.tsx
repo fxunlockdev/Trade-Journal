@@ -219,7 +219,7 @@ export function RiskCalculatorClient() {
               </div>
               {showHighRiskWarning && (
                 <p className="mt-1 text-xs text-warn">
-                  Warning: Risk exceeds 2% — professional traders risk 1-2% per
+                  Warning: Risk exceeds 2%. Professional traders risk 1-2% per
                   trade
                 </p>
               )}

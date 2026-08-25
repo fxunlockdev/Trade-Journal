@@ -124,7 +124,7 @@ export function BalanceCard({
 
         {depleted ? (
           <p className="mt-1 text-xs font-medium text-neg">
-            Account is at or below zero — position sizing paused.
+            Account is at or below zero, so position sizing is paused.
           </p>
         ) : (
           nextRisk !== null && (

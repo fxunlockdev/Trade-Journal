@@ -60,8 +60,8 @@ export default async function CalendarPage() {
         <h1 className="text-2xl font-bold text-foreground">Calendar</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Daily net P&amp;L and win rate for{" "}
-          <span className="font-medium text-foreground">{journal.name}</span> —
-          green days made money, red days lost it.
+          <span className="font-medium text-foreground">{journal.name}</span>.
+          Green days made money, red days lost it.
         </p>
       </div>
 
