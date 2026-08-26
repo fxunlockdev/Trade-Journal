@@ -113,7 +113,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (parsed.events.length > MAX_TRADES_PER_IMPORT) {
       return NextResponse.json(
         {
-          error: `Report contains ${parsed.events.length} trades — the limit per import is ${MAX_TRADES_PER_IMPORT}. Export a shorter period.`,
+          error: `Report contains ${parsed.events.length} trades. The limit per import is ${MAX_TRADES_PER_IMPORT}, so export a shorter period.`,
         },
         { status: 413 },
       );

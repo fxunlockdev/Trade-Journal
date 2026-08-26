@@ -226,6 +226,9 @@ function SidebarContent({
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                // Anchor for the first-run tour. Derived from the href so a
+                // renamed label can't silently detach the spotlight.
+                data-tour={`nav-${item.href.replace(/^\//, "").replace(/\//g, "-")}`}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive

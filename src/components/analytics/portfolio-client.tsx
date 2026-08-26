@@ -13,6 +13,7 @@ import {
 import { computeTotalPips } from "@/lib/trades/pips";
 import { combinedStartingCapital } from "@/lib/trades/balance";
 import { BalanceCard } from "@/components/analytics/balance-card";
+import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import { StatsCards } from "@/components/analytics/stats-cards";
 import { EquityCurve } from "@/components/analytics/equity-curve";
@@ -78,64 +79,6 @@ function PnlCell({ value }: { readonly value: number }) {
       {value > 0 ? "+" : ""}
       {formatCurrency(value)}
     </span>
-  );
-}
-
-/**
- * Toggle chips. Nothing selected means "everything" — a filter you can't
- * accidentally empty into a blank screen.
- */
-function FilterChips({
-  options,
-  selected,
-  onToggle,
-  onAll,
-  renderDot,
-}: {
-  readonly options: readonly { readonly value: string; readonly label: string }[];
-  readonly selected: ReadonlySet<string>;
-  readonly onToggle: (value: string) => void;
-  readonly onAll: () => void;
-  readonly renderDot?: (value: string) => string | null;
-}) {
-  const allActive = selected.size === 0;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={onAll}
-        className={cn(
-          "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-          allActive
-            ? "border-primary/40 bg-primary/15 text-primary"
-            : "border-border text-muted-foreground hover:text-foreground",
-        )}
-      >
-        All
-      </button>
-      {options.map((o) => {
-        const active = allActive || selected.has(o.value);
-        const dot = renderDot?.(o.value);
-        return (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => onToggle(o.value)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-              selected.has(o.value)
-                ? "border-primary/40 bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:text-foreground",
-              allActive && !selected.has(o.value) && "opacity-70",
-            )}
-            aria-pressed={active}
-          >
-            {dot && <span className={cn("size-2 rounded-full", dot)} />}
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -276,7 +219,7 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Every journal you belong to, combined. Pick journals and assets to see
-          them as one book — e.g. two traders&apos; journals on Gold alone.
+          them as one book, e.g. two traders&apos; journals on Gold alone.
         </p>
       </div>
 
@@ -363,7 +306,7 @@ export function PortfolioClient({ journals, trades }: PortfolioClientProps) {
           {!mixedCurrency && scopedCapital !== null && excludedCount > 0 && (
             <p className="text-xs text-muted-foreground">
               Balance covers only the {capitalisedIds.size} journal
-              {capitalisedIds.size === 1 ? "" : "s"} with a starting capital —{" "}
+              {capitalisedIds.size === 1 ? "" : "s"} with a starting capital.{" "}
               {excludedCount} in view {excludedCount === 1 ? "has" : "have"} none
               set, so {excludedCount === 1 ? "its" : "their"} P&amp;L is excluded.
             </p>
@@ -497,7 +440,7 @@ function BreakdownTable({
                   <PnlCell value={r.pnl} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {r.closed > 0 ? `${r.winRate.toFixed(1)}%` : "—"}
+                  {r.closed > 0 ? `${r.winRate.toFixed(1)}%` : "–"}
                 </TableCell>
                 <TableCell
                   className={cn(

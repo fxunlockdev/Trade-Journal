@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, ImageIcon, Loader2 } from "lucide-react";
+import { Copy, Download, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,31 +41,100 @@ import {
   posterFilename,
   posterToBlob,
 } from "@/lib/posters/export";
-import type { Trade } from "@/types/database";
+import { logoStorageKey } from "@/lib/posters/logo";
+import { usePosterLogo } from "@/hooks/use-poster-logo";
+import { safeGet, safeRemove, safeSet } from "@/lib/safe-storage";
+import { FilterChips } from "@/components/analytics/filter-chips";
+import { COLOR_CLASS } from "@/components/journals/journal-switcher";
+import {
+  combinedDisclaimerNote,
+  contributingJournalCount,
+  defaultGroupName,
+  groupStorageKey,
+  instrumentOptions,
+  perJournalCounts,
+  scopeByJournal,
+  scopeTrades,
+} from "@/lib/posters/scope";
+import type { JournalWithRole, Trade } from "@/types/database";
 
 interface PostersClientProps {
+  /** Every trade from every journal the user belongs to, within the lookback. */
   readonly trades: readonly Trade[];
-  readonly journalId: string;
-  readonly journalName: string;
+  readonly journals: readonly JournalWithRole[];
+  readonly activeJournalId: string | null;
   readonly loadError: string | null;
 }
 
 export function PostersClient({
   trades,
-  journalId,
-  journalName,
+  journals,
+  activeJournalId,
   loadError,
 }: PostersClientProps) {
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [period, setPeriod] = useState<PeriodId>("today");
-  const [group, setGroup] = useState(journalName);
   const [busy, setBusy] = useState<"download" | "copy" | null>(null);
   const posterRef = useRef<HTMLDivElement>(null);
 
-  // Scoped per journal: a single global key would brand one journal's poster
-  // with another journal's group name after switching.
-  const groupKey = `trdr_poster_group:${journalId}`;
+  // Defaults to the active journal alone, so anyone who just wants their own
+  // poster sees exactly what they saw before journals could be combined.
+  const [journalSel, setJournalSel] = useState<ReadonlySet<string>>(
+    () => new Set(activeJournalId ? [activeJournalId] : []),
+  );
+  const [instrumentSel, setInstrumentSel] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  // Journals first, then the instruments those journals actually traded —
+  // the same two-stage narrowing the Portfolio view uses.
+  const journalScoped = useMemo(
+    () => scopeByJournal(trades, journalSel),
+    [trades, journalSel],
+  );
+  const scoped = useMemo(
+    () => scopeTrades(trades, journalSel, instrumentSel),
+    [trades, journalSel, instrumentSel],
+  );
+  const assetOptions = useMemo(
+    () => instrumentOptions(journalScoped),
+    [journalScoped],
+  );
+
+  // A journal change can invalidate the asset selection — Chris may not trade
+  // the pair picked while Yohan was scoped. Left alone, the poster silently
+  // reports "no closed trades" with no visible filter to blame, and if the new
+  // scope has a single instrument the whole row (including "All") unmounts, so
+  // there is no way back without a reload.
+  useEffect(() => {
+    setInstrumentSel((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(assetOptions.map((o) => o.value));
+      const next = new Set([...prev].filter((v) => valid.has(v)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [assetOptions]);
+
+  const selectedJournals = useMemo(
+    () =>
+      journalSel.size === 0
+        ? journals
+        : journals.filter((j) => journalSel.has(j.id)),
+    [journals, journalSel],
+  );
+
+  // One journal uses its own name; a combination joins them ("YOHAN + CHRIS").
+  const defaultGroup = defaultGroupName(selectedJournals);
+  const [group, setGroup] = useState(defaultGroup);
+
+  // Remembered per COMBINATION, sorted so ticking Yohan-then-Chris and
+  // Chris-then-Yohan share one entry. For a single journal this is byte-for-byte
+  // the key the single-journal version used, so saved names survive.
+  const groupKey = useMemo(
+    () => groupStorageKey(selectedJournals.map((j) => j.id)),
+    [selectedJournals],
+  );
 
   // Day boundaries depend on the VIEWER'S timezone, which the server doesn't
   // know — on Vercel it is UTC. Resolving the range during render would compute
@@ -79,10 +148,27 @@ export function PostersClient({
   const [range, setRange] = useState<DateRange | null>(null);
   const [nonce, setNonce] = useState(0);
 
+  // The logo is scoped to the same journal combination as the name it replaces,
+  // so switching journals swaps both together rather than printing one team's
+  // mark over another's numbers.
+  const logoKey = useMemo(
+    () => logoStorageKey(selectedJournals.map((j) => j.id)),
+    [selectedJournals],
+  );
+  const {
+    logo,
+    busy: logoBusy,
+    inputRef: logoInputRef,
+    onPicked: onLogoPicked,
+    onRemove: onLogoRemove,
+  } = usePosterLogo(logoKey);
+
   useEffect(() => {
-    const saved = window.localStorage.getItem(groupKey);
-    setGroup(saved ?? journalName);
-  }, [groupKey, journalName]);
+    // Guarded like the logo's: this effect runs FIRST, so an unprotected read
+    // here would throw in private mode before the logo's guard ever helped.
+    const saved = groupKey ? safeGet(groupKey) : null;
+    setGroup(saved ?? defaultGroup);
+  }, [groupKey, defaultGroup]);
 
   useEffect(() => {
     // Re-resolved when the period changes AND when `nonce` is bumped just
@@ -91,13 +177,24 @@ export function PostersClient({
     setRange(resolvePeriod(period, new Date()));
   }, [period, nonce]);
 
-  const stats = useMemo(
-    () =>
-      range
-        ? computePosterStats(tradesInRange(trades, range), localTimeZone())
-        : null,
-    [trades, range],
+  const inRange = useMemo(
+    () => (range ? tradesInRange(scoped, range) : []),
+    [scoped, range],
   );
+  const stats = useMemo(
+    () => (range ? computePosterStats(inRange, localTimeZone()) : null),
+    [inRange, range],
+  );
+  const breakdown = useMemo(
+    () => perJournalCounts(inRange, journals),
+    [inRange, journals],
+  );
+  // The poster's headline names the journals the user SELECTED, so the note
+  // that qualifies it must count the same set. Counting only the journals that
+  // happened to trade would let "YOHAN + CHRIS" print Yohan's numbers alone
+  // with nothing on the artefact admitting it.
+  const journalsClaimed = selectedJournals.length;
+  const journalsContributing = contributingJournalCount(inRange);
 
   const theme = getTheme(themeId);
   const template = getTemplate(templateId);
@@ -107,10 +204,13 @@ export function PostersClient({
 
   const onGroupChange = (value: string) => {
     setGroup(value);
-    if (value.trim() === "" || value === journalName) {
-      window.localStorage.removeItem(groupKey);
+    if (!groupKey) return;
+    if (value.trim() === "" || value === defaultGroup) {
+      safeRemove(groupKey);
     } else {
-      window.localStorage.setItem(groupKey, value);
+      // Fires on every keystroke, so a quota failure here must not throw out of
+      // an onChange handler and unmount the page mid-edit.
+      safeSet(groupKey, value);
     }
   };
 
@@ -123,6 +223,11 @@ export function PostersClient({
   const disclaimer = useMemo(() => {
     if (!stats) return POSTER_DISCLAIMER;
     const notes: string[] = [];
+    // A poster carrying two traders' results has to say so ON the artefact:
+    // the on-screen breakdown is not published, and a reader would otherwise
+    // take these figures for one person's record.
+    const combined = combinedDisclaimerNote(journalsClaimed);
+    if (combined) notes.push(combined);
     if (stats.rCovered > 0 && stats.rCovered < stats.tradeCount) {
       notes.push(
         `Avg R covers the ${stats.rCovered} of ${stats.tradeCount} trades that had a stop loss.`,
@@ -139,7 +244,7 @@ export function PostersClient({
       );
     }
     return [...notes, POSTER_DISCLAIMER].join(" ");
-  }, [stats, fallbackCount]);
+  }, [stats, fallbackCount, journalsClaimed]);
 
   const render = useCallback(
     async (mode: "download" | "copy") => {
@@ -169,6 +274,15 @@ export function PostersClient({
     [group, kind, range, theme.tBg],
   );
 
+  /**
+   * Exports are blocked while a logo is decoding.
+   *
+   * Decoding a 2 MB source takes hundreds of milliseconds, and the poster shows
+   * the group NAME throughout. Without this gate, clicking Download inside that
+   * window rasterises the unbranded poster, reports success, and lands the
+   * "Logo added" toast afterwards, so the user publishes a poster they believe
+   * carries their mark.
+   */
   /** Refresh the window first, so an export always reflects "now". */
   const exportPoster = (mode: "download" | "copy") => {
     setNonce((n) => n + 1);
@@ -183,15 +297,15 @@ export function PostersClient({
           Posters
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Share your results. Every figure comes from this journal&apos;s closed
-          trades — nothing on a poster is typed in except the group name.
+          Share your results. Every figure comes from your journals&apos; closed
+          trades. The only things you supply are the group name and your logo.
         </p>
       </div>
 
       {loadError && (
         <Card className="border-neg/40 bg-neg/5">
           <CardContent className="pt-6 text-sm text-neg">
-            Couldn&apos;t load trades: {loadError}. Reload before generating —
+            Couldn&apos;t load trades: {loadError}. Reload before generating, because
             these numbers may be incomplete.
           </CardContent>
         </Card>
@@ -207,6 +321,61 @@ export function PostersClient({
         <div className="space-y-4">
           <Card className="border-border bg-card">
             <CardContent className="space-y-5 pt-6">
+              {/*
+                Journals first: everything below is scoped by this choice, and
+                the asset list is derived from whatever is ticked here.
+              */}
+              {journals.length > 1 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Journals
+                  </p>
+                  <FilterChips
+                    options={journals.map((j) => ({
+                      value: j.id,
+                      label: j.name,
+                    }))}
+                    selected={journalSel}
+                    testIdPrefix="poster-journal"
+                    renderDot={(id) => {
+                      const j = journals.find((x) => x.id === id);
+                      return j ? COLOR_CLASS[j.color] : null;
+                    }}
+                    onToggle={(id) =>
+                      setJournalSel((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                    }
+                    onAll={() => setJournalSel(new Set())}
+                  />
+                </div>
+              )}
+
+              {assetOptions.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Assets
+                  </p>
+                  <FilterChips
+                    options={assetOptions}
+                    selected={instrumentSel}
+                    testIdPrefix="poster-asset"
+                    onToggle={(v) =>
+                      setInstrumentSel((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(v)) next.delete(v);
+                        else next.add(v);
+                        return next;
+                      })
+                    }
+                    onAll={() => setInstrumentSel(new Set())}
+                  />
+                </div>
+              )}
+
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Template
@@ -305,10 +474,80 @@ export function PostersClient({
                   value={group}
                   onChange={(e) => onGroupChange(e.target.value)}
                   maxLength={40}
-                  placeholder={journalName}
+                  placeholder={defaultGroup}
                 />
                 <p className="text-xs text-muted-foreground">
-                  The only editable text — every statistic comes from your trades.
+                  The only editable text. Every statistic comes from your trades.
+                </p>
+              </div>
+
+              {/*
+                A logo REPLACES the group name on the poster; the name field
+                above stays live because it still names the downloaded file and
+                is what the poster reverts to when the logo is removed.
+              */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Logo
+                </Label>
+                {logo ? (
+                  <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- a
+                        data URL must stay a literal <img>. */}
+                    <img
+                      src={logo}
+                      alt="Your logo"
+                      data-testid="poster-logo-preview"
+                      // Checkerboard, so a logo with a white fill is visibly
+                      // distinguishable from one with real transparency.
+                      className="h-10 w-auto max-w-[140px] object-contain"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%),linear-gradient(45deg,rgba(128,128,128,.25) 25%,transparent 25%,transparent 75%,rgba(128,128,128,.25) 75%)",
+                        backgroundSize: "12px 12px",
+                        backgroundPosition: "0 0, 6px 6px",
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onLogoRemove}
+                      data-testid="poster-logo-remove"
+                      className="ml-auto text-muted-foreground"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-center"
+                    disabled={logoBusy}
+                    onClick={() => logoInputRef.current?.click()}
+                    data-testid="poster-logo-upload"
+                  >
+                    {logoBusy ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    Upload logo
+                  </Button>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png"
+                  className="hidden"
+                  data-testid="poster-logo-input"
+                  onChange={(e) => void onLogoPicked(e.target.files?.[0])}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must be a PNG file with no background (transparent). It
+                  replaces the group name on the poster.
                 </p>
               </div>
             </CardContent>
@@ -337,7 +576,32 @@ export function PostersClient({
                       value={`${stats.rCovered} of ${stats.tradeCount}`}
                     />
                     <Row label="Day boundary" value={stats.timeZone} />
+                    {/*
+                      Per-journal split, so a combined poster can be checked
+                      against each journal before it is published.
+                    */}
+                    {breakdown.length > 1 &&
+                      breakdown.map((j) => (
+                        <Row
+                          key={j.id}
+                          label={`  ${j.name}`}
+                          value={j.count}
+                        />
+                      ))}
                   </dl>
+
+                  {journalsClaimed > 1 && (
+                    <p
+                      data-testid="poster-combine-caution"
+                      className="rounded-md border border-warn/30 bg-warn/10 p-2 text-warn"
+                    >
+                      Combining {journalsClaimed} journals
+                      {journalsContributing < journalsClaimed &&
+                        `, only ${journalsContributing} of which traded in this period`}
+                      . If any of them track the same account, those trades are
+                      counted twice, and only you can tell.
+                    </p>
+                  )}
 
                   {stats.breakeven > 0 && (
                     <p className="pt-1 text-muted-foreground">
@@ -372,7 +636,9 @@ export function PostersClient({
           <div className="flex gap-2">
             <Button
               onClick={() => exportPoster("download")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-download"
               className="flex-1"
             >
@@ -386,7 +652,9 @@ export function PostersClient({
             <Button
               variant="outline"
               onClick={() => exportPoster("copy")}
-              disabled={busy !== null || !stats || stats.tradeCount === 0}
+              disabled={
+                busy !== null || logoBusy || !stats || stats.tradeCount === 0
+              }
               data-testid="poster-copy"
             >
               {busy === "copy" ? (
@@ -406,7 +674,8 @@ export function PostersClient({
                 <Template
                   stats={stats}
                   theme={theme}
-                  group={group.trim() || journalName}
+                  group={group.trim() || defaultGroup}
+                  logo={logo}
                   periodKind={kind}
                   dateLabel={formatPeriodLabel(period, range)}
                   disclaimer={disclaimer}
@@ -422,7 +691,7 @@ export function PostersClient({
 
           {stats?.tradeCount === 0 && (
             <p className="text-center text-sm text-muted-foreground">
-              No closed trades in this period — pick another one.
+              No closed trades in this period. Pick another one.
             </p>
           )}
         </div>

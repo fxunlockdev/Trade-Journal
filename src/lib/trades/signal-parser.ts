@@ -218,10 +218,10 @@ export function parseSignalText(input: string): ParsedSignal {
   const warnings: string[] = [];
 
   const instrument = findInstrument(text);
-  if (!instrument) warnings.push("Could not identify instrument — select it manually");
+  if (!instrument) warnings.push("Could not identify instrument. Select it manually.");
 
   const direction = findDirection(text);
-  if (!direction) warnings.push("Could not identify direction — select BUY or SELL");
+  if (!direction) warnings.push("Could not identify direction. Select BUY or SELL.");
 
   const { low: entry_price, high: entry_price_high } = findEntry(text);
   if (entry_price == null) warnings.push("Could not identify entry price");

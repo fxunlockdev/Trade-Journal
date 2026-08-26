@@ -138,7 +138,7 @@ export function computeLotSize(input: LotSizeInput): LotSizeResult | null {
     warnings.push({
       level: "warn",
       message:
-        "Risk exceeds 2% — professional traders typically risk 1–2% per trade",
+        "Risk exceeds 2%. Professional traders typically risk 1–2% per trade.",
     });
   }
   if (marginRequiredAccount !== null && marginRequiredAccount > accountBalance) {
@@ -151,7 +151,7 @@ export function computeLotSize(input: LotSizeInput): LotSizeResult | null {
     warnings.push({
       level: "warn",
       message:
-        "Margin uses over 50% of account — a single adverse move can trigger a margin call",
+        "Margin uses over 50% of account. A single adverse move can trigger a margin call.",
     });
   }
 

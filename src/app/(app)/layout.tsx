@@ -38,7 +38,7 @@ export default async function AppLayout({
         .from("users")
         // signup_intent rides along on a query that already runs, so gating on
         // it below costs nothing extra.
-        .select("id, email, full_name, avatar_url, role, signup_intent")
+        .select("id, email, full_name, avatar_url, role, signup_intent, has_onboarded")
         .eq("id", user.id)
         .single(),
       supabase
@@ -102,6 +102,10 @@ export default async function AppLayout({
         profile={userProfile}
         journals={journals}
         activeJournalId={activeJournalId}
+        // Suppresses the first-run tour for anyone already established. Falls
+        // back to `true` when the profile row didn't load: better to skip the
+        // tour during a blip than to interrupt a working trader with it.
+        alreadyOnboarded={profile?.has_onboarded ?? true}
       >
         {children}
       </AppShell>

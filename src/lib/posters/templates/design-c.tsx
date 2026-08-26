@@ -5,6 +5,7 @@ import {
   formatPips,
   formatRowPips,
   formatWinRate,
+  windowTradeLog,
   type PosterTradeRow,
 } from "@/lib/posters/poster-data";
 import type { PosterTheme } from "@/lib/posters/theme";
@@ -12,7 +13,9 @@ import {
   fitHeadline,
   GradientNumber,
   noiseLayerStyle,
+  LOGO_SIZE,
   POSTER_SIZE,
+  PosterBrand,
   type PosterProps,
 } from "@/lib/posters/templates/types";
 
@@ -96,7 +99,7 @@ function LogRow({
           color: resultColor,
         }}
       >
-        {row.pips === null ? "—" : formatRowPips(row.pips)}
+        {row.pips === null ? "–" : formatRowPips(row.pips)}
       </div>
       <div
         style={{
@@ -123,13 +126,16 @@ export function DesignC({
   stats,
   theme,
   group,
+  logo,
   periodKind,
   dateLabel,
   disclaimer,
 }: PosterProps) {
   const dense = stats.log.length > COMFY_MAX;
-  const visible = stats.log.slice(0, dense ? DENSE_MAX : COMFY_MAX);
-  const hidden = stats.log.length - visible.length;
+  const { visible, hiddenCount, hiddenPips } = windowTradeLog(
+    stats.log,
+    dense ? DENSE_MAX : COMFY_MAX,
+  );
 
   const statCell: React.CSSProperties = {
     background: theme.tCardBg,
@@ -239,16 +245,18 @@ export function DesignC({
             >
               Group
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-poster-display), sans-serif",
-                fontWeight: 600,
-                fontSize: 24,
-                lineHeight: 1,
-              }}
-            >
-              {group}
-            </div>
+            <PosterBrand logo={logo} alt={group} {...LOGO_SIZE.compact}>
+              <div
+                style={{
+                  fontFamily: "var(--font-poster-display), sans-serif",
+                  fontWeight: 600,
+                  fontSize: 24,
+                  lineHeight: 1,
+                }}
+              >
+                {group}
+              </div>
+            </PosterBrand>
           </div>
         </div>
 
@@ -362,7 +370,7 @@ export function DesignC({
             ))}
           </div>
 
-          {hidden > 0 && (
+          {hiddenCount > 0 && (
             <div
               style={{
                 marginTop: 12,
@@ -371,7 +379,15 @@ export function DesignC({
                 fontFamily: "var(--font-poster-display), sans-serif",
               }}
             >
-              + {hidden} more {hidden === 1 ? "trade" : "trades"} not shown
+              {/*
+                The pips carried by the dropped rows are stated, so the visible
+                column plus this line reconciles with the headline. Without it a
+                reader adding up a truncated log lands short of NET PIPS and the
+                poster looks like it is inflating its own total.
+              */}
+              + {hiddenCount} earlier{" "}
+              {hiddenCount === 1 ? "trade" : "trades"} not shown (
+              {formatRowPips(hiddenPips)} pips)
             </div>
           )}
         </div>

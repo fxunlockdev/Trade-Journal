@@ -99,6 +99,8 @@ export function JournalSwitcher({
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
+          // Anchor for the first-run tour's opening step.
+          data-tour="journal-switcher"
           render={
             <Button
               variant="ghost"
@@ -162,7 +164,7 @@ export function JournalSwitcher({
                   onSelect={() => {
                     setOpen(false);
                     toast.info(
-                      "Paste the invite link in your browser — e.g. /invite/abc123xyz",
+                      "Paste the invite link in your browser, e.g. /invite/abc123xyz",
                       { duration: 5000 },
                     );
                   }}

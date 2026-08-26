@@ -515,11 +515,11 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
     ].filter(Boolean);
 
     if (filled.length === 0) {
-      toast.error("Could not parse anything — please check the signal format");
+      toast.error("Could not parse anything. Please check the signal format.");
       return;
     }
 
-    toast.success(`Parsed: ${filled.join(", ")} — review & submit`);
+    toast.success(`Parsed: ${filled.join(", ")}. Review and submit.`);
     setActiveTab("manual");
   }, [pasteText, setValue]);
 
@@ -1015,7 +1015,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel htmlFor="entry_price_high" help="Optional — upper bound for range entries like '1.2300 – 1.2310'.">
+              <FieldLabel htmlFor="entry_price_high" help="Optional: the upper bound for range entries like '1.2300 – 1.2310'.">
                 Entry High
               </FieldLabel>
               <Input
@@ -1045,7 +1045,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               )}
             </div>
             <div className="space-y-2">
-              <FieldLabel htmlFor="sl_pips" help="Distance to SL in pips/points. Informational — doesn't affect PnL math.">
+              <FieldLabel htmlFor="sl_pips" help="Distance to SL in pips/points. Informational only, and it doesn't affect PnL math.">
                 SL Pips / Pts
               </FieldLabel>
               <Input
@@ -1156,7 +1156,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                           setValue(tp.resultKey, undefined, { shouldValidate: true })
                         }
                       >
-                        —
+                        –
                       </Button>
                       {TP_RESULTS.map((r) => {
                         const isSelected = resultsByKey[tp.key] === r.value;
@@ -1197,7 +1197,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                 <Plus className="size-3.5 mr-1" /> Add TP
               </Button>
               <p className="text-xs text-muted-foreground mt-1.5">
-                Signal groups sometimes use up to 7 TPs — add as many as you need.
+                Signal groups sometimes use up to 7 TPs, so add as many as you need.
               </p>
             </div>
           )}
@@ -1262,7 +1262,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               )}
               {autoSize !== null && !quantityTouched && (
                 <p className="text-xs text-primary">
-                  Auto-sized: {autoSize.lots.toFixed(2)} lots — risking{" "}
+                  Auto-sized: {autoSize.lots.toFixed(2)} lots, risking{" "}
                   {tradeRiskPercent}% of{" "}
                   {sizingJournal?.account_currency ?? "USD"}{" "}
                   {autoSize.basisBalance.toLocaleString("en-US", {
@@ -1270,7 +1270,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
                   })}{" "}
                   (
                   {accountDepleted
-                    ? "starting capital — balance is at or below zero"
+                    ? "starting capital, because the balance is at or below zero"
                     : riskBasis === "compounding"
                       ? "balance at page load"
                       : "starting capital"}
@@ -1342,7 +1342,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <FieldLabel help="How did you feel taking this trade? Used to spot tilt / FOMO patterns.">
-                Emotion — when trading
+                Emotion: when trading
               </FieldLabel>
               <Select
                 value={watch("emotion") ?? "none"}
@@ -1369,7 +1369,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
             </div>
             <div className="space-y-2">
               <FieldLabel help="How did you feel after the trade closed / on review? Reveals regret, relief and post-loss tilt.">
-                Emotion — after the trade
+                Emotion: after the trade
               </FieldLabel>
               <Select
                 value={watch("emotion_post") ?? "none"}
@@ -1396,7 +1396,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
             </div>
           </div>
           <div className="space-y-2">
-            <FieldLabel htmlFor="notes" help="Rationale, setup, emotions. Optional — notes turn one trade into a lesson.">
+            <FieldLabel htmlFor="notes" help="Rationale, setup, emotions. Optional, but notes turn one trade into a lesson.">
               Trade Notes
             </FieldLabel>
             <Textarea
@@ -1407,7 +1407,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
             />
           </div>
           <div className="space-y-2">
-            <FieldLabel htmlFor="tags" help="Comma-separated labels — e.g. 'breakout, trend, news'.">
+            <FieldLabel htmlFor="tags" help="Comma-separated labels, e.g. 'breakout, trend, news'.">
               Tags
             </FieldLabel>
             <Input
@@ -1490,7 +1490,7 @@ export function TradeForm({ trade, onSuccess, defaultJournalId }: TradeFormProps
               </div>
               {splitRisk && numPositions != null && numPositions > 1 && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Risk split across {numPositions} positions — each filled TP closes 1/
+                  Risk split across {numPositions} positions. Each filled TP closes 1/
                   {numPositions} of the trade.
                 </p>
               )}

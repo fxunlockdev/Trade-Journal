@@ -79,7 +79,7 @@ export const FLOWS: Readonly<Record<FlowId, FlowDef>> = {
         validate: (v) => {
           const n = num(v);
           if (!Number.isFinite(n) || n <= 0) return "Risk needs to be a number above zero.";
-          return n > 10 ? "That's above 10% — type a smaller number." : undefined;
+          return n > 10 ? "That's above 10%. Type a smaller number." : undefined;
         } },
       { key: "entry", kind: "number", prompt: "Entry price?", validate: positive("Entry") },
       { key: "stop", kind: "number", prompt: "Stop loss price?",

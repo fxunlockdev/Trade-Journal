@@ -97,6 +97,41 @@ const FOREST_LIME: PosterTheme = {
   loss: "#FF897D",
 };
 
+/**
+ * Blue into purple, on near-black.
+ *
+ * The accent runs cool where the other dark themes run warm, so the hero
+ * numeral's gradient travels blue to violet rather than through a single hue.
+ * `tGlow1` is the blue wash and `tGlow2` the purple one, which are painted at
+ * opposite corners by every design, so the two colours read as a pair instead
+ * of one tinting the other.
+ */
+const BLUE_VIOLET: PosterTheme = {
+  id: "blue-violet",
+  label: "Blue Violet",
+  tBg: "#07070F",
+  tText: "#F1F1FA",
+  tText2: "#B8BCDA",
+  tMuted: "#868BAF",
+  tFaint: "#5A5F80",
+  tAccent: "#A78BFA",
+  tGlow1: "rgba(79, 70, 229, 0.30)",
+  tGlow2: "rgba(139, 92, 246, 0.22)",
+  tBlush: "rgba(167, 139, 250, 0.08)",
+  tStreak: "rgba(167, 139, 250, 0.05)",
+  tFrame: "rgba(167, 139, 250, 0.22)",
+  tFrameSoft: "rgba(167, 139, 250, 0.12)",
+  tGridLine: "rgba(167, 139, 250, 0.04)",
+  tChipBorder: "rgba(167, 139, 250, 0.35)",
+  tCardFill: "rgba(255, 255, 255, 0.02)",
+  tCardBg: "#0C0C18",
+  tRowLine: "rgba(167, 139, 250, 0.10)",
+  tTopBar: "linear-gradient(90deg, #4F46E5, #A78BFA, #4F46E5)",
+  tNumGrad: "linear-gradient(135deg, #BFD3FF 0%, #8B93F8 45%, #6D3EE0 100%)",
+  win: "#9FE0AD",
+  loss: "#FF897D",
+};
+
 /** Light alternative for feeds that read better on white. */
 const IVORY: PosterTheme = {
   id: "ivory",
@@ -127,6 +162,7 @@ const IVORY: PosterTheme = {
 export const POSTER_THEMES: readonly PosterTheme[] = [
   OBSIDIAN_GOLD,
   FOREST_LIME,
+  BLUE_VIOLET,
   IVORY,
 ];
 
@@ -142,4 +178,4 @@ export function getTheme(id: string): PosterTheme {
  * to remember to add.
  */
 export const POSTER_DISCLAIMER =
-  "Past performance is not indicative of future results. Trading foreign exchange and CFDs carries a high level of risk and may not be suitable for all investors. Figures shown are the results of closed trades recorded in this journal and are provided for information only — nothing here is financial advice.";
+  "Past performance is not indicative of future results. Trading foreign exchange and CFDs carries a high level of risk and may not be suitable for all investors. Figures shown are the results of closed trades recorded in this journal and are provided for information only. Nothing here is financial advice.";

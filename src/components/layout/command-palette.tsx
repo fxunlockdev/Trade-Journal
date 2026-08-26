@@ -152,7 +152,7 @@ const CREATE_ACTIONS: readonly CreateAction[] = [
   {
     id: "new-trade",
     label: "Add Trade",
-    hint: "@trade — log inline without leaving this page",
+    hint: "@trade: log inline without leaving this page",
     icon: Plus,
     href: "/journal/new",
     keywords: ["new", "log", "create", "trade", "@trade"],
@@ -814,7 +814,7 @@ function InstrumentStep({
       <div className="space-y-1.5">
         <Label htmlFor="instrument-search">Instrument</Label>
         <p className="text-xs text-muted-foreground">
-          The asset you traded — e.g. EURUSD, BTCUSDT, XAUUSD.
+          The asset you traded, e.g. EURUSD, BTCUSDT, XAUUSD.
         </p>
         <Input
           id="instrument-search"
@@ -857,7 +857,7 @@ function InstrumentStep({
         })}
         {matches.length === 0 && (
           <span className="text-xs text-muted-foreground">
-            No matches — you can still enter a custom symbol above.
+            No matches. You can still enter a custom symbol above.
           </span>
         )}
       </div>
@@ -1021,7 +1021,7 @@ function ReviewStep({
   }> = [
     {
       label: "Instrument",
-      value: wizard.instrument || "—",
+      value: wizard.instrument || "–",
       step: "instrument",
     },
     {
@@ -1029,21 +1029,21 @@ function ReviewStep({
       value: wizard.direction.toUpperCase(),
       step: "direction",
     },
-    { label: "Entry", value: wizard.entry_price || "—", step: "entry" },
-    { label: "Quantity", value: wizard.quantity || "—", step: "quantity" },
+    { label: "Entry", value: wizard.entry_price || "–", step: "entry" },
+    { label: "Quantity", value: wizard.quantity || "–", step: "quantity" },
     {
       label: "Stop Loss",
-      value: wizard.stop_loss || "—",
+      value: wizard.stop_loss || "–",
       step: "stop_loss",
     },
     {
       label: "Take Profit",
-      value: wizard.take_profit || "—",
+      value: wizard.take_profit || "–",
       step: "take_profit",
     },
     {
       label: "Exit",
-      value: wizard.exit_price || "— (open)",
+      value: wizard.exit_price || "– (open)",
       step: "exit",
     },
   ];
@@ -1054,7 +1054,7 @@ function ReviewStep({
         <Label>Review</Label>
         <p className="text-xs text-muted-foreground">
           Confirm the details below. Click any row to edit. Entry time is set
-          to now; fees, tags, and notes default to empty — use the full form
+          to now; fees, tags, and notes default to empty. Use the full form
           for those.
         </p>
       </div>

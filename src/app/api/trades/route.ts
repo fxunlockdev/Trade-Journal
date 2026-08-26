@@ -287,7 +287,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return NextResponse.json(
             {
               error:
-                "Cannot log trade — your session isn't a member of the target journal. " +
+                "Cannot log trade: your session isn't a member of the target journal. " +
                 "Try refreshing the page or switching journals.",
             },
             { status: 403 },
