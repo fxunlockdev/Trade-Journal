@@ -191,42 +191,32 @@ export async function PATCH(
       updatePatch.take_profit = normalized.tp1 ?? normalized.take_profit ?? null;
     }
 
-    // Record WHEN a trade closed, but only on the genuine open -> closed
-    // transition. Multi-TP trades close by flipping a tp*_result rather than by
-    // getting an exit_price, and computeTradeFields — being pure, with no
-    // notion of "now" — has never been able to stamp a close time. Anything
-    // downstream that asks "what did I make on Tuesday" then has to fall back
-    // to the ENTRY date, which for a multi-day trade is the wrong day.
+    // `exit_time` is NEVER invented here.
     //
-    // Deliberately narrow, because a close time is a factual claim:
-    //   - only when `existing` was open and the result is closed, so re-editing
-    //     an old trade can never restamp it to today;
-    //   - only when the client didn't send one, so a user-supplied exit time
-    //     always wins;
-    //   - never for broker rows, which carry the real fill time already.
-    // The value means "when the close was recorded", which is accurate for a
-    // trader marking a TP as it happens and strictly better than entry date
-    // otherwise. It is not back-filled onto historical rows — that moment was
-    // never captured and inventing it would be worse than admitting the gap.
-    const wasOpen =
-      existing.pnl_absolute === null || !Number.isFinite(existing.pnl_absolute);
-    const nowClosed =
-      computed.pnl_absolute !== null && Number.isFinite(computed.pnl_absolute);
-    // Gate on the VALUE, not on key presence: the trade form always includes
-    // `exit_time` in its payload (as null when the field is empty), and a
-    // null-valued key survives JSON.stringify — so a key-presence check would
-    // make this branch permanently unreachable.
-    const clientSentExitTime =
-      bodyKeys.has("exit_time") && normalized.exit_time != null;
-    if (
-      wasOpen &&
-      nowClosed &&
-      !isBrokerSourced &&
-      existing.exit_time === null &&
-      !clientSentExitTime
-    ) {
-      updatePatch.exit_time = new Date().toISOString();
-    }
+    // This used to stamp `new Date()` when an edit took a trade from open to
+    // closed, on the reasoning that a trader marking a TP is marking it as it
+    // happens. That reasoning holds only for live marking. The server cannot
+    // tell "I am closing this now" from "I am recording a close that happened
+    // last Thursday", and traders routinely catch up on several days at once.
+    //
+    // When they do, the stamp lands days after the real close and silently
+    // moves the trade into the wrong reporting period: two EURUSD/USDJPY trades
+    // entered 21 Aug were marked closed on 27 Aug and appeared on the 24-30 Aug
+    // weekly poster, which then showed 8 trades where the journal showed 6.
+    // A published poster claiming trades that were not in that week is a worse
+    // failure than the gap the stamp was trying to close.
+    //
+    // So a close time only ever comes from someone who actually knows it: the
+    // user typing it into the form, or a broker fill carrying its own. Absent
+    // that, `exit_time` stays null and readers fall back to the entry date.
+    // `resolveCloseDate` (lib/posters/poster-data.ts) already does exactly that
+    // AND discloses it on the artefact ("N trades placed by entry date"), which
+    // is the honest position: admit the gap rather than fabricate a timestamp
+    // that reads as fact downstream.
+    //
+    // This mirrors what the old comment said about historical rows and then
+    // failed to apply to itself: "that moment was never captured and inventing
+    // it would be worse than admitting the gap."
 
     // `source` is provenance — how the trade entered the system (manual / csv
     // import / mt5_webhook). It is immutable after creation: an edit must never

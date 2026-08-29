@@ -265,7 +265,7 @@ test.describe("combining journals", () => {
     await expect(canvas).toContainText("YOHAN + CHRIS");
     await expect(canvas).toContainText(/Combined results across 2 journals/i);
     await expect(page.getByTestId("poster-combine-caution")).toContainText(
-      /only 1 traded in this period/i,
+      /only 1 of which traded in this period/i,
     );
   });
 
