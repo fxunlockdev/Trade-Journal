@@ -17,6 +17,7 @@ import {
   clearButtons,
   type InlineButton,
 } from "@/lib/telegram/chat";
+import { findClaimCode } from "@/lib/telegram/claim";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import { publishSnapshot } from "@/lib/reports/publish";
 import { escapeHtml } from "@/lib/reports/caption";
@@ -115,6 +116,56 @@ async function rememberChat(
   }
 }
 
+/**
+ * Link a chat to the account that posted its claim code.
+ *
+ * This is the ONLY evidence that an app user is actually in a Telegram group.
+ * Telegram cannot bridge the two identities, so posting the code in the group
+ * is the proof, and it is only worth anything if the code is single-use and
+ * short-lived: `claimed_at is null` and the expiry check below are what make it
+ * so. Without them a code seen once could attach any later chat.
+ *
+ * Returns a message for the group, or null when there was no code to act on.
+ */
+async function claimChatIfCoded(
+  admin: ReturnType<typeof createAdminClient>,
+  msg: TgMessage,
+): Promise<string | null> {
+  const code = findClaimCode(msg.text);
+  if (!code || !msg.chat?.id) return null;
+
+  const { data: claim } = await admin
+    .from("telegram_chat_claims")
+    .select("code")
+    .eq("code", code)
+    .is("claimed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (!claim) {
+    // Covers wrong, already-used and expired alike. Distinguishing them would
+    // tell someone probing codes which ones exist.
+    return "That code is not valid any more. Open the Posters page again for a fresh one.";
+  }
+
+  // Conditional on still being unclaimed, so two messages racing the same code
+  // cannot both win.
+  const { data: updated } = await admin
+    .from("telegram_chat_claims")
+    .update({
+      chat_id: String(msg.chat.id),
+      chat_title: msg.chat.title ?? null,
+      claimed_at: new Date().toISOString(),
+    })
+    .eq("code", code)
+    .is("claimed_at", null)
+    .select("code")
+    .maybeSingle();
+
+  if (!updated) return "That code has already been used.";
+  return "Confirmed. This group is now available to connect on the Posters page.";
+}
+
 /** The chat's owner and their connected destination, or null. */
 async function resolveChat(
   admin: ReturnType<typeof createAdminClient>,
@@ -160,6 +211,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       admin,
       update.message?.chat ?? update.my_chat_member?.chat,
     );
+
+    /* ── a claim code ──────────────────────────────────────────────── */
+    // Checked BEFORE commands: this is how a group becomes connectable at all,
+    // and it must work in a group that has no destination yet.
+    if (update.message?.chat?.id) {
+      const reply = await claimChatIfCoded(admin, update.message);
+      if (reply) {
+        await sendChatMessage(botToken, String(update.message.chat.id), reply);
+        return NextResponse.json({ ok: true });
+      }
+    }
 
     /* ── a typed command ───────────────────────────────────────────── */
     if (update.message) {

@@ -11,8 +11,10 @@ import { cn } from "@/lib/utils";
 /**
  * Connect the Telegram group that marketing images publish to.
  *
- * Telegram gives a bot no way to list the chats it is in, so the only route is
- * to read its recent updates and collect the chats they came from. That is why
+ * Groups appear here only after the user has PROVEN they are in them, by
+ * posting a one-time code in the group. Telegram cannot bridge a Trade Journal
+ * account to a Telegram account, so that code is the only evidence; listing
+ * every chat the bot could see would expose other customers' groups. That is why
  * this asks the user to post in the group first: it is a platform constraint,
  * not a design choice, and saying so beats an empty list with no explanation.
  */
@@ -41,6 +43,7 @@ export function TelegramDestinationCard({
     null,
   );
   const [hint, setHint] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
 
   const findChats = async (): Promise<void> => {
     setBusy("find");
@@ -49,7 +52,7 @@ export function TelegramDestinationCard({
       const json: {
         data?: TelegramChat[];
         error?: string;
-        meta?: { hint?: string | null };
+        meta?: { hint?: string | null; code?: string | null };
       } = await res.json();
       if (!res.ok) {
         toast.error(json.error ?? "Couldn't reach Telegram.");
@@ -60,6 +63,7 @@ export function TelegramDestinationCard({
         // The server knows what it actually saw; repeating one guessed cause
         // here would send someone to fix the wrong thing.
         setHint(json.meta?.hint ?? null);
+        setCode(json.meta?.code ?? null);
       } else {
         setHint(null);
       }
@@ -196,7 +200,27 @@ export function TelegramDestinationCard({
               in.
             </p>
 
-            {hint && (
+            {/*
+              Shown whenever a code exists, not only when the list is empty:
+              someone adding a SECOND group needs it just as much, and hiding it
+              behind an empty state makes that look impossible.
+            */}
+            {code && (
+              <div className="space-y-1" data-testid="telegram-claim-code">
+                <p className="text-xs text-muted-foreground">
+                  Post this in the group you want to publish to, so the bot
+                  knows you are in it:
+                </p>
+                <code className="block select-all rounded-md border border-border bg-muted/40 px-2 py-1.5 text-center text-sm font-semibold tracking-widest">
+                  {code}
+                </code>
+                <p className="text-xs text-muted-foreground">
+                  Then press Find my groups again. The code lasts 15 minutes.
+                </p>
+              </div>
+            )}
+
+            {hint && !code && (
               <p className="text-xs text-warn" data-testid="telegram-hint">
                 {hint}
               </p>

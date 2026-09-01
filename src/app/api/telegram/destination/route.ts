@@ -57,6 +57,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // PROVE THE CALLER IS IN THIS CHAT.
+    //
+    // Reachability (below) proves only that the BOT can post there, which says
+    // nothing about who is asking. Without this check any signed-in user could
+    // name any chat id the bot is in and publish their results into someone
+    // else's group. The claim is the evidence: a code this user generated,
+    // posted inside that chat, where only a member could put it.
+    const { data: claim } = await supabase
+      .from("telegram_chat_claims")
+      .select("code")
+      .eq("chat_id", parsed.data.chat_id)
+      .not("claimed_at", "is", null)
+      .maybeSingle();
+
+    if (!claim) {
+      return NextResponse.json(
+        {
+          error:
+            "You haven't verified that group yet. Post the code from the Posters page in it, then connect.",
+        },
+        { status: 403 },
+      );
+    }
+
     // Prove reachability BEFORE recording anything.
     try {
       await sendTelegramMessage(
