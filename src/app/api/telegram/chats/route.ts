@@ -1,41 +1,29 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
-import { explainNoChats, listTelegramChats } from "@/lib/telegram/client";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { telegramBotToken } from "@/lib/telegram/config";
-import type { TelegramChat } from "@/lib/telegram/client";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { generateClaimCode, CLAIM_BODY_LENGTH } from "@/lib/telegram/claim";
 
 /**
- * Groups recorded by the webhook.
+ * Groups this user has PROVEN they are in, plus a code to prove another.
  *
- * Once a webhook is registered, Telegram answers getUpdates with 409 and there
- * is no other way to ask a bot what chats it is in. The webhook records every
- * chat it sees, and this reads them back, so connecting a new group keeps
- * working across that swap instead of breaking the day /daily shipped.
- */
-async function chatsFromWebhook(
-  supabase: SupabaseClient,
-): Promise<readonly TelegramChat[]> {
-  const { data } = await supabase
-    .from("telegram_seen_chats")
-    .select("chat_id, title, chat_type")
-    .order("last_seen_at", { ascending: false })
-    .limit(50);
-
-  return (data ?? []).map((r) => ({
-    id: r.chat_id as string,
-    title: (r.title as string | null) ?? "Untitled chat",
-    type: (r.chat_type as TelegramChat["type"]) ?? "group",
-  }));
-}
-
-/**
- * Groups the bot can currently see, for the connect picker.
+ * This used to list every chat the bot had ever seen, to every signed-in user.
+ * That leaked the existence and title of other customers' groups, and paired
+ * with a connect handler that never checked the caller's relationship to a
+ * chat, it let one customer attach another's group to their own account and
+ * publish into it.
  *
- * Authenticated because it reveals which groups the bot has been added to, and
- * because it spends a Telegram API call. It does NOT reveal the token: the
- * token is read server-side and never leaves this process.
+ * A Trade Journal account and a Telegram account are unrelated identities, and
+ * Telegram cannot be asked to bridge them. So the proof is a code posted IN the
+ * group, where only a member could put it.
  */
+export const runtime = "nodejs";
+
+/** Long enough to walk to Telegram and paste, short enough that an abandoned
+ *  code is not a standing invitation. Mirrors the column default. */
+const CODE_TTL_MINUTES = 15;
+
 export async function GET(): Promise<NextResponse> {
   try {
     const supabase = await createClient();
@@ -47,8 +35,7 @@ export async function GET(): Promise<NextResponse> {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const token = telegramBotToken();
-    if (!token) {
+    if (!telegramBotToken()) {
       return NextResponse.json(
         {
           error:
@@ -58,55 +45,64 @@ export async function GET(): Promise<NextResponse> {
       );
     }
 
-    // The webhook's record is preferred when it has anything, because once a
-    // webhook exists it is the ONLY source that still works.
-    const recorded = await chatsFromWebhook(supabase);
-    if (recorded.length > 0) {
-      return NextResponse.json({
-        data: recorded,
-        meta: {
-          updatesSeen: recorded.length,
-          updateKinds: ["webhook"],
-          privateSkipped: 0,
-          hint: null,
-        },
-      });
+    // RLS scopes this to the caller, so another user's claims are absent.
+    const { data: claims } = await supabase
+      .from("telegram_chat_claims")
+      .select("chat_id, chat_title, claimed_at")
+      .not("chat_id", "is", null)
+      .order("claimed_at", { ascending: false });
+
+    // Deduped: a group claimed twice is still one group.
+    const seen = new Set<string>();
+    const chats = (claims ?? [])
+      .filter((c) => {
+        const id = c.chat_id as string;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map((c) => ({
+        id: c.chat_id as string,
+        title: (c.chat_title as string | null) ?? "Untitled chat",
+        type: "group" as const,
+      }));
+
+    // A fresh code every time this is opened. Reusing an outstanding one would
+    // mean a code shown, abandoned, and still live when someone else is looking
+    // at the screen. Old unclaimed codes simply expire.
+    const admin = createAdminClient();
+    const code = generateClaimCode(randomBytes(CLAIM_BODY_LENGTH));
+    const expiresAt = new Date(
+      Date.now() + CODE_TTL_MINUTES * 60_000,
+    ).toISOString();
+
+    const { error: codeError } = await admin
+      .from("telegram_chat_claims")
+      .insert({ code, user_id: user.id, expires_at: expiresAt });
+
+    if (codeError) {
+      return NextResponse.json(
+        { error: "Couldn't start the connection. Try again." },
+        { status: 503 },
+      );
     }
 
-    const discovery = await listTelegramChats(token);
     return NextResponse.json({
-      data: discovery.chats,
-      // Returned so the UI can say WHY nothing was found rather than guessing
-      // at one cause. Counts only — no message content, no chat contents.
+      data: chats,
       meta: {
-        updatesSeen: discovery.updatesSeen,
-        updateKinds: discovery.updateKinds,
-        privateSkipped: discovery.privateSkipped,
-        hint: discovery.chats.length === 0 ? explainNoChats(discovery) : null,
+        code,
+        expiresAt,
+        hint:
+          chats.length === 0
+            ? `Post ${code} in the group you want to publish to, then check again. That is how the bot knows you are in it.`
+            : null,
       },
     });
   } catch (err: unknown) {
-    // Telegram's own description is echoed by the client's thrown Error, and it
-    // can be genuinely useful here ("terminated by other getUpdates request"
-    // means a webhook is registered). It never contains the token.
-    const message =
-      err instanceof Error ? err.message : "Couldn't reach Telegram.";
-    // 409 means a webhook is registered, so getUpdates will never work again.
-    // Said in terms of what to DO rather than quoting Telegram at the user.
-    if (/terminated by other getUpdates|409/i.test(message)) {
-      return NextResponse.json({
-        data: [],
-        meta: {
-          updatesSeen: 0,
-          updateKinds: ["webhook"],
-          privateSkipped: 0,
-          hint:
-            "The bot now receives updates through a webhook, so it only learns " +
-            "about a group once something happens there. Post a message in the " +
-            "group (or re-add the bot) and try again.",
-        },
-      });
-    }
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error("[telegram/chats] unexpected:", err);
+    return NextResponse.json(
+      { error: "Couldn't reach Telegram." },
+      { status: 502 },
+    );
   }
 }
