@@ -18,10 +18,23 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // undici must stay external: bundling can break its internals (llhttp wasm,
-  // dispatcher wiring) at runtime even when the build succeeds — and the
-  // Myfxbook static-IP ProxyAgent depends on it.
-  serverExternalPackages: ["openai", "undici"],
+  // Packages the bundler must NOT relocate.
+  //
+  // undici: bundling can break its internals (llhttp wasm, dispatcher wiring)
+  // at runtime even when the build succeeds.
+  //
+  // @sparticuz/chromium ships a brotli-compressed Chromium in its own `bin`
+  // directory and resolves that path relative to itself at runtime. Bundled,
+  // the code is relocated and the binary is left behind, so a deployed render
+  // fails with `The input directory ".../@sparticuz/chromium/bin" does not
+  // exist` — which is precisely what production did before this line existed.
+  // puppeteer-core rides along because it is what loads it.
+  serverExternalPackages: [
+    "openai",
+    "undici",
+    "@sparticuz/chromium",
+    "puppeteer-core",
+  ],
 
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
