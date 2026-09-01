@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { closeRenderer, renderPoster } from "@/lib/reports/render";
-import { POSTER_TEMPLATES } from "@/lib/posters/templates";
-import {
-  sendTelegramAlbum,
-  TelegramSendError,
-  type TelegramPhoto,
-} from "@/lib/telegram/media";
 import { telegramBotToken } from "@/lib/telegram/config";
-import { buildCaption, type Cadence } from "@/lib/reports/caption";
-import { formatPeriodLabel } from "@/lib/reports/periods-tz";
-import type { ReportMetrics } from "@/lib/reports/metrics";
+import { publishSnapshot } from "@/lib/reports/publish";
 
 /**
  * Render a report's posters and post them to the owner's group, as one album.
@@ -145,30 +136,21 @@ export async function POST(
 
     const admin = createAdminClient();
 
-    // CLAIM BEFORE SENDING, in one statement.
-    //
-    // Read-then-write cannot make this safe: two callers both read "not sent
-    // yet", both write, and both post the album. The claim is an INSERT .. ON
-    // CONFLICT DO UPDATE .. WHERE that takes a row lock, so exactly one caller
-    // is let through. Null means already sent, in doubt, or another attempt
-    // holds it right now. In every one of those cases this caller must not
-    // render and must not post.
-    const { data: deliveryId, error: claimError } = await admin.rpc(
-      "claim_report_delivery",
-      {
-        p_snapshot_id: id,
-        p_chat_id: destination.chat_id,
-        p_destination_id: destination.id,
-      },
-    );
+    // The mechanics live in lib/reports/publish so the scheduler and the
+    // Telegram commands run exactly the same claim, render, send and
+    // in-doubt rules. Authorisation is this route's job and was done above,
+    // by RLS: the snapshot, desk and destination all came back owner-scoped.
+    const outcome = await publishSnapshot({
+      admin,
+      snapshot,
+      deskName: desk.name,
+      destination,
+      botToken,
+      appUrl,
+      msLeft,
+    });
 
-    if (claimError) {
-      return NextResponse.json(
-        { error: "Could not claim this report for sending." },
-        { status: 503 },
-      );
-    }
-    if (!deliveryId) {
+    if (outcome.status === "already") {
       return NextResponse.json(
         {
           error: `This report has already been posted to ${destination.chat_title}, a send is in progress, or a previous send needs checking.`,
@@ -176,130 +158,41 @@ export async function POST(
         { status: 409 },
       );
     }
-
-    // From here the row is claimed, so EVERY exit has to record an outcome.
-    // Nothing between the claim and this try may throw, which is why the
-    // caption is built inside it: `metrics` is unvalidated jsonb, and a shape
-    // mismatch used to escape to the outer handler and wedge the row.
-    let sendStarted = false;
-    try {
-      const caption = buildCaption({
-        deskName: desk.name,
-        cadence: snapshot.cadence as Cadence,
-        periodLabel: formatPeriodLabel({
-          cadence: snapshot.cadence as Cadence,
-          start: snapshot.period_start,
-          end: snapshot.period_end,
-        }),
-        metrics: snapshot.metrics as unknown as ReportMetrics,
-      });
-
-      const photos: TelegramPhoto[] = [];
-      const skipped: string[] = [];
-      try {
-        // Sequential, sharing one browser: three tabs at once on a 1GB lambda
-        // is how a render turns into an out-of-memory kill with no error.
-        for (const template of POSTER_TEMPLATES) {
-          try {
-            const bytes = await renderPoster({
-              snapshotId: id,
-              style: template.id,
-              appUrl,
-            });
-            photos.push({
-              bytes,
-              filename: `${template.label.toLowerCase().replace(/\s+/g, "-")}.png`,
-            });
-          } catch (err: unknown) {
-            // One broken style must not cost the other two. Recorded against
-            // the delivery below so a partial album is visible rather than
-            // looking like a clean send.
-            skipped.push(
-              `${template.label}: ${err instanceof Error ? err.message : "render failed"}`,
-            );
-          }
-        }
-      } finally {
-        await closeRenderer();
-      }
-
-      if (photos.length === 0) {
-        throw new Error(`No poster rendered. ${skipped.join("; ")}`);
-      }
-
-      // Marked BEFORE the bytes move. If this invocation dies from here on, the
-      // claim function sees a stale pending WITH send_started_at set and
-      // refuses to re-claim it, because the album may already be in the group.
-      sendStarted = true;
-      await admin
-        .from("report_deliveries")
-        .update({ send_started_at: new Date().toISOString() })
-        .eq("id", deliveryId);
-
-      const sent = await sendTelegramAlbum(
-        botToken,
-        destination.chat_id,
-        photos,
-        caption,
-        msLeft(),
-      );
-
-      const { error: recordError } = await admin
-        .from("report_deliveries")
-        .update({
-          status: "sent",
-          message_ids: sent.messageIds,
-          // A partial album is a successful send with a gap worth keeping.
-          error: skipped.length > 0 ? skipped.join("; ") : null,
-          sent_at: new Date().toISOString(),
-        })
-        .eq("id", deliveryId);
-
-      // Posted but not recorded. Saying 200 here would let a later run treat it
-      // as unsent and publish it twice, so it is surfaced as the problem it is.
-      if (recordError) {
-        return NextResponse.json(
-          {
-            error:
-              "The album posted but could not be recorded. Do not retry: check the group first.",
-            data: { messageIds: sent.messageIds },
-          },
-          { status: 500 },
-        );
-      }
-
-      return NextResponse.json({
-        data: {
-          posted: photos.length,
-          skipped,
-          chat: destination.chat_title,
-          messageIds: sent.messageIds,
-          ms: Date.now() - started,
-        },
-      });
-    } catch (err: unknown) {
-      const detail = err instanceof Error ? err.message : "Publish failed";
-
-      // Could this have landed anyway? A clean refusal from Telegram is safe
-      // to retry. Anything after the bytes started moving is not, and gets a
-      // state the claim function will never hand back out.
-      const inDoubt =
-        err instanceof TelegramSendError ? err.inDoubt : sendStarted;
-
-      await admin
-        .from("report_deliveries")
-        .update({ status: inDoubt ? "in_doubt" : "failed", error: detail })
-        .eq("id", deliveryId);
-
+    if (outcome.status === "not_recorded") {
       return NextResponse.json(
         {
-          error: inDoubt
-            ? "The send did not complete cleanly and may have posted. Check the group before retrying."
-            : "Could not post the report. Nothing was published.",
+          error:
+            "The album posted but could not be recorded. Do not retry: check the group first.",
+          data: { messageIds: outcome.messageIds },
+        },
+        { status: 500 },
+      );
+    }
+    if (outcome.status === "in_doubt") {
+      return NextResponse.json(
+        {
+          error:
+            "The send did not complete cleanly and may have posted. Check the group before retrying.",
         },
         { status: 502 },
       );
     }
+    if (outcome.status === "failed") {
+      return NextResponse.json(
+        { error: "Could not post the report. Nothing was published." },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      data: {
+        posted: outcome.posted,
+        skipped: outcome.skipped,
+        chat: outcome.chat,
+        messageIds: outcome.messageIds,
+        ms: Date.now() - started,
+      },
+    });
   } catch (err: unknown) {
     // Detail stays server-side: this string reaches the client and internal
     // messages (Postgres syntax, renderer internals) do not belong there.

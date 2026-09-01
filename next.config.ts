@@ -60,8 +60,14 @@ const nextConfig: NextConfig = {
   // ANY NEW ROUTE THAT RENDERS A POSTER NEEDS A KEY HERE — the scheduled cron
   // entry point will, when it lands, and it will fail exactly like the above
   // if it does not get one.
+  // Both entry points that start a browser. The cron route is NOT under
+  // /api/reports, so it needs its own key: the first build after it was added
+  // traced 0 chromium files into it, which would have deployed a scheduler
+  // that failed every morning with the missing-bin error.
   outputFileTracingIncludes: {
-    "/api/reports/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/reports/*/render": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/reports/*/publish": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/cron/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
   },
 
   async headers() {
