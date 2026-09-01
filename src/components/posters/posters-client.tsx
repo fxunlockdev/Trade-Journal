@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Copy, Download, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -56,12 +57,15 @@ import {
   scopeByJournal,
   scopeTrades,
 } from "@/lib/posters/scope";
-import type { JournalWithRole, Trade } from "@/types/database";
+import { findDeskForJournals, posterIdentity } from "@/lib/reports/desks";
+import type { JournalWithRole, ReportDesk, Trade } from "@/types/database";
 
 interface PostersClientProps {
   /** Every trade from every journal the user belongs to, within the lookback. */
   readonly trades: readonly Trade[];
   readonly journals: readonly JournalWithRole[];
+  /** Saved, named journal combinations. A match here names the poster. */
+  readonly desks: readonly ReportDesk[];
   readonly activeJournalId: string | null;
   readonly loadError: string | null;
 }
@@ -69,6 +73,7 @@ interface PostersClientProps {
 export function PostersClient({
   trades,
   journals,
+  desks,
   activeJournalId,
   loadError,
 }: PostersClientProps) {
@@ -77,6 +82,7 @@ export function PostersClient({
   const [period, setPeriod] = useState<PeriodId>("today");
   const [busy, setBusy] = useState<"download" | "copy" | null>(null);
   const posterRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   // Defaults to the active journal alone, so anyone who just wants their own
   // poster sees exactly what they saw before journals could be combined.
@@ -124,8 +130,20 @@ export function PostersClient({
     [journals, journalSel],
   );
 
-  // One journal uses its own name; a combination joins them ("YOHAN + CHRIS").
-  const defaultGroup = defaultGroupName(selectedJournals);
+  // A saved desk names the poster; otherwise the name is derived from the
+  // journals as before. This is what lets two gold journals publish as "Gold
+  // Intraday" rather than "TTC GOLD | CHRIS + TTC GOLD | YOHAN", and it is the
+  // same value a scheduled render will use, because it comes from the database
+  // rather than from this browser.
+  const identity = useMemo(
+    () => posterIdentity(desks, selectedJournals.map((j) => j.id), journals),
+    [desks, selectedJournals, journals],
+  );
+  const defaultGroup = identity.name || defaultGroupName(selectedJournals);
+  const deskId = useMemo(
+    () => findDeskForJournals(desks, selectedJournals.map((j) => j.id))?.id ?? null,
+    [desks, selectedJournals],
+  );
   const [group, setGroup] = useState(defaultGroup);
 
   // Remembered per COMBINATION, sorted so ticking Yohan-then-Chris and
@@ -164,11 +182,19 @@ export function PostersClient({
   } = usePosterLogo(logoKey);
 
   useEffect(() => {
+    // A saved desk WINS over anything in this browser. The desk is what a
+    // scheduled render will use, so honouring a stale localStorage override
+    // here would show one name on screen and publish a different one at 06:00
+    // — the exact disagreement moving branding into the database removes.
+    if (identity.fromDesk) {
+      setGroup(identity.name);
+      return;
+    }
     // Guarded like the logo's: this effect runs FIRST, so an unprotected read
     // here would throw in private mode before the logo's guard ever helped.
     const saved = groupKey ? safeGet(groupKey) : null;
     setGroup(saved ?? defaultGroup);
-  }, [groupKey, defaultGroup]);
+  }, [groupKey, defaultGroup, identity.fromDesk, identity.name]);
 
   useEffect(() => {
     // Re-resolved when the period changes AND when `nonce` is bumped just
@@ -201,6 +227,59 @@ export function PostersClient({
   const kind = periodKind(period);
   const Template = template.Component;
   const fallbackCount = stats ? stats.tradeCount - stats.closeTimeKnown : 0;
+
+  // Whether the on-screen name matches what a scheduled render would publish.
+  //   "none"    - no desk for this combination yet
+  //   "saved"   - a desk exists and the name matches it
+  //   "changed" - a desk exists but the name has been edited since
+  const deskState: "none" | "saved" | "changed" = !identity.fromDesk
+    ? "none"
+    : group.trim() === identity.name
+      ? "saved"
+      : "changed";
+  const [deskBusy, setDeskBusy] = useState(false);
+
+  /**
+   * Save the current selection and name as a desk, or rename an existing one.
+   *
+   * Deliberately POSTs the CURRENT journal selection rather than the desk's
+   * stored ids: the button is only offered while a selection is active, and
+   * sending anything else would let a rename quietly re-point a desk at
+   * journals the user is not looking at.
+   */
+  const onSaveDesk = async (): Promise<void> => {
+    const name = group.trim();
+    const journalIds = selectedJournals.map((j) => j.id);
+    if (!name || journalIds.length === 0) return;
+
+    const existing = desks.find((d) => d.id === deskId);
+    setDeskBusy(true);
+    try {
+      const res = await fetch(
+        existing ? `/api/desks/${existing.id}` : "/api/desks",
+        {
+          method: existing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, journal_ids: journalIds }),
+        },
+      );
+      const json: { error?: string } = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Couldn't save the desk.");
+        return;
+      }
+      toast.success(
+        existing ? "Desk renamed" : "Desk saved. Scheduled reports will use it.",
+      );
+      // The desks list came from the server component, so re-render the route
+      // rather than patching local state and letting the two drift.
+      router.refresh();
+    } catch {
+      toast.error("Couldn't reach the server. Try again.");
+    } finally {
+      setDeskBusy(false);
+    }
+  };
 
   const onGroupChange = (value: string) => {
     setGroup(value);
@@ -479,6 +558,36 @@ export function PostersClient({
                 <p className="text-xs text-muted-foreground">
                   The only editable text. Every statistic comes from your trades.
                 </p>
+
+                {/*
+                  Saving the name as a DESK is what makes it survive this
+                  browser. A desk is read from the database, so a scheduled
+                  render publishes the same name this page shows; a name typed
+                  here and left unsaved exists only on this machine.
+                */}
+                {deskState === "saved" ? (
+                  <p
+                    className="text-xs text-pos"
+                    data-testid="poster-desk-status"
+                  >
+                    Saved as a desk. Scheduled reports will use this name.
+                  </p>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={deskBusy || !group.trim() || journalSel.size === 0}
+                    onClick={() => void onSaveDesk()}
+                    data-testid="poster-desk-save"
+                  >
+                    {deskBusy ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : null}
+                    {deskState === "changed" ? "Update desk name" : "Save as a desk"}
+                  </Button>
+                )}
               </div>
 
               {/*

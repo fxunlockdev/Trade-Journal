@@ -326,3 +326,34 @@ export type CreateSignal = Omit<
 >;
 
 export type UpdateSignal = Partial<CreateSignal>;
+
+/**
+ * A named, branded set of journals that posters are published for.
+ *
+ * Replaces the browser-local group name and logo (`trdr_poster_group:*`) so a
+ * server can render a branded poster with no browser present. See
+ * `src/lib/reports/desks.ts` for the matching rules.
+ */
+export interface ReportDesk {
+  readonly id: string;
+  readonly owner_user_id: string;
+  /** What prints on the poster. Never derived from journal names. */
+  readonly name: string;
+  /** Path in the `journal-logos` bucket, or null to print `name`. */
+  readonly logo_path: string | null;
+  readonly journal_ids: readonly string[];
+  /** IANA zone deciding what "yesterday" means for this desk's reports. */
+  readonly timezone: string;
+  readonly sort_order: number;
+  readonly is_active: boolean;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export type CreateReportDesk = Pick<
+  ReportDesk,
+  "name" | "journal_ids" | "timezone"
+> &
+  Partial<Pick<ReportDesk, "logo_path" | "sort_order">>;
+
+export type UpdateReportDesk = Partial<CreateReportDesk & Pick<ReportDesk, "is_active">>;

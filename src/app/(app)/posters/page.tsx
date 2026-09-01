@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
 import { PostersClient } from "@/components/posters/posters-client";
 import { lookbackCutoffIso } from "@/lib/posters/scope";
-import type { Journal, JournalRole, JournalWithRole, Trade } from "@/types/database";
+import type { Journal, JournalRole, JournalWithRole, ReportDesk, Trade } from "@/types/database";
 
 // A poster is a public claim about performance, so it must never be built from
 // a cached render — every load re-reads the journals and their trades.
@@ -126,10 +126,19 @@ export default async function PostersPage() {
     }
   }
 
+  // Desks name and brand a journal COMBINATION. Read through the RLS client:
+  // report_desks has real policies scoped to the owner, unlike trades.
+  const { data: deskRows } = await supabase
+    .from("report_desks")
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+
   return (
     <PostersClient
       trades={trades}
       journals={journals}
+      desks={(deskRows ?? []) as ReportDesk[]}
       activeJournalId={activeJournalId}
       loadError={loadError}
     />
