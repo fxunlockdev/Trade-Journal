@@ -27,7 +27,7 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
   {
     keywords: ["trade journal", "journal", "log trades", "journaling", "track trades"],
     answer:
-      "The **Trade Journal** is where you log positions and let the patterns surface. You get P&L, win rate, profit factor and max drawdown; filters by date range, direction and asset; multi-take-profit tracking; a built-in risk and lot calculator; imports from MT5 and Myfxbook; and an AI chat that can log a trade from plain English. Every journal is private to you unless you explicitly invite someone.",
+      "The **Trade Journal** is where you log positions and let the patterns surface. You get P&L, win rate, profit factor and max drawdown; filters by date range, direction and asset; multi-take-profit tracking; a built-in risk and lot calculator; imports from MT4 and MT5 statements; and an AI chat that can log a trade from plain English. Every journal is private to you unless you explicitly invite someone.",
     suggestions: ["How do I add a trade?", "Can I import from MT5?", "How do I get access?"],
   },
   {
@@ -55,9 +55,9 @@ export const KNOWLEDGE: readonly KnowledgeEntry[] = [
     suggestions: ["Open Trade Journal", "Can I import from MT5?"],
   },
   {
-    keywords: ["mt5", "import", "myfxbook", "sync", "csv", "metatrader"],
+    keywords: ["mt5", "mt4", "import", "statement", "pdf", "csv", "metatrader"],
     answer:
-      "Yes. The Trade Journal syncs from **MT5** and **Myfxbook**, and accepts CSV imports. Myfxbook credentials are encrypted before they're stored, and imported trades are de-duplicated so a re-sync never doubles your history.",
+      "Yes. Export your account history from **MT4** or **MT5** and upload it on the Import page: PDF, HTML and XLSX statements all work. Imported trades are de-duplicated, so re-uploading an overlapping statement never doubles your history.",
     suggestions: ["What can the Trade Journal do?", "Open Trade Journal"],
   },
   {

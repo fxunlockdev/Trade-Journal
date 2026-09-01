@@ -547,3 +547,63 @@ describe("failure modes stay actionable", () => {
     ).toThrow(/no closed trades/i);
   });
 });
+
+describe("deposit currency — giving an imported P&L its unit", () => {
+  it("reads it from the real French statement header", () => {
+    // MT5 prints "<login> (USD, Broker, real, Hedge)" in every UI language.
+    // The fixture is French and still says USD — which is why parsing the
+    // parenthesised suffix beats looking for an English label.
+    const parsed = parseXlsxReport(xlsxBytes, 0);
+    expect(parsed.accountCurrency).toBe("USD");
+    // ...without disturbing the login that shares the same match.
+    expect(parsed.accountLogin).toBe("99999999");
+  });
+
+  const anyClose = () =>
+    ({
+      type: "close",
+      ticket: 1,
+      symbol: "EURUSD",
+      direction: "buy",
+      volume: 0.1,
+      entry_price: 1.1,
+      open_time: 1_700_000_000,
+      exit_price: 1.105,
+      close_time: 1_700_003_600,
+      profit: 12.5,
+      commission: -0.5,
+      swap: 0,
+    }) as unknown as Parameters<typeof buildCloseFields>[0];
+
+  it("stamps the broker's own currency on a close, as a read fact", () => {
+    const r = buildCloseFields(anyClose(), { currency: "EUR", quality: "broker" });
+    expect(r.pnl_currency).toBe("EUR");
+    expect(r.pnl_rate_quality).toBe("broker");
+  });
+
+  it("marks a fallback currency ASSUMED, never as read", () => {
+    // The difference between "the statement said EUR" and "the journal is set
+    // to EUR so we guessed" is the whole reason the quality column exists.
+    const r = buildCloseFields(anyClose(), {
+      currency: "GBP",
+      quality: "assumed",
+    });
+    expect(r.pnl_currency).toBe("GBP");
+    expect(r.pnl_rate_quality).toBe("assumed");
+  });
+
+  it("records nothing at all when the currency is genuinely unknown", () => {
+    const r = buildCloseFields(anyClose());
+    expect(r.pnl_currency).toBeNull();
+    expect(r.pnl_rate_quality).toBeNull();
+  });
+
+  it("STAMPING NEVER TOUCHES THE BROKER'S NUMBER", () => {
+    const e = anyClose();
+    const bare = buildCloseFields(e);
+    const stamped = buildCloseFields(e, { currency: "EUR", quality: "broker" });
+    expect(stamped.pnl_absolute).toBe(bare.pnl_absolute);
+    expect(stamped.exit_price).toBe(bare.exit_price);
+    expect(stamped.fees).toBe(bare.fees);
+  });
+});

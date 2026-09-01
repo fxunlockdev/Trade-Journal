@@ -34,6 +34,15 @@ export interface ParsedReport {
   readonly platform: "mt5" | "mt4";
   /** Broker account login parsed from the header (null if not found). */
   readonly accountLogin: string | null;
+  /**
+   * The account's DEPOSIT CURRENCY, parsed from the same header suffix.
+   *
+   * Every P&L figure in the statement is denominated in this — the broker's own
+   * number, never converted. Without it an imported row's currency has to be
+   * guessed from the journal's settings, which is wrong the moment someone
+   * imports a EUR account into a USD journal.
+   */
+  readonly accountCurrency: string | null;
   readonly events: readonly Mt5Event[];
   /** Rows recognized but not importable (e.g. balance ops, malformed). */
   readonly skippedRows: number;
@@ -143,16 +152,29 @@ function parseReportTime(
 const ACCOUNT_LABEL =
   "account|compte|cuenta|konto|conta|conto|rekening|tili|konte|rachunek|hesap|účet|ucet|fiók|fiok|cont|сметка|счет|счёт|рахунок|账户|帳戶|口座|계좌|บัญชี|tài khoản|akun";
 
-function findAccountLogin(text: string): string | null {
+interface AccountHeader {
+  readonly login: string | null;
+  readonly currency: string | null;
+}
+
+function findAccountHeader(text: string): AccountHeader {
   // MT5 prints "<login> (USD, Broker-Server, real, Hedge)" in EVERY language —
-  // the parenthesised, comma-separated suffix makes this unambiguous.
-  const paren = /(\d{4,})\s*\((?=[^)]*,)/.exec(text);
-  if (paren) return paren[1];
+  // the parenthesised, comma-separated suffix makes this unambiguous, and the
+  // currency is its FIRST element. The old regex matched exactly this and threw
+  // the currency away inside a lookahead.
+  const paren = /(\d{4,})\s*\(\s*([A-Za-z]{3})\s*,/.exec(text);
+  if (paren) return { login: paren[1], currency: paren[2].toUpperCase() };
+
+  // Same suffix, but the first element isn't a 3-letter code (some brokers put
+  // the server first). The login is still recoverable; the currency is not.
+  const parenNoCcy = /(\d{4,})\s*\((?=[^)]*,)/.exec(text);
+  if (parenNoCcy) return { login: parenNoCcy[1], currency: null };
+
   const labelled = new RegExp(
     `(?:${ACCOUNT_LABEL})[^0-9]{0,40}(\\d{4,})`,
     "i",
   ).exec(text);
-  return labelled ? labelled[1] : null;
+  return { login: labelled ? labelled[1] : null, currency: null };
 }
 
 /* -------------------------------- sections -------------------------------- */
@@ -494,7 +516,7 @@ export function parseReportRows(
     );
   }
 
-  const accountLogin = findAccountLogin(plainText);
+  const account = findAccountHeader(plainText);
   const { events, skipped } = isMt5
     ? parseMt5Positions(rows, utcOffsetMinutes, warnings)
     : parseMt4ClosedTransactions(rows, utcOffsetMinutes, warnings);
@@ -508,7 +530,8 @@ export function parseReportRows(
 
   return {
     platform: isMt5 ? "mt5" : "mt4",
-    accountLogin,
+    accountLogin: account.login,
+    accountCurrency: account.currency,
     events,
     skippedRows: skipped,
     warnings,

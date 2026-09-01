@@ -8,20 +8,32 @@ import {
 } from "@/lib/mt5/ingest";
 
 /**
- * Transport-agnostic trade-event processor. The EA webhook, the Myfxbook
- * bridge and the manual report import all map their inputs into `Mt5Event`s
- * and run them through here, sharing one idempotent upsert keyed on
- * (journal_id, mt5_account, mt5_ticket) — backed by the unique index
+ * Transport-agnostic trade-event processor. The report import maps its rows
+ * into `Mt5Event`s and runs them through here, using an idempotent upsert
+ * keyed on (journal_id, mt5_account, mt5_ticket), backed by the unique index
  * `trades_mt5_dedupe`, with a 23505 race fallback.
  */
 
 export interface IngestTarget {
   readonly journalId: string;
   readonly userId: string;
-  /** Dedupe namespace, e.g. "Server:login", "myfxbook:123", "statement:555". */
+  /** Dedupe namespace, e.g. "Server:login", "statement:555". */
   readonly accountKey: string;
   /** Trade source persisted on inserted rows. */
   readonly source: "mt5_webhook" | "csv";
+  /**
+   * The account's deposit currency, when the source told us — every P&L figure
+   * in the payload is denominated in it. Null when unknown (MT4 statements,
+   * older headers), in which case the caller falls back to the journal's
+   * account_currency and records that it was assumed rather than read.
+   */
+  readonly accountCurrency?: string | null;
+  /**
+   * Last-resort denomination when the source didn't say — the journal's own
+   * account_currency. Recorded as `assumed` so it is never mistaken for a fact
+   * read off the statement.
+   */
+  readonly assumedCurrency?: string | null;
 }
 
 export interface IngestResult {
@@ -150,7 +162,20 @@ async function processEvent(
     // define "closed" as pnl_absolute !== null, so exit fields wait for the
     // final snapshot. Cumulative totals make the final write authoritative.
     const patch = event.is_final
-      ? { ...buildSlTpPatch(event), ...buildCloseFields(event) }
+      ? {
+          ...buildSlTpPatch(event),
+          // The broker's P&L is denominated in the ACCOUNT's currency. When the
+          // statement told us, that is a read fact; otherwise the caller's
+          // fallback is recorded as assumed rather than passed off as read.
+          ...buildCloseFields(
+            event,
+            target.accountCurrency
+              ? { currency: target.accountCurrency, quality: "broker" }
+              : target.assumedCurrency
+                ? { currency: target.assumedCurrency, quality: "assumed" }
+                : undefined,
+          ),
+        }
       : buildSlTpPatch(event);
     await updateRow(admin, existing.id, patch);
   }

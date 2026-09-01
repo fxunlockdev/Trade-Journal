@@ -70,7 +70,7 @@ const TZ_OPTIONS = [
 
 /**
  * Report-import UI (upload → preview → commit). Header-less so it can be
- * embedded in both the /import page and the /mt5-sync page.
+ * embedded in the /import page.
  */
 export function ImportPanel() {
   const router = useRouter();

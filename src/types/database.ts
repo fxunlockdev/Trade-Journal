@@ -54,6 +54,12 @@ export type JournalColor =
 export type TradeAuditAction = "created" | "updated" | "deleted";
 
 /** Account base currencies the position-sizing math supports. */
+/**
+ * How a stored P&L figure's currency is known. Mirrors the
+ * trades_pnl_rate_quality_allowed CHECK.
+ */
+export type PnlRateQuality = "broker" | "exact" | "approximate" | "assumed";
+
 export type AccountCurrency = "USD" | "EUR" | "GBP";
 
 export interface Journal {
@@ -227,6 +233,13 @@ export interface Trade {
   readonly entry_time: string;
   readonly exit_time: string | null;
   readonly pnl_absolute: number | null;
+  /**
+   * ISO 4217 code `pnl_absolute` is denominated in, and how well that is known.
+   * NULL on rows written before these columns existed — the currency has to be
+   * inferred there, not trusted.
+   */
+  readonly pnl_currency: string | null;
+  readonly pnl_rate_quality: PnlRateQuality | null;
   readonly pnl_percentage: number | null;
   readonly risk_reward_ratio: number | null;
   readonly r_multiple: number | null;
@@ -244,28 +257,6 @@ export interface Trade {
   readonly updated_at: string;
 }
 
-/**
- * A Myfxbook-linked MT4/MT5 account (free auto-sync bridge). Credentials are
- * AES-256-GCM encrypted app-side; the cached session token is IP-bound on
- * Myfxbook's end and re-established from credentials when it dies.
- */
-export interface MyfxbookConnection {
-  readonly id: string;
-  readonly user_id: string;
-  readonly journal_id: string;
-  readonly email_encrypted: string;
-  readonly password_encrypted: string;
-  readonly session_token: string | null;
-  readonly myfxbook_account_id: string;
-  readonly account_name: string | null;
-  readonly broker: string | null;
-  /** Myfxbook reports broker-local times; offset converts them to UTC. */
-  readonly broker_utc_offset_minutes: number;
-  readonly last_sync_at: string | null;
-  readonly last_error: string | null;
-  readonly revoked_at: string | null;
-  readonly created_at: string;
-}
 
 export interface Signal {
   readonly id: string;

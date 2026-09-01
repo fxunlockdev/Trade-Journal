@@ -23,7 +23,6 @@ import {
   ChevronRight,
   Plus,
   FileUp,
-  Cable,
   LayoutGrid,
   Image as ImageIcon,
 } from "lucide-react";
@@ -98,12 +97,6 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Posters",
     href: "/posters",
     icon: ImageIcon,
-    section: "main",
-  },
-  {
-    label: "MT5 Sync",
-    href: "/mt5-sync",
-    icon: Cable,
     section: "main",
   },
   {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computePnlAbsolute,
   computeTradeFields,
+  resolvePnlDenomination,
 } from "@/lib/trades/computations";
 import { quoteToUsdFactor } from "@/lib/trading/quote-conversion";
 
@@ -186,5 +187,120 @@ describe("every P&L surface passes the instrument (no preview/saved divergence)"
     const { instrument: _omitted, ...withoutSymbol } = jpy;
     const naive = computeTradeFields(withoutSymbol).pnl_absolute!;
     expect(naive / withSymbol).toBeCloseTo(163.76, 1);
+  });
+});
+
+describe("resolvePnlDenomination — what a stored figure is, and how well we know", () => {
+  it("a USD-quoted pair is exactly dollars", () => {
+    const d = resolvePnlDenomination("EURUSD", 1.1);
+    expect(d.factor).toBe(1);
+    expect(d.currency).toBe("USD");
+    expect(d.quality).toBe("exact");
+  });
+
+  it("an indirect quote converts exactly from its own price", () => {
+    // USDJPY: the price IS the JPY/USD rate, so no table is consulted.
+    const d = resolvePnlDenomination("USDJPY", 163.76);
+    expect(d.factor).toBeCloseTo(1 / 163.76, 10);
+    expect(d.currency).toBe("USD");
+    expect(d.quality).toBe("exact");
+  });
+
+  it("a cross is flagged APPROXIMATE — it used a hardcoded mid-rate", () => {
+    // This is the flag that makes these rows findable and fixable later.
+    const d = resolvePnlDenomination("EURJPY", 175);
+    expect(d.currency).toBe("USD");
+    expect(d.quality).toBe("approximate");
+    expect(d.factor).toBeGreaterThan(0);
+  });
+
+  it("an unconvertible currency is reported AS ITSELF, not as dollars", () => {
+    // quoteToUsdFactor refuses to invent a rate and leaves the figure in the
+    // quote currency. Stamping that 'USD' would be exactly the lie this whole
+    // change exists to stop — and the conversion is not "approximate", it
+    // simply never happened.
+    const d = resolvePnlDenomination("ABCXYZ", 10);
+    expect(d.factor).toBe(1);
+    expect(d.currency).toBe("XYZ");
+    expect(d.quality).toBe("exact");
+  });
+
+  it("no instrument means we cannot name the currency, so we say so", () => {
+    const d = resolvePnlDenomination(null, 1.1);
+    expect(d.factor).toBe(1); // legacy callers stay unscaled
+    expect(d.currency).toBeNull();
+    expect(d.quality).toBe("assumed");
+  });
+});
+
+describe("computeTradeFields stamps the denomination", () => {
+  const base = {
+    instrument: "EURUSD",
+    direction: "buy" as const,
+    entry_price: 1.1,
+    exit_price: 1.101,
+    quantity: 10_000,
+    fees: 0,
+    stop_loss: null,
+    tp1: null,
+    tp1_result: null,
+    num_positions: 1,
+    split_risk: false,
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const compute = (o: Record<string, unknown>) => computeTradeFields(o as any);
+
+  it("a closed USD-quoted trade is stamped USD / exact", () => {
+    const out = compute(base);
+    expect(out.pnl_currency).toBe("USD");
+    expect(out.pnl_rate_quality).toBe("exact");
+  });
+
+  it("a closed cross is stamped approximate", () => {
+    const out = compute({ ...base, instrument: "EURJPY", entry_price: 175, exit_price: 175.5 });
+    expect(out.pnl_currency).toBe("USD");
+    expect(out.pnl_rate_quality).toBe("approximate");
+  });
+
+  it("an OPEN trade has no denomination — there is no figure to denominate", () => {
+    const out = compute({ ...base, exit_price: null });
+    expect(out.pnl_absolute).toBeNull();
+    expect(out.pnl_currency).toBeNull();
+    expect(out.pnl_rate_quality).toBeNull();
+  });
+
+  it("a multi-TP close is denominated at its weighted exit", () => {
+    const out = compute({
+      ...base,
+      exit_price: null,
+      tp1: 1.105,
+      tp1_result: "hit",
+    });
+    expect(out.pnl_absolute).not.toBeNull();
+    expect(out.pnl_currency).toBe("USD");
+    expect(out.pnl_rate_quality).toBe("exact");
+  });
+
+  it("STAMPING CHANGES NO MONEY — the whole acceptance criterion", () => {
+    // Every pnl_absolute must be byte-identical to what it was before the
+    // columns existed. The denomination is metadata about the number, never
+    // an input to it.
+    for (const t of [
+      base,
+      { ...base, instrument: "USDJPY", entry_price: 150, exit_price: 150.2 },
+      { ...base, instrument: "EURJPY", entry_price: 175, exit_price: 175.5 },
+      { ...base, instrument: "ABCXYZ", entry_price: 10, exit_price: 10.5 },
+    ]) {
+      const out = compute(t);
+      const expected = computePnlAbsolute(
+        t.entry_price as number,
+        t.exit_price as number,
+        t.quantity,
+        t.direction,
+        t.fees,
+        t.instrument,
+      );
+      expect(out.pnl_absolute).toBeCloseTo(expected, 10);
+    }
   });
 });
