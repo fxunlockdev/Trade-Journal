@@ -330,11 +330,18 @@ export interface ReportDesk {
   readonly owner_user_id: string;
   /** What prints on the poster. Never derived from journal names. */
   readonly name: string;
-  /** Path in the `journal-logos` bucket, or null to print `name`. */
+  /** Path in the `desk-logos` bucket, or null to print `name`. */
   readonly logo_path: string | null;
   readonly journal_ids: readonly string[];
   /** IANA zone deciding what "yesterday" means for this desk's reports. */
   readonly timezone: string;
+  /** Which poster theme publishes. The renderer falls back to the default for
+   *  an unknown id, so this cannot break a scheduled render. */
+  readonly theme_id: string;
+  /** Which styles publish, in POSTER_TEMPLATES order. Never empty: the CHECK
+   *  uses coalesce(array_length(...), 0), because an empty array's length is
+   *  NULL and a NULL check PASSES. */
+  readonly template_ids: readonly string[];
   readonly sort_order: number;
   readonly is_active: boolean;
   readonly created_at: string;

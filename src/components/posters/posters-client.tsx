@@ -261,6 +261,31 @@ export function PostersClient({
    * sending anything else would let a rename quietly re-point a desk at
    * journals the user is not looking at.
    */
+  /**
+   * Send the logo to the server so it outlives this browser.
+   *
+   * The stored value is already a validated, downscaled PNG data URL, so it is
+   * converted back to bytes rather than re-reading and re-checking the original
+   * file. Best-effort: a failed upload leaves the name on the poster, which is
+   * the pre-logo behaviour, and says so rather than failing the whole save.
+   */
+  const uploadLogo = async (id: string, dataUrl: string): Promise<void> => {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const body = new FormData();
+      body.append("file", blob, "logo.png");
+      const res = await fetch(`/api/desks/${id}/logo`, { method: "POST", body });
+      if (!res.ok) {
+        const json: { error?: string } = await res.json().catch(() => ({}));
+        toast.warning(
+          json.error ?? "Saved, but the logo could not be uploaded.",
+        );
+      }
+    } catch {
+      toast.warning("Saved, but the logo could not be uploaded.");
+    }
+  };
+
   const onSaveDesk = async (): Promise<void> => {
     const name = group.trim();
     const journalIds = selectedJournals.map((j) => j.id);
@@ -274,16 +299,33 @@ export function PostersClient({
         {
           method: existing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, journal_ids: journalIds }),
+          // The theme travels WITH the save. Without it the row keeps whatever
+          // it had and the published poster silently differs from this preview,
+          // which is the exact divergence saving is meant to remove.
+          body: JSON.stringify({
+            name,
+            journal_ids: journalIds,
+            theme_id: themeId,
+          }),
         },
       );
-      const json: { error?: string } = await res.json();
+      const json: { error?: string; data?: { id?: string } } =
+        await res.json();
       if (!res.ok) {
-        toast.error(json.error ?? "Couldn't save the desk.");
+        toast.error(json.error ?? "Couldn't save this setup.");
         return;
       }
+
+      // A logo picked in this browser is uploaded now that there is a row to
+      // attach it to. Until this existed the logo stayed in localStorage and
+      // every scheduled poster printed the name instead.
+      const savedId = existing?.id ?? json.data?.id;
+      if (savedId && logo) await uploadLogo(savedId, logo);
+
       toast.success(
-        existing ? "Desk renamed" : "Desk saved. Scheduled reports will use it.",
+        existing
+          ? "Saved. Reports will publish this."
+          : "Saved. Reports will publish this name and look.",
       );
       // The desks list came from the server component, so re-render the route
       // rather than patching local state and letting the two drift. AWAITED:
@@ -395,7 +437,7 @@ export function PostersClient({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Share your results. Every figure comes from your journals&apos; closed
-          trades. The only things you supply are the group name and your logo.
+          trades. The only things you supply are the name and your logo.
         </p>
       </div>
 
@@ -578,10 +620,10 @@ export function PostersClient({
                 </p>
 
                 {/*
-                  Saving the name as a DESK is what makes it survive this
-                  browser. A desk is read from the database, so a scheduled
-                  render publishes the same name this page shows; a name typed
-                  here and left unsaved exists only on this machine.
+                  Saving is what makes this survive the browser. A saved setup
+                  is read from the database, so a scheduled render publishes the
+                  same name, theme and logo this page shows; anything typed here
+                  and left unsaved exists only on this machine.
 
                   Written as independent conditions rather than one ternary
                   because two of these can be true at once: a saved desk whose
@@ -592,7 +634,7 @@ export function PostersClient({
                     className="text-xs text-pos"
                     data-testid="poster-desk-status"
                   >
-                    Saved as a desk. Scheduled reports will publish this name.
+                    Saved. Scheduled reports publish this name, theme and logo.
                   </p>
                 )}
 
@@ -607,24 +649,24 @@ export function PostersClient({
                     className="text-xs text-warn"
                     data-testid="poster-desk-status"
                   >
-                    Not saved. Scheduled reports will still publish
+                    Not saved yet. Scheduled reports still publish
                     &ldquo;{identity.name}&rdquo;.
                   </p>
                 )}
 
                 {/*
-                  PosterBrand prints the logo INSTEAD of the name, so a desk
-                  saved on a machine that has a logo still publishes a
-                  different-looking poster when rendered anywhere else. Said
-                  plainly until the logo itself moves to the database.
+                  This used to warn that the logo was device-local and would not
+                  appear on a scheduled poster. It now uploads when the setup is
+                  saved, so the warning applies only to a logo picked since the
+                  last save: still on this machine, not yet on the row.
                 */}
-                {deskState === "saved" && logo && (
+                {deskState === "changed" && logo && (
                   <p
                     className="text-xs text-warn"
                     data-testid="poster-desk-logo-note"
                   >
-                    Your logo is saved on this device only, so a scheduled
-                    report will print the name instead of it.
+                    Save to upload this logo. Until then a scheduled report
+                    prints the name instead.
                   </p>
                 )}
 
@@ -641,7 +683,7 @@ export function PostersClient({
                     {deskBusy ? (
                       <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                     ) : null}
-                    {deskState === "changed" ? "Update desk name" : "Save as a desk"}
+                    {deskState === "changed" ? "Update this setup" : "Save this setup"}
                   </Button>
                 )}
               </div>
@@ -734,11 +776,14 @@ export function PostersClient({
                   deskId={deskId}
                   deskName={identity.name}
                   chatTitle={destination.chat_title}
+                  templateIds={
+                    desks.find((d) => d.id === deskId)?.template_ids ?? []
+                  }
                 />
               ) : (
                 <p className="text-xs text-muted-foreground">
                   {!deskId
-                    ? "Save this selection as a desk to publish it."
+                    ? "Save this selection to publish it."
                     : "Connect a Telegram group below to publish."}
                 </p>
               )}

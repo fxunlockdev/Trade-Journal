@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { GROUP_NAME_MAX } from "@/lib/posters/scope";
+import { POSTER_THEMES } from "@/lib/posters/theme";
+import { POSTER_TEMPLATES } from "@/lib/posters/templates";
 
 /**
  * A desk names and brands a set of journals for publishing.
@@ -65,12 +67,48 @@ const journalIds = z
   // trades in the desk's own report.
   .transform((ids) => [...new Set(ids)].sort());
 
+/**
+ * Appearance is validated against the code's own lists rather than a database
+ * enum, deliberately.
+ *
+ * Themes and templates are defined in TypeScript and gain entries there (Blue
+ * Violet arrived that way). A CHECK constraint mirroring them would have to be
+ * migrated in lockstep, and this codebase already carries one instance of that
+ * drift. So the API refuses an unknown id, and `getTheme`/`getTemplate` fall
+ * back to a default, meaning a value that slips past degrades to a plain poster
+ * instead of a failed render at 06:00.
+ */
+const themeId = z
+  .string()
+  .refine(
+    (id) => POSTER_THEMES.some((t) => t.id === id),
+    "must be one of the poster themes",
+  );
+
+const templateIds = z
+  .array(
+    z.string().refine(
+      (id) => POSTER_TEMPLATES.some((t) => t.id === id),
+      "must be one of the poster templates",
+    ),
+  )
+  .min(1, "a setup needs at least one template")
+  .max(POSTER_TEMPLATES.length)
+  // Deduped and ordered to match POSTER_TEMPLATES, so the album always arrives
+  // in the same order regardless of the order they were ticked.
+  .transform((ids) => {
+    const chosen = new Set(ids);
+    return POSTER_TEMPLATES.filter((t) => chosen.has(t.id)).map((t) => t.id);
+  });
+
 export const createDeskSchema = z.object({
   name: z.string().trim().min(1).max(GROUP_NAME_MAX),
   journal_ids: journalIds,
   timezone: timezone.default("Europe/London"),
   logo_path: z.string().max(300).nullable().optional(),
   sort_order: z.number().int().min(0).max(999).optional(),
+  theme_id: themeId.optional(),
+  template_ids: templateIds.optional(),
 });
 
 export const updateDeskSchema = z
@@ -81,6 +119,8 @@ export const updateDeskSchema = z
     logo_path: z.string().max(300).nullable(),
     sort_order: z.number().int().min(0).max(999),
     is_active: z.boolean(),
+    theme_id: themeId,
+    template_ids: templateIds,
   })
   .partial();
 

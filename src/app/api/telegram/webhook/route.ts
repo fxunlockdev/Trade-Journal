@@ -307,6 +307,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             admin,
             snapshot: ensured.snapshot,
             deskName: desk.name,
+            templateIds: (desk as ReportDesk).template_ids,
             destination,
             botToken,
             appUrl: process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "",

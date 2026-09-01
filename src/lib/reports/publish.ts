@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { closeRenderer, renderPoster } from "@/lib/reports/render";
-import { POSTER_TEMPLATES } from "@/lib/posters/templates";
+import { POSTER_TEMPLATES, getTemplate } from "@/lib/posters/templates";
 import {
   sendTelegramAlbum,
   TelegramSendError,
@@ -35,6 +35,9 @@ export interface PublishInput {
     readonly metrics: unknown;
   };
   readonly deskName: string;
+  /** Which styles this setup publishes. Empty falls back to all of them, so a
+   *  row written before appearance existed still produces a full album. */
+  readonly templateIds?: readonly string[];
   readonly destination: {
     readonly id: string;
     readonly chat_id: string;
@@ -105,12 +108,19 @@ export async function publishSnapshot(
       metrics: snapshot.metrics as ReportMetrics,
     });
 
+    // Resolved through getTemplate so an id that no longer exists degrades to
+    // a known template rather than throwing mid-album.
+    const chosen =
+      input.templateIds && input.templateIds.length > 0
+        ? input.templateIds.map(getTemplate)
+        : POSTER_TEMPLATES;
+
     const photos: TelegramPhoto[] = [];
     const skipped: string[] = [];
     try {
       // Sequential, sharing one browser: three tabs at once on a 1GB lambda is
       // how a render turns into an out-of-memory kill with no error.
-      for (const template of POSTER_TEMPLATES) {
+      for (const template of chosen) {
         try {
           const bytes = await renderPoster({
             snapshotId: snapshot.id,

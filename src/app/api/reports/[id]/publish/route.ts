@@ -76,7 +76,7 @@ export async function POST(
 
     const { data: desk } = await supabase
       .from("report_desks")
-      .select("id, name")
+      .select("id, name, template_ids")
       .eq("id", snapshot.desk_id)
       .maybeSingle();
 
@@ -144,6 +144,7 @@ export async function POST(
       admin,
       snapshot,
       deskName: desk.name,
+      templateIds: desk.template_ids,
       destination,
       botToken,
       appUrl,

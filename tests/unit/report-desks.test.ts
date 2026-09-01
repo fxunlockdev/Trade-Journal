@@ -35,6 +35,8 @@ const desk = (o: Partial<ReportDesk> = {}): ReportDesk => ({
   logo_path: null,
   journal_ids: [CHRIS, YOHAN],
   timezone: "Europe/London",
+  theme_id: "obsidian-gold",
+  template_ids: ["design-a", "design-b", "design-c"],
   sort_order: 0,
   is_active: true,
   created_at: "2026-09-01T00:00:00Z",
