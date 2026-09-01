@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   parseCommand,
   encodePublish,
@@ -108,5 +108,49 @@ describe("isCadence", () => {
     expect(isCadence("daily")).toBe(true);
     expect(isCadence("yearly")).toBe(false);
     expect(isCadence("__proto__")).toBe(false);
+  });
+});
+
+describe("webhook secret derivation", () => {
+  // Imported lazily: config.ts is server-only and reads the environment.
+  const load = async () => {
+    vi.resetModules();
+    return await import("@/lib/telegram/config");
+  };
+
+  it("passes a Telegram-safe secret through unchanged", async () => {
+    // So a deployment that worked before this existed keeps working.
+    vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "abcDEF123_-abcDEF123");
+    const { telegramWebhookSecret } = await load();
+    expect(telegramWebhookSecret()).toBe("abcDEF123_-abcDEF123");
+  });
+
+  it("hashes a secret containing characters Telegram refuses", async () => {
+    // Telegram rejects the whole setWebhook call on `+`, `/`, `=` and friends
+    // with "secret token contains illegal characters".
+    vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "a+b/c=d!e#f$g%h^i&j*k(l)m");
+    const { telegramWebhookSecret } = await load();
+    const derived = telegramWebhookSecret();
+    expect(derived).toMatch(/^[A-Za-z0-9_-]{1,256}$/);
+    expect(derived).not.toContain("+");
+  });
+
+  it("is deterministic, so registration and verification agree", async () => {
+    vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "a+b/c=d!e#f$g%h^i&j*k(l)m");
+    const first = (await load()).telegramWebhookSecret();
+    const second = (await load()).telegramWebhookSecret();
+    expect(first).toBe(second);
+  });
+
+  it("refuses a short secret rather than hashing it into false strength", async () => {
+    vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "short");
+    const { telegramWebhookSecret } = await load();
+    expect(telegramWebhookSecret()).toBeNull();
+  });
+
+  it("is null when unset", async () => {
+    vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "");
+    const { telegramWebhookSecret } = await load();
+    expect(telegramWebhookSecret()).toBeNull();
   });
 });

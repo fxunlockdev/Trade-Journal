@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { telegramBotToken } from "@/lib/telegram/config";
+import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
 
 /**
  * Point the bot at this deployment's webhook.
@@ -82,14 +82,15 @@ export async function POST(): Promise<NextResponse> {
   }
 
   const botToken = telegramBotToken();
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  // Derived, so a secret containing characters Telegram refuses still works.
+  const secret = telegramWebhookSecret();
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
 
   if (!botToken || !secret || !appUrl) {
     return NextResponse.json(
       {
         error:
-          "Telegram is not fully configured. TELEGRAM_REPORTS_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET and NEXT_PUBLIC_APP_URL are all required.",
+          "Telegram is not fully configured. TELEGRAM_REPORTS_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (16+ characters) and NEXT_PUBLIC_APP_URL are all required.",
       },
       { status: 503 },
     );

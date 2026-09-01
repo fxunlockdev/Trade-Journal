@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { telegramBotToken } from "@/lib/telegram/config";
+import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
 import {
   parseCommand,
   decodePublish,
@@ -45,7 +45,9 @@ const BUDGET_MS = 280_000;
 
 /** Length-guarded constant-time compare of Telegram's secret header. */
 function verifySecret(request: NextRequest): boolean {
-  const expected = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  // The SAME derivation the setup route registered with. Both call one
+  // function precisely so they cannot disagree about what the secret is.
+  const expected = telegramWebhookSecret();
   if (!expected) return false;
   const got = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
   if (got.length !== expected.length) return false;
