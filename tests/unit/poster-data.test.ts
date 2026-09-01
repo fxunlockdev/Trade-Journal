@@ -89,6 +89,41 @@ describe("resolveCloseDate — close time, entry as fallback", () => {
     expect(fromExit).toBe(false);
     expect(date.toISOString()).toBe("2026-08-24T09:00:00.000Z");
   });
+
+  /**
+   * Why `exit_time` must never be server-stamped at edit time.
+   *
+   * A real incident: two trades entered Fri 21 Aug were marked closed on Thu
+   * 27 Aug during a catch-up session. The PATCH route stamped `exit_time =
+   * now()`, so the weekly poster for 24-30 Aug counted them and published 8
+   * trades where the journal listed 6, with 20 pips of losses that belonged to
+   * the previous week.
+   *
+   * These two cases pin the mechanism, so anyone tempted to reintroduce the
+   * stamp can see what it costs. `exit_time` is a factual claim about the
+   * market; only the user or a broker fill may supply it.
+   */
+  it("keeps a late-recorded close in the week it was ENTERED when no close time exists", () => {
+    const week = resolvePeriod("this-week", new Date(2026, 7, 27, 10, 0));
+    const entered21st = mk({
+      entry_time: "2026-08-21T15:42:00Z",
+      exit_time: null,
+      pnl_absolute: -100,
+    });
+    expect(tradesInRange([entered21st], week)).toHaveLength(0);
+  });
+
+  it("would drag that trade into the wrong week if a close time were invented", () => {
+    const week = resolvePeriod("this-week", new Date(2026, 7, 27, 10, 0));
+    const stamped = mk({
+      entry_time: "2026-08-21T15:42:00Z",
+      // What `new Date().toISOString()` at edit time produced: the moment of
+      // the EDIT, six days after the trade was entered.
+      exit_time: "2026-08-27T10:13:36.208Z",
+      pnl_absolute: -100,
+    });
+    expect(tradesInRange([stamped], week)).toHaveLength(1);
+  });
 });
 
 describe("tradesInRange", () => {
