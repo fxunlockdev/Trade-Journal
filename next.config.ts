@@ -60,14 +60,27 @@ const nextConfig: NextConfig = {
   // ANY NEW ROUTE THAT RENDERS A POSTER NEEDS A KEY HERE — the scheduled cron
   // entry point will, when it lands, and it will fail exactly like the above
   // if it does not get one.
-  // Both entry points that start a browser. The cron route is NOT under
-  // /api/reports, so it needs its own key: the first build after it was added
-  // traced 0 chromium files into it, which would have deployed a scheduler
-  // that failed every morning with the missing-bin error.
+  // THE RULE: every route that can reach `lib/reports/render` needs a key
+  // here, and the tracer will not tell you when one is missing. It fails at
+  // runtime, in production, with the missing-bin error above.
+  //
+  // This has now caught two routes that were added later and did not match an
+  // existing pattern (`/api/cron/reports`, then `/api/telegram/webhook`, which
+  // renders inside an `after()` callback). Both built cleanly and traced ZERO
+  // chromium files. Before adding a route that publishes a poster, add its key,
+  // then confirm with:
+  //
+  //   npm run build && python3 -c "import json;\
+  //     print(len([f for f in json.load(open('.next/server/app/<ROUTE>/route.js.nft.json'))['files'] \
+  //     if '@sparticuz/chromium/bin' in f]))"
+  //
+  // Scoped per route rather than a blanket `/api/**` because this adds ~69MB
+  // to whatever it matches, and most routes have no use for a browser.
   outputFileTracingIncludes: {
     "/api/reports/*/render": ["./node_modules/@sparticuz/chromium/bin/**/*"],
     "/api/reports/*/publish": ["./node_modules/@sparticuz/chromium/bin/**/*"],
     "/api/cron/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/telegram/webhook": ["./node_modules/@sparticuz/chromium/bin/**/*"],
   },
 
   async headers() {
