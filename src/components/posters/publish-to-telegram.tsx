@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { Cadence } from "@/lib/telegram/commands";
+import { POSTER_TEMPLATES } from "@/lib/posters/templates";
+import { useRouter } from "next/navigation";
 
 /**
  * Publishing a desk's report to the connected group.
@@ -25,25 +27,70 @@ const CADENCES: readonly { readonly id: Cadence; readonly label: string }[] = [
 ];
 
 interface PublishToTelegramProps {
-  /** Null when the current journal selection is not a saved desk. */
+  /** Null when the current journal selection has not been saved yet. */
   readonly deskId: string | null;
   readonly deskName: string;
   /** Null when no group is connected. */
   readonly chatTitle: string | null;
+  /** Which styles this setup publishes, from the saved row. */
+  readonly templateIds: readonly string[];
 }
 
 export function PublishToTelegram({
   deskId,
   deskName,
   chatTitle,
+  templateIds,
 }: PublishToTelegramProps) {
   const [cadence, setCadence] = useState<Cadence>("daily");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [savingStyles, setSavingStyles] = useState(false);
+  const router = useRouter();
 
   // Nothing to publish, or nowhere to publish it. The Telegram card directly
   // below explains how to connect, so this stays silent rather than repeating.
   if (!deskId || !chatTitle) return null;
+
+  /**
+   * Turn one style on or off for this setup.
+   *
+   * Saved immediately rather than behind another button: this is a preference,
+   * not a transaction, and a "save your save" step is how a setting ends up
+   * silently not applying. The last one cannot be removed, because a setup that
+   * publishes nothing would sit in the scheduler doing nothing every morning
+   * with no way to tell it was misconfigured.
+   */
+  const toggleStyle = async (id: string): Promise<void> => {
+    if (!deskId) return;
+    const next = templateIds.includes(id)
+      ? templateIds.filter((t) => t !== id)
+      : [...templateIds, id];
+
+    if (next.length === 0) {
+      toast.info("Keep at least one style, or there is nothing to publish.");
+      return;
+    }
+
+    setSavingStyles(true);
+    try {
+      const res = await fetch(`/api/desks/${deskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_ids: next }),
+      });
+      if (!res.ok) {
+        const json: { error?: string } = await res.json().catch(() => ({}));
+        toast.error(json.error ?? "Couldn't save that.");
+        return;
+      }
+      await router.refresh();
+    } catch {
+      toast.error("Couldn't reach the server.");
+    } finally {
+      setSavingStyles(false);
+    }
+  };
 
   const run = async (): Promise<void> => {
     setBusy(true);
@@ -87,10 +134,11 @@ export function PublishToTelegram({
       }
 
       const skipped: readonly string[] = pubJson.data.skipped ?? [];
+      const posted: number = pubJson.data.posted ?? 0;
       toast.success(
         skipped.length > 0
-          ? `Posted ${pubJson.data.posted} of 3 posters to ${pubJson.data.chat}. ${skipped.length} could not be drawn.`
-          : `Posted 3 posters to ${pubJson.data.chat}.`,
+          ? `Posted ${posted} to ${pubJson.data.chat}. ${skipped.length} could not be drawn.`
+          : `Posted ${posted} ${posted === 1 ? "poster" : "posters"} to ${pubJson.data.chat}.`,
       );
     } catch {
       // A dropped connection says nothing about whether the send happened, so
@@ -104,7 +152,36 @@ export function PublishToTelegram({
   };
 
   return (
-    <div className="space-y-2" data-testid="poster-publish">
+    <div className="space-y-3" data-testid="poster-publish">
+      <div className="space-y-1.5">
+        <p className="text-xs text-muted-foreground">
+          Styles sent to {chatTitle}
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {POSTER_TEMPLATES.map((t) => {
+            const on = templateIds.includes(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                disabled={savingStyles || busy}
+                onClick={() => void toggleStyle(t.id)}
+                className={`rounded-md border px-2 py-1 text-xs transition-colors ${
+                  on
+                    ? "border-pos/40 bg-pos/10 text-pos"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid={`poster-style-${t.id}`}
+                aria-pressed={on}
+              >
+                {on ? "\u2713 " : ""}
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex gap-1.5">
         {CADENCES.map((c) => (
           <button

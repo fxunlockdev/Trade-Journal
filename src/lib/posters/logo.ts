@@ -185,7 +185,14 @@ function decodePng(url: string): Promise<HTMLImageElement> {
  */
 const IHDR_LENGTH = 13;
 
-function readDeclaredSize(
+/**
+ * PNG dimensions from the IHDR header, without decoding the image.
+ *
+ * Exported because the SERVER needs it too: an upload route has no canvas, so
+ * the header is the only thing it can check. Reading the declared size before
+ * any decode is also what keeps a decompression bomb from being decoded at all.
+ */
+export function readDeclaredSize(
   bytes: ArrayBuffer,
 ): { readonly width: number; readonly height: number } | null {
   if (bytes.byteLength < 24) return null;

@@ -35,8 +35,14 @@ interface SnapshotRow {
   readonly report_desks: {
     readonly name: string;
     readonly journal_ids: readonly string[];
+    readonly theme_id: string;
+    readonly logo_path: string | null;
   } | null;
 }
+
+/** How long the logo URL needs to outlive its own page load. Short, because it
+ *  is minted per render and never leaves this process except into Chromium. */
+const LOGO_URL_TTL_SECONDS = 120;
 
 export default async function RenderPosterPage({
   params,
@@ -52,7 +58,9 @@ export default async function RenderPosterPage({
   const admin = createAdminClient();
   const { data } = await admin
     .from("report_snapshots")
-    .select("id, cadence, period_start, period_end, metrics, report_desks(name, journal_ids)")
+    .select(
+      "id, cadence, period_start, period_end, metrics, report_desks(name, journal_ids, theme_id, logo_path)",
+    )
     .eq("id", claims.snapshotId)
     .maybeSingle();
 
@@ -61,7 +69,27 @@ export default async function RenderPosterPage({
 
   const template = getTemplate(claims.style);
   const Template = template.Component;
-  const theme = getTheme("obsidian-gold");
+
+  // The DESK's theme, not a hardcoded one. Until this existed, a user could
+  // pick Blue Violet, publish, and receive Obsidian Gold: what they designed
+  // was never what went to the group. `getTheme` falls back to the default for
+  // an unknown id, so a stale value degrades to a plain poster rather than
+  // failing a 06:00 render.
+  const theme = getTheme(snapshot.report_desks.theme_id);
+
+  // The logo lives in a PRIVATE bucket, so a short-lived signed URL is minted
+  // here and handed to Chromium. A public URL would put every customer's brand
+  // asset behind a guessable address.
+  //
+  // Best-effort: a missing or unreadable logo prints the name instead, which is
+  // the pre-logo behaviour and strictly better than failing the render.
+  let logoUrl: string | null = null;
+  if (snapshot.report_desks.logo_path) {
+    const signed = await admin.storage
+      .from("desk-logos")
+      .createSignedUrl(snapshot.report_desks.logo_path, LOGO_URL_TTL_SECONDS);
+    logoUrl = signed.data?.signedUrl ?? null;
+  }
 
   // A desk spanning several journals must SAY so on the artefact. The
   // on-screen breakdown is not published, and a reader would otherwise take
@@ -91,7 +119,7 @@ export default async function RenderPosterPage({
         stats={snapshot.metrics.stats}
         theme={theme}
         group={snapshot.report_desks.name}
-        logo={null}
+        logo={logoUrl}
         periodKind={snapshot.cadence.toUpperCase()}
         dateLabel={formatPeriodLabel({
           cadence: snapshot.cadence,

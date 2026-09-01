@@ -172,6 +172,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           admin,
           snapshot,
           deskName: desk.name,
+          templateIds: desk.template_ids,
           destination,
           botToken,
           appUrl,
