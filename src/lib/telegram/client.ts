@@ -101,9 +101,19 @@ interface RawChat {
  * answers 409 while one is set. This is the connect-time path only, and moves
  * to reading the webhook's own updates once that exists.
  */
+export interface ChatDiscovery {
+  readonly chats: readonly TelegramChat[];
+  /** Raw updates Telegram had queued. Zero is the diagnostic that matters. */
+  readonly updatesSeen: number;
+  /** Update types present, so "only my_chat_member" is distinguishable. */
+  readonly updateKinds: readonly string[];
+  /** Private chats dropped. Non-zero with no groups means DMs only. */
+  readonly privateSkipped: number;
+}
+
 export async function listTelegramChats(
   botToken: string,
-): Promise<readonly TelegramChat[]> {
+): Promise<ChatDiscovery> {
   const url = `https://api.telegram.org/bot${botToken}/getUpdates?limit=100&allowed_updates=${encodeURIComponent(
     JSON.stringify(["message", "channel_post", "my_chat_member"]),
   )}`;
@@ -121,17 +131,29 @@ export async function listTelegramChats(
     );
   }
 
+  const updates = data.result ?? [];
+
   // Deduped by id and ordered newest-first by insertion, so the group someone
   // just posted in appears at the top of the picker.
   const seen = new Map<string, TelegramChat>();
-  for (const update of [...(data.result ?? [])].reverse()) {
+  const kinds = new Set<string>();
+  let privateSkipped = 0;
+
+  for (const update of [...updates].reverse()) {
+    if (update.message) kinds.add("message");
+    if (update.channel_post) kinds.add("channel_post");
+    if (update.my_chat_member) kinds.add("my_chat_member");
+
     const chat =
       update.message?.chat ??
       update.channel_post?.chat ??
       update.my_chat_member?.chat;
     if (!chat?.id || !chat.type) continue;
     // Private chats are the bot's own DMs, never a publishing destination.
-    if (chat.type === "private") continue;
+    if (chat.type === "private") {
+      privateSkipped++;
+      continue;
+    }
     const id = String(chat.id);
     if (seen.has(id)) continue;
     seen.set(id, {
@@ -140,5 +162,40 @@ export async function listTelegramChats(
       type: chat.type as TelegramChat["type"],
     });
   }
-  return [...seen.values()];
+
+  return {
+    chats: [...seen.values()],
+    updatesSeen: updates.length,
+    updateKinds: [...kinds],
+    privateSkipped,
+  };
+}
+
+/**
+ * Why discovery found nothing, in words the user can act on.
+ *
+ * The previous message asserted a single cause ("add the bot to a group, post a
+ * message") which is only sometimes right, and unhelpful when it is not. These
+ * three cases have genuinely different fixes, and the counts distinguish them.
+ */
+export function explainNoChats(d: ChatDiscovery): string {
+  if (d.updatesSeen === 0) {
+    return (
+      "Telegram has nothing queued for this bot. Most likely privacy mode is " +
+      "still on: in @BotFather send /setprivacy, pick this bot, choose Disable, " +
+      "then post in the group again. (A bot with privacy on cannot see ordinary " +
+      "group messages.)"
+    );
+  }
+  if (d.privateSkipped > 0 && d.chats.length === 0) {
+    return (
+      `Only direct messages found (${d.privateSkipped}). A DM with the bot is ` +
+      "not a publishing destination. Post in the GROUP, not in the chat with " +
+      "the bot."
+    );
+  }
+  return (
+    `Saw ${d.updatesSeen} update(s) [${d.updateKinds.join(", ") || "none"}] but ` +
+    "no group among them. Post a message in the group and try again."
+  );
 }

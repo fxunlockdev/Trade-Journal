@@ -40,19 +40,28 @@ export function TelegramDestinationCard({
   const [busy, setBusy] = useState<"find" | "connect" | "test" | "off" | null>(
     null,
   );
+  const [hint, setHint] = useState<string | null>(null);
 
   const findChats = async (): Promise<void> => {
     setBusy("find");
     try {
       const res = await fetch("/api/telegram/chats");
-      const json: { data?: TelegramChat[]; error?: string } = await res.json();
+      const json: {
+        data?: TelegramChat[];
+        error?: string;
+        meta?: { hint?: string | null };
+      } = await res.json();
       if (!res.ok) {
         toast.error(json.error ?? "Couldn't reach Telegram.");
         return;
       }
       setChats(json.data ?? []);
       if ((json.data ?? []).length === 0) {
-        toast.info("No groups found. Add the bot to a group, post a message there, then try again.");
+        // The server knows what it actually saw; repeating one guessed cause
+        // here would send someone to fix the wrong thing.
+        setHint(json.meta?.hint ?? null);
+      } else {
+        setHint(null);
       }
     } catch {
       toast.error("Couldn't reach the server.");
@@ -186,6 +195,12 @@ export function TelegramDestinationCard({
               below. Telegram only shows a bot the groups it has seen activity
               in.
             </p>
+
+            {hint && (
+              <p className="text-xs text-warn" data-testid="telegram-hint">
+                {hint}
+              </p>
+            )}
 
             {chats === null ? (
               <Button
