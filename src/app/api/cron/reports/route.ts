@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { telegramBotToken } from "@/lib/telegram/config";
 import { dueCadences } from "@/lib/reports/schedule";
-import { buildSnapshot } from "@/lib/reports/snapshot";
 import { resolveReportPeriod } from "@/lib/reports/periods-tz";
 import { publishSnapshot } from "@/lib/reports/publish";
+import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import type { Cadence } from "@/lib/reports/periods-tz";
-import type { ReportDesk, Trade } from "@/types/database";
+import type { ReportDesk } from "@/types/database";
 
 /**
  * The morning run.
@@ -34,14 +34,6 @@ const BUDGET_MS = 280_000;
  *  stops and leaves the rest to the next tick, rather than being killed
  *  mid-send, which is the in-doubt case. */
 const PER_DESK_MS = 90_000;
-
-const EDGE_DAYS = 3;
-
-function shiftIso(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString();
-}
 
 /**
  * Constant-time-ish comparison of the cron secret.
@@ -151,56 +143,30 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
         if (already) continue;
 
-        const { data: trades } = await admin
-          .from("trades")
-          .select("*")
-          .in("journal_id", desk.journal_ids)
-          .gte("entry_time", shiftIso(period.start, -365))
-          .lte("entry_time", shiftIso(period.end, EDGE_DAYS));
-
-        const draft = buildSnapshot(
+        // One implementation of "find or freeze this period", shared with the
+        // button and the Telegram commands, so all three cannot drift on what
+        // yesterday's report for a desk actually is.
+        const ensured = await ensureSnapshot(
+          admin,
           desk,
           cadence as Cadence,
-          (trades ?? []) as Trade[],
           now,
         );
 
-        // An empty period is skipped, not published. A poster reading zero
-        // trades tells partners nothing and looks like a fault.
-        if (draft.trade_count === 0) {
+        if (ensured.kind === "empty") {
           results.push({ desk: desk.name, cadence, outcome: "skipped: no trades" });
           continue;
         }
-
-        // Existing snapshot wins: its numbers are frozen and may already have
-        // been rendered. Never recompute over one.
-        const existing = await admin
-          .from("report_snapshots")
-          .select("id, cadence, period_start, period_end, metrics")
-          .eq("desk_id", desk.id)
-          .eq("cadence", cadence)
-          .eq("period_start", draft.period_start)
-          .eq("period_end", draft.period_end)
-          .maybeSingle();
-
-        let snapshot = existing.data;
-        if (!snapshot) {
-          const inserted = await admin
-            .from("report_snapshots")
-            .insert(draft)
-            .select("id, cadence, period_start, period_end, metrics")
-            .single();
-          if (inserted.error || !inserted.data) {
-            results.push({
-              desk: desk.name,
-              cadence,
-              outcome: "failed",
-              detail: "could not save the report",
-            });
-            continue;
-          }
-          snapshot = inserted.data;
+        if (ensured.kind === "error") {
+          results.push({
+            desk: desk.name,
+            cadence,
+            outcome: "failed",
+            detail: ensured.message,
+          });
+          continue;
         }
+        const snapshot = ensured.snapshot;
 
         const outcome = await publishSnapshot({
           admin,
