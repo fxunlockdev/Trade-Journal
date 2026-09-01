@@ -228,6 +228,7 @@ export default async function PosterHarnessPage({
       trades={trades}
       journals={HARNESS_JOURNALS}
       desks={[]}
+      destination={null}
       activeJournalId={JOURNAL_A}
       loadError={null}
     />

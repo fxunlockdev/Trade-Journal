@@ -866,3 +866,37 @@ test.describe("poster logo", () => {
     await expect(page.getByTestId("poster-canvas")).toContainText("YOHAN");
   });
 });
+
+/**
+ * Telegram connect endpoints.
+ *
+ * These reach a third party and can make it deliver a message to a room full
+ * of partners, so the auth gate matters more than usual. Asserted anonymously,
+ * following the import.spec.ts precedent — no session, no secrets needed.
+ */
+test.describe("telegram connect — auth gate", () => {
+  test("listing groups requires a session", async ({ request }) => {
+    const res = await request.get("/api/telegram/chats");
+    expect(res.status()).toBe(401);
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  test("connecting a destination requires a session", async ({ request }) => {
+    const res = await request.post("/api/telegram/destination", {
+      data: { chat_id: "-1001234567890", chat_title: "Someone else's group" },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("sending a test message requires a session", async ({ request }) => {
+    // The one that actually notifies people. An anonymous caller must never
+    // be able to make the bot post.
+    const res = await request.post("/api/telegram/test");
+    expect(res.status()).toBe(401);
+  });
+
+  test("disconnecting requires a session", async ({ request }) => {
+    const res = await request.delete("/api/telegram/destination");
+    expect(res.status()).toBe(401);
+  });
+});

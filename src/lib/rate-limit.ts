@@ -58,4 +58,7 @@ export const LIMITS = {
   assistant: { name: "assistant", max: 20, windowSeconds: 60 },
   /** Lead capture is anonymous, so it's the obvious spam target. */
   rebateLead: { name: "rebate_lead", max: 5, windowSeconds: 3600 },
+  // A button that makes Telegram notify a room full of partners, so a stuck
+  // finger must not become twenty notifications for everyone in it.
+  telegramTest: { name: "telegram_test", max: 5, windowSeconds: 300 },
 } as const satisfies Record<string, RateLimitRule>;
