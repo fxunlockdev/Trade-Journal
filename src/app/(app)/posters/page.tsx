@@ -128,11 +128,22 @@ export default async function PostersPage() {
 
   // Desks name and brand a journal COMBINATION. Read through the RLS client:
   // report_desks has real policies scoped to the owner, unlike trades.
-  const { data: deskRows } = await supabase
+  const { data: deskRows, error: desksError } = await supabase
     .from("report_desks")
     .select("*")
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
+
+  // Reported, not swallowed. Every other read on this page surfaces its
+  // failure; a silent one here (a migration not yet applied, say) would leave
+  // every desk-branded poster quietly falling back to its derived name with
+  // nothing on screen admitting why.
+  if (desksError) {
+    console.error("[TRDR] Posters desks error:", desksError.message);
+    loadError =
+      loadError ??
+      "Couldn't load your saved desks, so posters are using their default names.";
+  }
 
   return (
     <PostersClient

@@ -6,6 +6,15 @@ import { assertJournalsAccessible } from "@/lib/reports/desk-access";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
+ * A path segment reaches `.eq("id", …)` unvalidated otherwise, and PostgREST
+ * answers a non-uuid with 22P02 — which the catch-all turns into a 500 quoting
+ * `invalid input syntax for type uuid`. A bad id is a missing desk, not a
+ * server fault.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Single-desk endpoints. Ownership is enforced by RLS
  * (`owner_user_id = auth.uid()`), so a desk belonging to someone else simply
  * does not exist to this client — no row comes back and the update affects
@@ -18,6 +27,9 @@ export async function PATCH(
 ): Promise<NextResponse> {
   try {
     const { id } = await context.params;
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: "Desk not found" }, { status: 404 });
+    }
     const supabase = await createClient();
     const {
       data: { user },
@@ -92,6 +104,9 @@ export async function DELETE(
 ): Promise<NextResponse> {
   try {
     const { id } = await context.params;
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: "Desk not found" }, { status: 404 });
+    }
     const supabase = await createClient();
     const {
       data: { user },

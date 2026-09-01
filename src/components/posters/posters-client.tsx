@@ -187,7 +187,10 @@ export function PostersClient({
     // here would show one name on screen and publish a different one at 06:00
     // — the exact disagreement moving branding into the database removes.
     if (identity.fromDesk) {
-      setGroup(identity.name);
+      // Only adopt the desk's name when the field has not been edited since
+      // the last sync. router.refresh() lands asynchronously after a save, and
+      // without this it would overwrite anything typed in the meantime.
+      if (!groupEditedRef.current) setGroup(identity.name);
       return;
     }
     // Guarded like the logo's: this effect runs FIRST, so an unprotected read
@@ -238,6 +241,9 @@ export function PostersClient({
       ? "saved"
       : "changed";
   const [deskBusy, setDeskBusy] = useState(false);
+  // True once the user types, cleared when a save completes. Guards the
+  // desk-name sync against clobbering an in-progress edit.
+  const groupEditedRef = useRef(false);
 
   /**
    * Save the current selection and name as a desk, or rename an existing one.
@@ -272,8 +278,11 @@ export function PostersClient({
         existing ? "Desk renamed" : "Desk saved. Scheduled reports will use it.",
       );
       // The desks list came from the server component, so re-render the route
-      // rather than patching local state and letting the two drift.
-      router.refresh();
+      // rather than patching local state and letting the two drift. AWAITED:
+      // releasing the button first would leave `desks` stale, `deskId` null,
+      // and a second click would POST a second desk over the same journals.
+      groupEditedRef.current = false;
+      await router.refresh();
     } catch {
       toast.error("Couldn't reach the server. Try again.");
     } finally {
@@ -282,6 +291,7 @@ export function PostersClient({
   };
 
   const onGroupChange = (value: string) => {
+    groupEditedRef.current = true;
     setGroup(value);
     if (!groupKey) return;
     if (value.trim() === "" || value === defaultGroup) {
@@ -564,15 +574,53 @@ export function PostersClient({
                   browser. A desk is read from the database, so a scheduled
                   render publishes the same name this page shows; a name typed
                   here and left unsaved exists only on this machine.
+
+                  Written as independent conditions rather than one ternary
+                  because two of these can be true at once: a saved desk whose
+                  logo is still device-local needs both lines.
                 */}
-                {deskState === "saved" ? (
+                {deskState === "saved" && (
                   <p
                     className="text-xs text-pos"
                     data-testid="poster-desk-status"
                   >
-                    Saved as a desk. Scheduled reports will use this name.
+                    Saved as a desk. Scheduled reports will publish this name.
                   </p>
-                ) : (
+                )}
+
+                {/*
+                  The canvas renders the EDITED name, so here the PNG you
+                  download says one thing and a scheduled render says another.
+                  That is the divergence desks exist to remove, so it is stated
+                  outright rather than left to a button label changing.
+                */}
+                {deskState === "changed" && (
+                  <p
+                    className="text-xs text-warn"
+                    data-testid="poster-desk-status"
+                  >
+                    Not saved. Scheduled reports will still publish
+                    &ldquo;{identity.name}&rdquo;.
+                  </p>
+                )}
+
+                {/*
+                  PosterBrand prints the logo INSTEAD of the name, so a desk
+                  saved on a machine that has a logo still publishes a
+                  different-looking poster when rendered anywhere else. Said
+                  plainly until the logo itself moves to the database.
+                */}
+                {deskState === "saved" && logo && (
+                  <p
+                    className="text-xs text-warn"
+                    data-testid="poster-desk-logo-note"
+                  >
+                    Your logo is saved on this device only, so a scheduled
+                    report will print the name instead of it.
+                  </p>
+                )}
+
+                {deskState !== "saved" && (
                   <Button
                     type="button"
                     variant="outline"

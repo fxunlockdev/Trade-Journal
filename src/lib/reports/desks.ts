@@ -50,7 +50,14 @@ export function findDeskForJournals(
 export interface PosterIdentity {
   /** The name to print. */
   readonly name: string;
-  /** Logo path, or null to print the name. */
+  /**
+   * Logo path, or null to print the name.
+   *
+   * NOTHING WRITES THIS YET. `report_desks.logo_path` has no producer until the
+   * logo move lands, so this is null for every desk the app can currently
+   * create, and the poster still takes its logo from localStorage. Consuming
+   * it before there is an upload path would silently drop a user's logo.
+   */
   readonly logoPath: string | null;
   /** True when this came from a saved desk rather than being derived. */
   readonly fromDesk: boolean;
