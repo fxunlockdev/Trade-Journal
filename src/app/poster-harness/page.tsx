@@ -227,6 +227,7 @@ export default async function PosterHarnessPage({
     <PostersClient
       trades={trades}
       journals={HARNESS_JOURNALS}
+      desks={[]}
       activeJournalId={JOURNAL_A}
       loadError={null}
     />

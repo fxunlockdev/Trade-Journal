@@ -78,10 +78,27 @@ export function posterScopeKey(
   kind: string,
   journalIds: readonly string[],
 ): string | null {
+  const set = journalSetKey(journalIds);
   // No journals means no combination to remember; a bare "trdr_poster_group:"
   // would be a keyless global entry shared by every such state.
+  if (set === null) return null;
+  return `trdr_poster_${kind}:${set}`;
+}
+
+/**
+ * The canonical identity of a set of journals.
+ *
+ * Sorted, so ticking Yohan-then-Chris and Chris-then-Yohan are the same set.
+ * This is the ONE definition of "the same combination" — storage keys and saved
+ * desks both build on it, because two hand-rolled sort-and-joins would only
+ * have to disagree once for a desk to stop matching the selection that created
+ * it, and the poster would silently lose its name and logo.
+ *
+ * Null for an empty set: no journals is not a combination.
+ */
+export function journalSetKey(journalIds: readonly string[]): string | null {
   if (journalIds.length === 0) return null;
-  return `trdr_poster_${kind}:${[...journalIds].sort().join("+")}`;
+  return [...journalIds].sort().join("+");
 }
 
 export interface JournalCount {
