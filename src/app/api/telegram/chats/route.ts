@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { listTelegramChats } from "@/lib/telegram/client";
+import { explainNoChats, listTelegramChats } from "@/lib/telegram/client";
 import { telegramBotToken } from "@/lib/telegram/config";
 
 /**
@@ -32,8 +32,18 @@ export async function GET(): Promise<NextResponse> {
       );
     }
 
-    const chats = await listTelegramChats(token);
-    return NextResponse.json({ data: chats });
+    const discovery = await listTelegramChats(token);
+    return NextResponse.json({
+      data: discovery.chats,
+      // Returned so the UI can say WHY nothing was found rather than guessing
+      // at one cause. Counts only — no message content, no chat contents.
+      meta: {
+        updatesSeen: discovery.updatesSeen,
+        updateKinds: discovery.updateKinds,
+        privateSkipped: discovery.privateSkipped,
+        hint: discovery.chats.length === 0 ? explainNoChats(discovery) : null,
+      },
+    });
   } catch (err: unknown) {
     // Telegram's own description is echoed by the client's thrown Error, and it
     // can be genuinely useful here ("terminated by other getUpdates request"
