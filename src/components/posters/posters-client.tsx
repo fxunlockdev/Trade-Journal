@@ -62,6 +62,7 @@ import {
   scopeTrades,
 } from "@/lib/posters/scope";
 import { findDeskForJournals, posterIdentity } from "@/lib/reports/desks";
+import { PublishToTelegram } from "@/components/posters/publish-to-telegram";
 import type { JournalWithRole, ReportDesk, Trade } from "@/types/database";
 
 interface PostersClientProps {
@@ -714,6 +715,33 @@ export function PostersClient({
                   replaces the group name on the poster.
                 </p>
               </div>
+            </CardContent>
+          </Card>
+
+          {/*
+            Publishing sits ABOVE the connection card because that is the order
+            it is used in: connect once, publish often. It renders nothing at
+            all until a desk is saved and a group is connected, so the card
+            below stays the single place that explains how to get there.
+          */}
+          <Card className="border-border bg-card">
+            <CardContent className="space-y-3 pt-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Publish
+              </p>
+              {deskId && destination?.chat_title ? (
+                <PublishToTelegram
+                  deskId={deskId}
+                  deskName={identity.name}
+                  chatTitle={destination.chat_title}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {!deskId
+                    ? "Save this selection as a desk to publish it."
+                    : "Connect a Telegram group below to publish."}
+                </p>
+              )}
             </CardContent>
           </Card>
 
