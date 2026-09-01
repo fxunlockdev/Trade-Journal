@@ -45,6 +45,10 @@ import {
 import { logoStorageKey } from "@/lib/posters/logo";
 import { usePosterLogo } from "@/hooks/use-poster-logo";
 import { safeGet, safeRemove, safeSet } from "@/lib/safe-storage";
+import {
+  TelegramDestinationCard,
+  type DestinationSummary,
+} from "@/components/posters/telegram-destination-card";
 import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import {
@@ -66,6 +70,8 @@ interface PostersClientProps {
   readonly journals: readonly JournalWithRole[];
   /** Saved, named journal combinations. A match here names the poster. */
   readonly desks: readonly ReportDesk[];
+  /** Where marketing images publish, or null if not connected yet. */
+  readonly destination: DestinationSummary | null;
   readonly activeJournalId: string | null;
   readonly loadError: string | null;
 }
@@ -74,6 +80,7 @@ export function PostersClient({
   trades,
   journals,
   desks,
+  destination,
   activeJournalId,
   loadError,
 }: PostersClientProps) {
@@ -709,6 +716,8 @@ export function PostersClient({
               </div>
             </CardContent>
           </Card>
+
+          <TelegramDestinationCard destination={destination} />
 
           <Card className="border-border bg-card">
             <CardContent className="space-y-2 pt-6 text-xs">

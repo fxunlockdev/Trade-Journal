@@ -145,8 +145,14 @@ export default async function PostersPage() {
       "Couldn't load your saved desks, so posters are using their default names.";
   }
 
+  const { data: destination } = await supabase
+    .from("telegram_destinations")
+    .select("chat_id, chat_title, status, last_error")
+    .maybeSingle();
+
   return (
     <PostersClient
+      destination={destination ?? null}
       trades={trades}
       journals={journals}
       desks={(deskRows ?? []) as ReportDesk[]}
