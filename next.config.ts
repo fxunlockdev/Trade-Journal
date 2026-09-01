@@ -25,9 +25,7 @@ const nextConfig: NextConfig = {
   //
   // @sparticuz/chromium ships a brotli-compressed Chromium in its own `bin`
   // directory and resolves that path relative to itself at runtime. Bundled,
-  // the code is relocated and the binary is left behind, so a deployed render
-  // fails with `The input directory ".../@sparticuz/chromium/bin" does not
-  // exist` — which is precisely what production did before this line existed.
+  // the code is relocated and the binary is left behind.
   // puppeteer-core rides along because it is what loads it.
   serverExternalPackages: [
     "openai",
@@ -35,6 +33,36 @@ const nextConfig: NextConfig = {
     "@sparticuz/chromium",
     "puppeteer-core",
   ],
+
+  // The other half of shipping Chromium, and the half that is easy to miss.
+  //
+  // `serverExternalPackages` stops the bundler REWRITING the module, so
+  // `require("@sparticuz/chromium")` still points at node_modules. It says
+  // nothing about which FILES get copied into the deployed function: Vercel
+  // decides that by tracing `import`/`require`/`fs` with @vercel/nft.
+  //
+  // Chromium itself is four brotli archives in `bin/` (chromium.br is ~65MB).
+  // Nothing imports them — they are opened at runtime from a path built with
+  // `__dirname` — so the tracer cannot see them and never copies them. The
+  // deployed function then has the library but not the browser, and fails with
+  //   The input directory "/var/task/node_modules/@sparticuz/chromium/bin"
+  //   does not exist
+  // which reads like a bundling problem and is really a packaging one. Adding
+  // the package to `serverExternalPackages` alone does NOT fix it; production
+  // returned that same error, unchanged, after it was added.
+  //
+  // Listing the directory explicitly is the documented remedy for exactly this
+  // shape of dependency — Next's own example is a native binary under
+  // `node_modules/aws-crt/dist/bin`.
+  //
+  // Scoped to the report routes on purpose: this adds ~69MB to whatever it
+  // matches, so a global `/*` key would inflate every function in the app.
+  // ANY NEW ROUTE THAT RENDERS A POSTER NEEDS A KEY HERE — the scheduled cron
+  // entry point will, when it lands, and it will fail exactly like the above
+  // if it does not get one.
+  outputFileTracingIncludes: {
+    "/api/reports/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+  },
 
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
