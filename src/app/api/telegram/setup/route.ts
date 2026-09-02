@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
+import { ensureWebhookRegistered } from "@/lib/telegram/registration";
 
 /**
  * Point the bot at this deployment's webhook.
@@ -96,34 +98,23 @@ export async function POST(): Promise<NextResponse> {
     );
   }
 
-  const url = `${appUrl.replace(/\/$/, "")}/api/telegram/webhook`;
+  // Same code path the scheduler runs every 15 minutes, so a manual run and an
+  // automatic one cannot disagree about what a correct registration is.
+  const admin = createAdminClient();
+  const outcome = await ensureWebhookRegistered(admin, botToken, appUrl, secret);
 
-  const set = await callTelegram(botToken, "setWebhook", {
-    url,
-    // The shared secret Telegram will send back in a header on every update.
-    // Without it this endpoint is an open door to publishing.
-    secret_token: secret,
-    // channel_post is NOT optional. A Telegram CHANNEL delivers posts as
-    // channel_post, never as message, so leaving it out means the bot is added
-    // to a channel, records it via my_chat_member, and then never sees a single
-    // thing posted there. That is exactly how the first real user got stuck:
-    // three claim codes posted into a channel, none ever delivered.
-    allowed_updates: [
-      "message",
-      "channel_post",
-      "callback_query",
-      "my_chat_member",
-    ],
-    // Updates queued before this point refer to a world that no longer exists.
-    drop_pending_updates: true,
-  });
-
-  if (!set.ok) {
-    return NextResponse.json(
-      { error: set.description ?? "Telegram refused the webhook." },
-      { status: 502 },
-    );
+  if (!outcome.registered && outcome.reason.startsWith("Telegram refused")) {
+    return NextResponse.json({ error: outcome.reason }, { status: 502 });
   }
 
-  return NextResponse.json({ data: { url, registered: true } });
+  return NextResponse.json({
+    data: {
+      url: outcome.url,
+      registered: outcome.registered,
+      // "already current" is a success, not a no-op to worry about: it means
+      // the scheduler had already put this right.
+      status: outcome.reason,
+    },
+  });
+
 }
