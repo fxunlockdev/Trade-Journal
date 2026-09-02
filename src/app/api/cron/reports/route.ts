@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { telegramBotToken } from "@/lib/telegram/config";
+import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
+import { ensureWebhookRegistered } from "@/lib/telegram/registration";
 import { dueCadences } from "@/lib/reports/schedule";
 import { resolveReportPeriod } from "@/lib/reports/periods-tz";
 import { publishSnapshot } from "@/lib/reports/publish";
@@ -81,6 +82,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const admin = createAdminClient();
   const now = new Date();
   const results: DeskResult[] = [];
+
+  // Keep Telegram's webhook honest, before doing anything else.
+  //
+  // A stale registration fails SILENTLY: Telegram simply stops delivering the
+  // update types it was not told about, which looks like a broken app and
+  // cost a real user three claim codes that were never delivered. Twice that
+  // meant asking a person to re-run a setup step after a deploy. Checking here
+  // costs one API call a tick and removes that step for good.
+  //
+  // Deliberately not fatal: a Telegram hiccup must not stop the morning's
+  // reports, which do not depend on the webhook at all.
+  let webhook = "not checked";
+  const secret = telegramWebhookSecret();
+  if (secret) {
+    const outcome = await ensureWebhookRegistered(admin, botToken, appUrl, secret);
+    webhook = outcome.registered
+      ? `re-registered (${outcome.reason})`
+      : outcome.reason;
+  }
 
   try {
     // Every owner's desks in one pass. This runs with no user session, so RLS
@@ -190,7 +210,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const sent = results.filter((r) => r.outcome === "sent").length;
     return NextResponse.json({
-      data: { sent, considered: results.length, results, ms: Date.now() - started },
+      data: {
+        sent,
+        considered: results.length,
+        webhook,
+        results,
+        ms: Date.now() - started,
+      },
     });
   } catch (err: unknown) {
     console.error("[cron/reports] unexpected:", err);

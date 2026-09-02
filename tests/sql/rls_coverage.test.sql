@@ -4,7 +4,7 @@
 -- covered by >=1 policy OR on the documented intentional-deny-all allowlist.
 --
 -- A table with RLS on and zero policies is fail-closed (deny-all to non-owner
--- roles). Three tables are deliberately in that state, and all are listed below
+-- roles). Four tables are deliberately in that state, and all are listed below
 -- so the check stays meaningful: any OTHER table that loses its policies, or
 -- any new table shipped without RLS, fails the run.
 --
@@ -26,6 +26,11 @@
 --                         claims it, so there is no column to scope on. Clients
 --                         read telegram_chat_claims (owner-scoped) instead;
 --                         only the webhook writes here, as the service role.
+--   telegram_webhook_state — server bookkeeping recording what the Telegram
+--                         webhook was last registered with, so the scheduler
+--                         can notice drift and re-register itself. Not user
+--                         data, and holds a fingerprint rather than the secret.
+--                         Only the service role touches it.
 --
 -- Run with:  psql "$DB_URL" -v ON_ERROR_STOP=1 -f tests/sql/rls_coverage.test.sql
 -- A gap raises an exception -> psql exits non-zero -> CI fails.
@@ -51,7 +56,10 @@ begin
             where p.schemaname = 'public' and p.tablename = c.relname
           )
           and c.relname <> all (
-            array['trades', 'api_rate_limits', 'telegram_seen_chats']
+            array[
+              'trades', 'api_rate_limits',
+              'telegram_seen_chats', 'telegram_webhook_state'
+            ]
           )  -- documented deny-all, see header
         )
       )
