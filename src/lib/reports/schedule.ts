@@ -1,6 +1,7 @@
 import {
   zonedNow,
   isoDate,
+  shiftDays,
   resolveReportPeriod,
   type Cadence,
   type ZonedDate,
@@ -191,4 +192,64 @@ export function periodsToConsider(
   }
 
   return out;
+}
+
+/**
+ * When this cadence next publishes, as a local wall clock.
+ *
+ * Exists so the app can say "tomorrow at 06:00" instead of leaving someone to
+ * work it out from a cron expression. Every confusion this feature has caused
+ * was a silence: nothing arrived, nothing said why, and the person asked
+ * whether it was broken. A next-run time answers most of that before it is
+ * asked.
+ *
+ * Returns the local components rather than a Date, because the answer people
+ * want is "06:00 on the 3rd in Dubai", and converting that back through UTC
+ * only invites the hour to move.
+ */
+export interface NextRun {
+  readonly cadence: Cadence;
+  /** ISO local date, e.g. "2026-09-03". */
+  readonly date: string;
+  readonly hour: number;
+  /** True when the window is open right now, so it may publish at any moment. */
+  readonly dueNow: boolean;
+}
+
+export function nextRunFor(
+  cadence: Cadence,
+  instant: Date,
+  timeZone: string,
+): NextRun {
+  const schedule = SCHEDULE.find((s) => s.cadence === cadence)!;
+  const local = zonedNow(instant, timeZone);
+
+  if (isCadenceDue(schedule, local)) {
+    return { cadence, date: isoDate(local), hour: schedule.hour, dueNow: true };
+  }
+
+  // Walk forward a day at a time. A loop is used rather than arithmetic
+  // because "the next Saturday" and "the next 1st" are awkward to express
+  // directly, and a bounded scan of 40 days covers every cadence including a
+  // month boundary without a special case per cadence.
+  for (let ahead = 0; ahead <= 40; ahead += 1) {
+    const day = shiftDays(local, ahead);
+    // Today only counts if its trigger has not already passed.
+    if (ahead === 0 && local.hour >= schedule.hour) continue;
+    if (schedule.weekday !== undefined) {
+      // `shiftDays` returns a bare y/m/d triple, so the weekday is derived
+      // here. Date.UTC on that triple is safe for the same reason shiftDays
+      // uses UTC: it is calendar arithmetic with no zone attached.
+      const weekday = new Date(
+        Date.UTC(day.year, day.month - 1, day.day),
+      ).getUTCDay();
+      if (weekday !== schedule.weekday) continue;
+    }
+    if (schedule.dayOfMonth !== undefined && day.day !== schedule.dayOfMonth) continue;
+    return { cadence, date: isoDate(day), hour: schedule.hour, dueNow: false };
+  }
+
+  // Unreachable for the three cadences defined above; returned rather than
+  // thrown so a scheduling change can never take the page down with it.
+  return { cadence, date: isoDate(local), hour: schedule.hour, dueNow: false };
 }

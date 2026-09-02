@@ -1,0 +1,185 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { nextRunFor } from "@/lib/reports/schedule";
+import type { Cadence } from "@/lib/reports/periods-tz";
+import type { ReportDesk } from "@/types/database";
+
+/**
+ * What the scheduler is going to do, and what it did last.
+ *
+ * Every confusion this feature has caused was a SILENCE. Nothing arrived, and
+ * nothing said why: a period with no trades, a setup that predates the report,
+ * a send still in doubt. Each time someone had to ask a person, who had to ask
+ * the database.
+ *
+ * The information already existed in report_deliveries and was never shown. So
+ * this is not new machinery, it is the same facts put where the question is
+ * asked.
+ */
+
+export interface DeliverySummary {
+  readonly deskId: string;
+  readonly cadence: Cadence;
+  readonly periodStart: string;
+  readonly status: string;
+  readonly images: number;
+  readonly attempted: number;
+  readonly sentAt: string | null;
+  readonly error: string | null;
+}
+
+interface ReportActivityProps {
+  readonly desks: readonly ReportDesk[];
+  readonly deliveries: readonly DeliverySummary[];
+  /** Latest closed-trade date per desk, ISO, for the quiet-journal warning. */
+  readonly lastTradeByDesk: Readonly<Record<string, string | null>>;
+  readonly connected: boolean;
+  /** Injected so the component stays pure and the page owns the clock. */
+  readonly now: string;
+}
+
+const CADENCES: readonly Cadence[] = ["daily", "weekly", "monthly"];
+
+/** "3 Sep, 06:00" — short, and in the desk's own zone, which is the only one
+ *  that matters for when a report goes out. */
+function whenLabel(date: string, hour: number): string {
+  const [, m, d] = date.split("-").map(Number);
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${d} ${MONTHS[m - 1]}, ${String(hour).padStart(2, "0")}:00`;
+}
+
+/** The outcome in words someone can act on, rather than a status code. */
+function outcomeLabel(d: DeliverySummary): { text: string; tone: string } {
+  if (d.status === "sent") {
+    if (d.attempted > 0 && d.images < d.attempted) {
+      return {
+        text: `posted ${d.images} of ${d.attempted} styles`,
+        tone: "text-warn",
+      };
+    }
+    return { text: `posted ${d.images} images`, tone: "text-pos" };
+  }
+  if (d.status === "in_doubt") {
+    return { text: "may or may not have posted, needs checking", tone: "text-warn" };
+  }
+  if (d.status === "superseded") {
+    return { text: "replaced with newer figures", tone: "text-muted-foreground" };
+  }
+  if (d.status === "failed") {
+    return { text: "failed, will retry", tone: "text-neg" };
+  }
+  if (d.status === "pending") {
+    return { text: "sending now", tone: "text-muted-foreground" };
+  }
+  return { text: d.status, tone: "text-muted-foreground" };
+}
+
+export function ReportActivity({
+  desks,
+  deliveries,
+  lastTradeByDesk,
+  connected,
+  now,
+}: ReportActivityProps) {
+  const active = desks.filter((d) => d.is_active);
+  if (active.length === 0) return null;
+
+  const instant = new Date(now);
+
+  return (
+    <Card className="border-border bg-card">
+      <CardContent className="space-y-4 pt-6">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Scheduled reports
+          </p>
+          {!connected && (
+            <p className="text-xs text-warn">
+              No Telegram group is connected, so nothing will publish.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {active.map((desk) => {
+            const mine = deliveries
+              .filter((d) => d.deskId === desk.id)
+              .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""));
+            const last = mine[0];
+            const lastTrade = lastTradeByDesk[desk.id] ?? null;
+
+            // The warning that would have saved three conversations: the
+            // journals stopped, so every period is empty and nothing will go
+            // out, and nothing else on the page would say so.
+            const quiet =
+              lastTrade !== null &&
+              new Date(now).getTime() - new Date(`${lastTrade}T12:00:00Z`).getTime() >
+                2 * 24 * 60 * 60 * 1000;
+
+            return (
+              <div
+                key={desk.id}
+                className="space-y-1.5 border-t border-border pt-3 first:border-0 first:pt-0"
+                data-testid={`report-activity-${desk.id}`}
+              >
+                <p className="text-sm font-medium">{desk.name}</p>
+
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {CADENCES.map((cadence) => {
+                    const next = nextRunFor(cadence, instant, desk.timezone);
+                    return (
+                      <span key={cadence}>
+                        <span className="capitalize">{cadence}</span>{" "}
+                        {next.dueNow ? (
+                          <span className="text-pos">due now</span>
+                        ) : (
+                          whenLabel(next.date, next.hour)
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                {last ? (
+                  <p className="text-xs">
+                    <span className="text-muted-foreground">
+                      Last: {last.cadence} for {last.periodStart} &mdash;{" "}
+                    </span>
+                    <span className={outcomeLabel(last).tone}>
+                      {outcomeLabel(last).text}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Nothing published yet.
+                  </p>
+                )}
+
+                {last?.error && (
+                  <p className="text-xs text-warn">{last.error}</p>
+                )}
+
+                {quiet && (
+                  <p className="text-xs text-warn">
+                    No closed trades since {lastTrade}. Nothing will publish
+                    until newer trades are imported.
+                  </p>
+                )}
+
+                {lastTrade === null && (
+                  <p className="text-xs text-warn">
+                    No closed trades in these journals, so nothing will publish.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Times are in each setup&rsquo;s own timezone. A period with no closed
+          trades is skipped rather than published empty.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
