@@ -103,9 +103,17 @@ export async function POST(): Promise<NextResponse> {
     // The shared secret Telegram will send back in a header on every update.
     // Without it this endpoint is an open door to publishing.
     secret_token: secret,
-    // Only what the commands need. Narrower means fewer updates to reason
-    // about, and my_chat_member is what records a newly added group.
-    allowed_updates: ["message", "callback_query", "my_chat_member"],
+    // channel_post is NOT optional. A Telegram CHANNEL delivers posts as
+    // channel_post, never as message, so leaving it out means the bot is added
+    // to a channel, records it via my_chat_member, and then never sees a single
+    // thing posted there. That is exactly how the first real user got stuck:
+    // three claim codes posted into a channel, none ever delivered.
+    allowed_updates: [
+      "message",
+      "channel_post",
+      "callback_query",
+      "my_chat_member",
+    ],
     // Updates queued before this point refer to a world that no longer exists.
     drop_pending_updates: true,
   });

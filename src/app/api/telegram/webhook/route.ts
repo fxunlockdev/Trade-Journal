@@ -78,6 +78,8 @@ interface TgMessage {
 }
 interface TgUpdate {
   readonly message?: TgMessage;
+  /** A post in a CHANNEL. Telegram never delivers these as `message`. */
+  readonly channel_post?: TgMessage;
   readonly my_chat_member?: { readonly chat?: TgChat & { readonly title?: string } };
   readonly callback_query?: {
     readonly id?: string;
@@ -209,18 +211,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // bot was merely added to still shows up in the connect picker.
     await rememberChat(
       admin,
-      update.message?.chat ?? update.my_chat_member?.chat,
+      update.message?.chat ??
+        update.channel_post?.chat ??
+        update.my_chat_member?.chat,
     );
 
     /* ── a claim code ──────────────────────────────────────────────── */
-    // Checked BEFORE commands: this is how a group becomes connectable at all,
-    // and it must work in a group that has no destination yet.
-    if (update.message?.chat?.id) {
-      const reply = await claimChatIfCoded(admin, update.message);
+    // Checked BEFORE commands: this is how a chat becomes connectable at all,
+    // and it must work somewhere that has no destination yet.
+    //
+    // Accepts a CHANNEL post as readily as a group message. In a channel only
+    // admins can post, so a code appearing there is stronger proof of
+    // authority than the same code in a group, not weaker.
+    const posted = update.message ?? update.channel_post;
+    if (posted?.chat?.id) {
+      const reply = await claimChatIfCoded(admin, posted);
       if (reply) {
-        await sendChatMessage(botToken, String(update.message.chat.id), reply);
+        await sendChatMessage(botToken, String(posted.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
+    }
+
+    /* ── a command typed in a CHANNEL ──────────────────────────────── */
+    // A channel post carries no `from`: it is published BY the channel, so
+    // there is no user to run the admin check against and no honest way to
+    // decide who asked. Rather than fall through to the group handler and emit
+    // its "turn off Remain anonymous" advice, which is not a setting channels
+    // have, say what actually works.
+    if (update.channel_post && parseCommand(update.channel_post.text)) {
+      await sendChatMessage(
+        botToken,
+        String(update.channel_post.chat?.id),
+        "Commands don't work in a channel, because a channel post doesn't say who wrote it. Use <b>Post to Telegram</b> on the Posters page instead. Scheduled reports still publish here automatically.",
+      );
+      return NextResponse.json({ ok: true });
     }
 
     /* ── a typed command ───────────────────────────────────────────── */
