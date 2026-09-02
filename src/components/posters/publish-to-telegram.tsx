@@ -46,6 +46,9 @@ export function PublishToTelegram({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [savingStyles, setSavingStyles] = useState(false);
+  /** Set when a send is refused because this period is already in the chat.
+   *  Holds the snapshot id, so replacing it needs no second lookup. */
+  const [alreadyPosted, setAlreadyPosted] = useState<string | null>(null);
   const router = useRouter();
 
   // Nothing to publish, or nowhere to publish it. The Telegram card directly
@@ -92,9 +95,45 @@ export function PublishToTelegram({
     }
   };
 
+  /**
+   * Replace the album already in the chat with the current figures.
+   *
+   * Deletes the old images first, so the chat never shows the same report twice
+   * saying two different things.
+   */
+  const replace = async (): Promise<void> => {
+    if (!alreadyPosted) return;
+    setBusy(true);
+    setConfirming(false);
+    try {
+      const res = await fetch(`/api/reports/${alreadyPosted}/republish`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Couldn't replace that report.");
+        return;
+      }
+      const missed = json.data.oldImages - json.data.replaced;
+      toast.success(
+        missed > 0
+          ? `Replaced with ${json.data.tradeCount} trades. ${missed} old image(s) were too old for Telegram to delete.`
+          : `Replaced with the current figures (${json.data.tradeCount} trades).`,
+      );
+      setAlreadyPosted(null);
+    } catch {
+      toast.error(
+        "Lost connection before the result came back. Check the chat before trying again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const run = async (): Promise<void> => {
     setBusy(true);
     setConfirming(false);
+    setAlreadyPosted(null);
     try {
       // 1. Freeze the numbers. Returns the existing snapshot if this period was
       //    already computed, so the poster cannot change under a re-send.
@@ -125,13 +164,23 @@ export function PublishToTelegram({
       const pubJson = await pubRes.json();
 
       if (!pubRes.ok) {
-        // 409 is the double-post guard, not a fault. Said plainly so nobody
-        // goes looking for a bug that is actually the feature working.
+        // 409 is the double-post guard, not a fault. But "already posted" is
+        // a dead end unless there is a way out: trades get corrected and
+        // imported late, and the report in the chat then says the wrong thing
+        // with no way to fix it. Offer the replacement instead of an apology.
+        if (pubRes.status === 409 && /already been posted/i.test(pubJson.error ?? "")) {
+          setAlreadyPosted(snapJson.data.id);
+          toast.info(
+            "Already posted. Use Replace what's posted to send the current figures.",
+          );
+          return;
+        }
         toast[pubRes.status === 409 ? "info" : "error"](
           pubJson.error ?? "Couldn't post that report.",
         );
         return;
       }
+      setAlreadyPosted(null);
 
       const skipped: readonly string[] = pubJson.data.skipped ?? [];
       const posted: number = pubJson.data.posted ?? 0;
@@ -219,6 +268,25 @@ export function PublishToTelegram({
             ? `Post to ${chatTitle}?`
             : "Post to Telegram"}
       </Button>
+
+      {alreadyPosted && !busy && (
+        <div className="space-y-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => void replace()}
+            data-testid="poster-republish"
+          >
+            Replace what&rsquo;s posted
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Deletes the album already in {chatTitle} and posts the current
+            figures. Telegram only allows deleting for about 48 hours.
+          </p>
+        </div>
+      )}
 
       {confirming && !busy && (
         <p className="text-xs text-muted-foreground">

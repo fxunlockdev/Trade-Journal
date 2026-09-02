@@ -100,6 +100,28 @@ export async function answerCallback(
   });
 }
 
+/**
+ * Delete one message the bot posted.
+ *
+ * Telegram only allows this for about 48 hours, and only for the bot's own
+ * messages. Returns whether it went, so a caller can report how much of an
+ * album it actually managed to remove rather than claiming all of it.
+ *
+ * A failure here is ordinary, not exceptional: the message may already be gone,
+ * or too old. The caller counts rather than throws.
+ */
+export async function deleteChatMessage(
+  botToken: string,
+  chatId: string,
+  messageId: number,
+): Promise<boolean> {
+  const result = await call<boolean>(botToken, "deleteMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+  });
+  return result !== null;
+}
+
 /** Replace a message's buttons, so a picker cannot be tapped twice. */
 export async function clearButtons(
   botToken: string,
