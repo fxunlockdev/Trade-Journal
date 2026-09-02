@@ -1,5 +1,6 @@
 import {
   zonedNow,
+  isoDate,
   resolveReportPeriod,
   type Cadence,
   type ZonedDate,
@@ -131,13 +132,38 @@ export function periodsToConsider(
   cadence: Cadence,
   instant: Date,
   timeZone: string,
+  /**
+   * When this setup started publishing to this chat. Periods that ENDED before
+   * it are never published automatically.
+   *
+   * This is the difference between rescuing a missed day and dumping history.
+   * A new setup has no delivery record for ANY past period, so without this
+   * every day in the lookback reads as "never published" and the backfill
+   * publishes the lot. That is not theoretical: three setups created within
+   * forty minutes of each other put eleven albums into a partner channel,
+   * going back to days before the setups existed.
+   *
+   * Publishing something older stays possible, deliberately, through the button
+   * in the app. It is a choice someone makes, not something that happens to
+   * them.
+   */
+  since?: Date,
 ): readonly CandidatePeriod[] {
   const out: CandidatePeriod[] = [];
   const seen = new Set<string>();
 
+  // Compared as local dates, because a period is a local date range and
+  // `since` is an instant. Comparing them directly would be an hour wrong at
+  // the edges, in the wrong direction, twice a year.
+  const floor = since ? isoDate(zonedNow(since, timeZone)) : null;
+
   for (let back = BACKFILL_PERIODS[cadence]; back >= 0; back -= 1) {
     const at = shiftInstant(cadence, instant, back);
     const period = resolveReportPeriod(cadence, at, timeZone);
+    // A period that finished before this setup existed is not a missed report,
+    // it is history.
+    if (floor !== null && period.end < floor) continue;
+
     const key = `${period.start}:${period.end}`;
     if (seen.has(key)) continue;
     seen.add(key);

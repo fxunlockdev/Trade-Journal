@@ -149,3 +149,47 @@ describe("periodsToConsider (backfill)", () => {
     }
   });
 });
+
+describe("periodsToConsider — the `since` floor", () => {
+  const now = at("2026-09-02T07:00:00Z");
+
+  it("publishes nothing historical for a setup created today", () => {
+    // THE bug: a new setup has no delivery record for any past period, so
+    // every day in the lookback read as "never published" and the backfill
+    // sent the lot. Three setups made within forty minutes put eleven albums
+    // into a partner channel, going back to before they existed.
+    const p = periodsToConsider("daily", now, LONDON, at("2026-09-02T12:57:00Z"));
+    expect(p.every((x) => x.end >= "2026-09-02")).toBe(true);
+  });
+
+  it("still rescues a day missed by an older setup", () => {
+    // The whole point of backfill: a setup running since 25 Aug that never
+    // published the 28th (its trades were imported late) must still get it.
+    const p = periodsToConsider("daily", now, LONDON, at("2026-08-25T09:00:00Z"));
+    expect(p.map((x) => x.start)).toContain("2026-08-28");
+  });
+
+  it("keeps yesterday for a setup created yesterday", () => {
+    // The ordinary next-morning run must not be suppressed by its own floor.
+    const p = periodsToConsider("daily", now, LONDON, at("2026-09-01T08:00:00Z"));
+    expect(p.map((x) => x.start)).toContain("2026-09-01");
+  });
+
+  it("suppresses last month's report for a setup created this month", () => {
+    // August ended before the setup existed. Publishing it is a deliberate
+    // choice through the button, not something that happens unattended.
+    const p = periodsToConsider("monthly", now, LONDON, at("2026-09-02T12:57:00Z"));
+    expect(p.map((x) => x.start)).not.toContain("2026-08-01");
+  });
+
+  it("is unchanged when no floor is given", () => {
+    expect(periodsToConsider("daily", now, LONDON)).toHaveLength(8);
+  });
+
+  it("compares local dates, not instants", () => {
+    // 23:30Z on 1 Sept is already 00:30 on 2 Sept in London, so a setup made
+    // then has a floor of the 2nd and must not publish the 1st.
+    const p = periodsToConsider("daily", now, LONDON, at("2026-09-01T23:30:00Z"));
+    expect(p.map((x) => x.start)).not.toContain("2026-09-01");
+  });
+});
