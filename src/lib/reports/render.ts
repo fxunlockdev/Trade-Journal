@@ -114,8 +114,27 @@ export async function renderPoster(req: RenderRequest): Promise<Buffer> {
     const drawn = await page.evaluate(() => {
       const canvas = document.querySelector('[data-testid="render-canvas"]');
       const box = canvas?.getBoundingClientRect();
+
+      // BOTH, and keep the longer.
+      //
+      // `innerText` is what a reader sees, which is the right question, but it
+      // is layout-dependent and returns "" for anything the engine considers
+      // not rendered. Several of these templates paint their headline with
+      // `background-clip: text` on transparent type, which is exactly the sort
+      // of thing that can come back empty.
+      //
+      // `textContent` ignores layout entirely and always returns the markup's
+      // text. On its own it is too permissive; as a floor it means a styling
+      // quirk cannot make a correct poster look blank.
+      //
+      // Getting this wrong in the strict direction does not degrade the
+      // feature, it stops it: every poster rejected, silently, at 06:00.
+      const el = canvas as HTMLElement | null;
+      const rendered = el?.innerText ?? "";
+      const markup = el?.textContent ?? "";
+
       return {
-        text: (canvas as HTMLElement | null)?.innerText ?? "",
+        text: rendered.length >= markup.length ? rendered : markup,
         width: box?.width ?? 0,
         height: box?.height ?? 0,
       };
