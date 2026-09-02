@@ -36,6 +36,16 @@ const BUDGET_MS = 280_000;
 const PER_DESK_MS = 90_000;
 
 /**
+ * Most albums one tick may publish, across every desk.
+ *
+ * A backstop, not the main control: the `since` floor below is what stops a new
+ * setup dumping history. This exists because the consequence of getting that
+ * wrong lands in front of business partners, and a cap that occasionally delays
+ * a report by fifteen minutes is a far cheaper mistake than a flood.
+ */
+const MAX_ALBUMS_PER_TICK = 4;
+
+/**
  * Constant-time-ish comparison of the cron secret.
  *
  * This endpoint publishes to partner groups, so an unauthenticated caller must
@@ -81,6 +91,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const admin = createAdminClient();
   const now = new Date();
   const results: DeskResult[] = [];
+  let published = 0;
 
   // Keep Telegram's webhook honest, before doing anything else.
   //
@@ -115,6 +126,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     for (const desk of (desks ?? []) as ReportDesk[]) {
+      if (published >= MAX_ALBUMS_PER_TICK) break;
       if (msLeft() < PER_DESK_MS) {
         results.push({
           desk: desk.name,
@@ -133,7 +145,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // another firm's room, which is the worst failure this system has.
       const { data: destination } = await admin
         .from("telegram_destinations")
-        .select("id, chat_id, chat_title")
+        .select("id, chat_id, chat_title, connected_at")
         .eq("owner_user_id", desk.owner_user_id)
         .eq("status", "connected")
         .order("connected_at", { ascending: false })
@@ -142,7 +154,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
       if (!destination) continue;
 
+      // Publishing to THIS chat began at the later of the two: a setup made
+      // last week against a chat connected today should not backfill the week.
+      const since = new Date(
+        Math.max(
+          new Date(desk.created_at).getTime(),
+          new Date(destination.connected_at ?? desk.created_at).getTime(),
+        ),
+      );
+
       for (const cadence of due) {
+        if (published >= MAX_ALBUMS_PER_TICK) break;
         if (msLeft() < PER_DESK_MS) break;
 
         // OLDEST FIRST, and at most one per tick.
@@ -156,7 +178,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // Publishing one per tick means a backlog trickles out over an hour or
         // two in the order the days happened, rather than arriving as a wall of
         // images in front of partners.
-        for (const candidate of periodsToConsider(cadence, now, desk.timezone)) {
+        for (const candidate of periodsToConsider(
+          cadence,
+          now,
+          desk.timezone,
+          since,
+        )) {
           if (msLeft() < PER_DESK_MS) break;
 
           // Cheap check before expensive work. Without it every tick would
@@ -208,6 +235,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             msLeft,
           });
 
+          published += 1;
           results.push({
             desk: desk.name,
             cadence: `${cadence} ${candidate.start}`,
