@@ -36,9 +36,24 @@ describe("daily", () => {
     expect(dueCadences(at("2026-07-15T04:59:00Z"), LONDON)).not.toContain("daily");
   });
 
-  it("stays due for the rest of the day, so a missed tick still recovers", () => {
-    // A single trigger that gets dropped means no report and nobody notices.
-    expect(dueCadences(at("2026-07-15T20:00:00Z"), LONDON)).toContain("daily");
+  it("recovers a dropped tick within the window", () => {
+    // 06:00 BST is 05:00Z; 06:30Z is 07:30 local, still inside the two-hour
+    // window, so a tick dropped at 06:00 is picked up.
+    expect(dueCadences(at("2026-07-15T06:30:00Z"), LONDON)).toContain("daily");
+  });
+
+  it("STOPS being due once the window closes", () => {
+    // The bug this closes: "due" used to mean any time from 06:00 to midnight,
+    // which is how marketing images reached a partner channel at 14:31 with
+    // nothing scheduled for then. Daily at 06:00 has to mean 06:00.
+    expect(dueCadences(at("2026-07-15T20:00:00Z"), LONDON)).not.toContain("daily");
+    expect(dueCadences(at("2026-07-15T13:00:00Z"), LONDON)).not.toContain("daily");
+  });
+
+  it("closes the window on the hour boundary, not after it", () => {
+    // 07:00Z in July is 08:00 local = 06:00 + 2, the first hour outside.
+    expect(dueCadences(at("2026-07-15T07:00:00Z"), LONDON)).not.toContain("daily");
+    expect(dueCadences(at("2026-07-15T06:59:00Z"), LONDON)).toContain("daily");
   });
 });
 
@@ -191,5 +206,32 @@ describe("periodsToConsider — the `since` floor", () => {
     // then has a floor of the 2nd and must not publish the 1st.
     const p = periodsToConsider("daily", now, LONDON, at("2026-09-01T23:30:00Z"));
     expect(p.map((x) => x.start)).not.toContain("2026-09-01");
+  });
+});
+
+
+describe("the publishing window", () => {
+  it("gives monthly its own window at 09:00, not the daily one", () => {
+    // On the 1st both cadences exist; they must not bleed into each other.
+    const sixAm = dueCadences(at("2026-02-01T06:00:00Z"), LONDON);
+    expect(sixAm).toContain("daily");
+    expect(sixAm).not.toContain("monthly");
+
+    const nineAm = dueCadences(at("2026-02-01T09:00:00Z"), LONDON);
+    expect(nineAm).toContain("monthly");
+    // 09:00 is past 06:00 + 2, so the daily window has already closed.
+    expect(nineAm).not.toContain("daily");
+  });
+
+  it("closes the weekly window too", () => {
+    // 2026-01-17 is a Saturday.
+    expect(dueCadences(at("2026-01-17T06:30:00Z"), LONDON)).toContain("weekly");
+    expect(dueCadences(at("2026-01-17T15:00:00Z"), LONDON)).not.toContain("weekly");
+  });
+
+  it("means an all-day outage waits for tomorrow rather than posting at night", () => {
+    // The safe failure: a late report is a nuisance, an unexpected one in a
+    // partner channel is not.
+    expect(dueCadences(at("2026-07-15T22:00:00Z"), LONDON)).toEqual([]);
   });
 });
