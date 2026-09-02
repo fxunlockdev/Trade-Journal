@@ -3,6 +3,7 @@ import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { createRenderToken } from "@/lib/reports/render-token";
 import { POSTER_SIZE } from "@/lib/posters/templates/types";
+import { posterProblem } from "@/lib/reports/poster-check";
 
 /**
  * Drawing a poster with no browser present.
@@ -15,21 +16,6 @@ import { POSTER_SIZE } from "@/lib/posters/templates/types";
  * Screenshotting real DOM is MORE faithful than the client's `domToBlob`, not
  * less: there is no serialisation step to lose anything in.
  */
-
-/**
- * Floors for "this is a real poster", not tuned thresholds.
- *
- * Each is set well below anything a correct render produces and well above what
- * a broken one does, so they catch disasters without ever failing a good image.
- * A blank 1080x1080 PNG compresses to a couple of kilobytes; a drawn poster
- * runs to hundreds.
- */
-const MIN_POSTER_BYTES = 10_000;
-const MIN_POSTER_TEXT = 20;
-
-/** Values that must never reach a partner. They read as authoritative and get
- *  forwarded, which makes them worse than a missing poster. */
-const BROKEN_VALUES = ["NaN", "undefined", "Infinity", "[object Object]"];
 
 /** Chromium is heavy to start, so one browser serves every style in a report. */
 let cached: Browser | null = null;
@@ -135,40 +121,22 @@ export async function renderPoster(req: RenderRequest): Promise<Buffer> {
       };
     });
 
-    if (drawn.width < POSTER_SIZE || drawn.height < POSTER_SIZE) {
-      throw new Error(
-        `Poster laid out at ${Math.round(drawn.width)}x${Math.round(drawn.height)}, expected ${POSTER_SIZE}x${POSTER_SIZE} (${req.style}).`,
-      );
-    }
-
-    // A poster with almost no text has not rendered its figures. Every template
-    // prints at least a headline number, a trade count and a date.
-    if (drawn.text.replace(/\s+/g, "").length < MIN_POSTER_TEXT) {
-      throw new Error(
-        `Poster drew almost no text for ${req.style}; it would publish blank.`,
-      );
-    }
-
-    // The specific way a broken number reaches an audience. `NaN pips` is worse
-    // than no poster, because it looks authoritative and gets forwarded.
-    const broken = BROKEN_VALUES.find((v) => drawn.text.includes(v));
-    if (broken) {
-      throw new Error(`Poster shows "${broken}" for ${req.style}.`);
-    }
+    // Checked before the screenshot, so a broken render costs nothing further.
+    const problem = posterProblem(drawn, req.style);
+    if (problem) throw new Error(problem);
 
     const shot = await page.screenshot({
       type: "png",
       clip: { x: 0, y: 0, width: POSTER_SIZE, height: POSTER_SIZE },
     });
 
-    // Last check, on the bytes themselves. A 1080x1080 poster is hundreds of
-    // kilobytes; a flat or near-empty one compresses to a few. This catches a
-    // failure the DOM cannot see, such as an image that never painted.
-    if (shot.length < MIN_POSTER_BYTES) {
-      throw new Error(
-        `Poster for ${req.style} is ${shot.length} bytes, too small to be a drawn image.`,
-      );
-    }
+    // And again on the bytes, which catches a failure the DOM cannot see, such
+    // as an image that never painted.
+    const bytesProblem = posterProblem(
+      { ...drawn, bytes: shot.length },
+      req.style,
+    );
+    if (bytesProblem) throw new Error(bytesProblem);
 
     return Buffer.from(shot);
   } finally {
