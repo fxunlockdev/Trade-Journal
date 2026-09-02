@@ -3,6 +3,7 @@ import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { createRenderToken } from "@/lib/reports/render-token";
 import { POSTER_SIZE } from "@/lib/posters/templates/types";
+import { posterProblem } from "@/lib/reports/poster-check";
 
 /**
  * Drawing a poster with no browser present.
@@ -100,10 +101,43 @@ export async function renderPoster(req: RenderRequest): Promise<Buffer> {
       timeout: 10_000,
     });
 
+    // WHAT THE POSTER ACTUALLY SAYS.
+    //
+    // Everything above proves the page loaded, not that it drew anything worth
+    // publishing. A template rendering `NaN`, or laid out off-canvas, satisfies
+    // all of it and screenshots perfectly happily. These images go to business
+    // partners with no human in the loop, so the text is read back before the
+    // shot is taken.
+    //
+    // Done in the page rather than by decoding the PNG: the DOM already knows
+    // what it rendered, and no image library is needed to ask it.
+    const drawn = await page.evaluate(() => {
+      const canvas = document.querySelector('[data-testid="render-canvas"]');
+      const box = canvas?.getBoundingClientRect();
+      return {
+        text: (canvas as HTMLElement | null)?.innerText ?? "",
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+      };
+    });
+
+    // Checked before the screenshot, so a broken render costs nothing further.
+    const problem = posterProblem(drawn, req.style);
+    if (problem) throw new Error(problem);
+
     const shot = await page.screenshot({
       type: "png",
       clip: { x: 0, y: 0, width: POSTER_SIZE, height: POSTER_SIZE },
     });
+
+    // And again on the bytes, which catches a failure the DOM cannot see, such
+    // as an image that never painted.
+    const bytesProblem = posterProblem(
+      { ...drawn, bytes: shot.length },
+      req.style,
+    );
+    if (bytesProblem) throw new Error(bytesProblem);
+
     return Buffer.from(shot);
   } finally {
     await page.close();
