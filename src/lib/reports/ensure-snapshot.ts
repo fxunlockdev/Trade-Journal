@@ -1,7 +1,13 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSnapshot } from "@/lib/reports/snapshot";
-import { resolveReportPeriod, type Cadence } from "@/lib/reports/periods-tz";
+import {
+  resolveReportPeriod,
+  tradesInReportPeriod,
+  type Cadence,
+  type ReportPeriod,
+} from "@/lib/reports/periods-tz";
+import { computeReportMetrics } from "@/lib/reports/metrics";
 import type { ReportDesk, Trade } from "@/types/database";
 
 /**
@@ -127,6 +133,77 @@ export async function ensureSnapshot(
   return {
     kind: "ok",
     snapshot: inserted.data as unknown as StoredSnapshot,
+    reused: false,
+  };
+}
+
+/**
+ * Recompute a snapshot's numbers from the trades as they stand NOW.
+ *
+ * The opposite of what `ensureSnapshot` does, and only ever called because
+ * somebody asked. Freezing is right for everything automatic: a poster in a
+ * partners' group must keep meaning what it meant when it was published, and
+ * nothing unattended should quietly restate it.
+ *
+ * But trades get corrected and imported late, so a report can become wrong
+ * after the fact, and refusing to ever refresh it means the wrong version is
+ * the permanent one. This is the deliberate way out, reachable only from a
+ * human action.
+ */
+export async function refreshSnapshot(
+  admin: SupabaseClient,
+  desk: ReportDesk,
+  snapshot: StoredSnapshot,
+): Promise<EnsureResult> {
+  const { data: trades, error: tradesError } = await admin
+    .from("trades")
+    .select("*")
+    .in("journal_id", desk.journal_ids)
+    .gte("entry_time", shiftIso(snapshot.period_start, -LOOKBACK_DAYS))
+    .lte("entry_time", shiftIso(snapshot.period_end, EDGE_DAYS));
+
+  if (tradesError) {
+    return { kind: "error", message: "Could not read trades for that desk." };
+  }
+
+  const period: ReportPeriod = {
+    cadence: snapshot.cadence as Cadence,
+    start: snapshot.period_start,
+    end: snapshot.period_end,
+  };
+  const covered = tradesInReportPeriod(
+    (trades ?? []).filter((t) =>
+      desk.journal_ids.includes((t as Trade).journal_id),
+    ) as Trade[],
+    period,
+    desk.timezone,
+  );
+
+  if (covered.length === 0) return { kind: "empty" };
+
+  const metrics = computeReportMetrics(covered, desk.timezone);
+
+  const { data: updated, error } = await admin
+    .from("report_snapshots")
+    .update({
+      metrics,
+      trade_count: covered.length,
+      // Back to pending: the previous render is of numbers that no longer
+      // apply, so it must not be treated as already drawn.
+      status: "pending",
+      error: null,
+    })
+    .eq("id", snapshot.id)
+    .select(COLUMNS)
+    .single();
+
+  if (error || !updated) {
+    return { kind: "error", message: "Could not refresh that report." };
+  }
+
+  return {
+    kind: "ok",
+    snapshot: updated as unknown as StoredSnapshot,
     reused: false,
   };
 }
