@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { dueCadences, isCadenceDue, SCHEDULE } from "@/lib/reports/schedule";
+import {
+  dueCadences,
+  isCadenceDue,
+  periodsToConsider,
+  SCHEDULE,
+} from "@/lib/reports/schedule";
 import { zonedNow } from "@/lib/reports/periods-tz";
 
 /**
@@ -91,5 +96,56 @@ describe("isCadenceDue", () => {
     const local = { year: 2026, month: 1, day: 15, hour: 6, weekday: 4 };
     expect(isCadenceDue(daily, local)).toBe(true);
     expect(isCadenceDue(daily, { ...local, hour: 5 })).toBe(false);
+  });
+});
+
+describe("periodsToConsider (backfill)", () => {
+  it("returns yesterday last, oldest first", () => {
+    // Order is the point: a desk five days behind should publish the 28th,
+    // then the 29th, then the 30th, so the group reads in the order things
+    // happened rather than backwards.
+    const p = periodsToConsider("daily", at("2026-09-02T07:00:00Z"), LONDON);
+    expect(p[p.length - 1].start).toBe("2026-09-01");
+    expect(p[0].start).toBe("2026-08-25");
+    const starts = p.map((x) => x.start);
+    expect([...starts].sort()).toEqual(starts);
+  });
+
+  it("covers a week of daily reports, so a batch import is not lost", () => {
+    // The whole reason this exists: journals are filled from broker PDFs days
+    // late, so the single-chance daily run found nothing and never returned.
+    const p = periodsToConsider("daily", at("2026-09-02T07:00:00Z"), LONDON);
+    expect(p).toHaveLength(8);
+    expect(p.map((x) => x.start)).toContain("2026-08-28");
+  });
+
+  it("still includes yesterday, so normal running is unchanged", () => {
+    const p = periodsToConsider("daily", at("2026-09-02T07:00:00Z"), LONDON);
+    const normal = p[p.length - 1];
+    expect(normal.start).toBe("2026-09-01");
+    expect(normal.end).toBe("2026-09-01");
+  });
+
+  it("dedupes weekly periods rather than repeating one week", () => {
+    // Shifting the instant lands inside the same week repeatedly; without the
+    // dedupe the same period would be considered several times per tick.
+    const p = periodsToConsider("weekly", at("2026-09-05T07:00:00Z"), LONDON);
+    const keys = p.map((x) => `${x.start}:${x.end}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("returns whole previous months for monthly, deduped", () => {
+    const p = periodsToConsider("monthly", at("2026-09-02T09:00:00Z"), LONDON);
+    const keys = p.map((x) => `${x.start}:${x.end}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(p[p.length - 1].start).toBe("2026-08-01");
+    expect(p[p.length - 1].end).toBe("2026-08-31");
+  });
+
+  it("is bounded, so a first deploy cannot republish all history", () => {
+    for (const c of ["daily", "weekly", "monthly"] as const) {
+      expect(periodsToConsider(c, at("2026-09-02T09:00:00Z"), LONDON).length)
+        .toBeLessThanOrEqual(8);
+    }
   });
 });

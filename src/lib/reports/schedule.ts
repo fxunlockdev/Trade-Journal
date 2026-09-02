@@ -1,4 +1,10 @@
-import { zonedNow, type Cadence, type ZonedDate } from "@/lib/reports/periods-tz";
+import {
+  zonedNow,
+  resolveReportPeriod,
+  type Cadence,
+  type ZonedDate,
+  type ReportPeriod,
+} from "@/lib/reports/periods-tz";
 
 /**
  * When a desk's reports are due, in the desk's OWN timezone.
@@ -69,4 +75,74 @@ export function dueCadences(
 ): readonly Cadence[] {
   const local = zonedNow(instant, timeZone);
   return SCHEDULE.filter((s) => isCadenceDue(s, local)).map((s) => s.cadence);
+}
+
+/**
+ * How far back each cadence looks for a report it never managed to publish.
+ *
+ * A period is only ever computed relative to NOW, so "yesterday's report" runs
+ * once, the morning after. If that day's trades are imported later -- and they
+ * routinely are, because journals are filled from broker PDFs in batches days
+ * behind -- the run found an empty period, skipped it, and never came back.
+ * The report was not late. It never happened.
+ *
+ * Daily is the one that breaks: it has a single chance. Weekly and monthly are
+ * more forgiving because their window closes long after the trades inside it,
+ * but they have the same shape of bug, so they get a smaller lookback too.
+ *
+ * Bounded on purpose. Unbounded backfill would, on first deploy, try to publish
+ * every day a desk has ever traded.
+ */
+const BACKFILL_PERIODS: Record<Cadence, number> = {
+  daily: 7,
+  weekly: 2,
+  monthly: 2,
+};
+
+/** Move an instant back by whole periods of the given cadence. */
+function shiftInstant(cadence: Cadence, instant: Date, periods: number): Date {
+  const d = new Date(instant.getTime());
+  if (cadence === "daily") d.setUTCDate(d.getUTCDate() - periods);
+  else if (cadence === "weekly") d.setUTCDate(d.getUTCDate() - periods * 7);
+  else d.setUTCMonth(d.getUTCMonth() - periods);
+  return d;
+}
+
+/**
+ * Every period this cadence should still consider, OLDEST FIRST.
+ *
+ * Ordering is the point. A desk five days behind should publish the 28th, then
+ * the 29th, then the 30th, so a reader scrolls the group and sees days in the
+ * order they happened. Newest-first would tell the story backwards.
+ *
+ * The caller publishes at most one of these per tick, so a backlog trickles out
+ * over an hour or two rather than arriving as a wall of images.
+ *
+ * Deduped because shifting the instant by a day lands inside the same week or
+ * month repeatedly, which would otherwise return the same period several times.
+ */
+export interface CandidatePeriod extends ReportPeriod {
+  /** The instant that resolves to this period, so the snapshot builder can be
+   *  pointed at a past day without duplicating the period arithmetic. */
+  readonly instant: Date;
+}
+
+export function periodsToConsider(
+  cadence: Cadence,
+  instant: Date,
+  timeZone: string,
+): readonly CandidatePeriod[] {
+  const out: CandidatePeriod[] = [];
+  const seen = new Set<string>();
+
+  for (let back = BACKFILL_PERIODS[cadence]; back >= 0; back -= 1) {
+    const at = shiftInstant(cadence, instant, back);
+    const period = resolveReportPeriod(cadence, at, timeZone);
+    const key = `${period.start}:${period.end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...period, instant: at });
+  }
+
+  return out;
 }

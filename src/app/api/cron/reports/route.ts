@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
 import { ensureWebhookRegistered } from "@/lib/telegram/registration";
-import { dueCadences } from "@/lib/reports/schedule";
-import { resolveReportPeriod } from "@/lib/reports/periods-tz";
+import { dueCadences, periodsToConsider } from "@/lib/reports/schedule";
 import { publishSnapshot } from "@/lib/reports/publish";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import type { Cadence } from "@/lib/reports/periods-tz";
@@ -146,65 +145,80 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       for (const cadence of due) {
         if (msLeft() < PER_DESK_MS) break;
 
-        const period = resolveReportPeriod(cadence as Cadence, now, desk.timezone);
+        // OLDEST FIRST, and at most one per tick.
+        //
+        // A period is computed relative to now, so "yesterday's report" used to
+        // get exactly one chance, the morning after. Journals here are filled
+        // from broker PDFs in batches days behind, so that run found an empty
+        // period, skipped it, and never came back: the report did not arrive
+        // late, it never happened at all.
+        //
+        // Publishing one per tick means a backlog trickles out over an hour or
+        // two in the order the days happened, rather than arriving as a wall of
+        // images in front of partners.
+        for (const candidate of periodsToConsider(cadence, now, desk.timezone)) {
+          if (msLeft() < PER_DESK_MS) break;
 
-        // Cheap check before expensive work. Without it every tick from 06:00
-        // to midnight would render three posters just to have the claim refuse
-        // them: correct, but 70 wasted Chromium starts per desk per day.
-        const { data: already } = await admin
-          .from("report_deliveries")
-          .select("id, report_snapshots!inner(desk_id, cadence, period_start)")
-          .eq("chat_id", destination.chat_id)
-          .eq("report_snapshots.desk_id", desk.id)
-          .eq("report_snapshots.cadence", cadence)
-          .eq("report_snapshots.period_start", period.start)
-          .limit(1)
-          .maybeSingle();
+          // Cheap check before expensive work. Without it every tick would
+          // render posters just to have the claim refuse them.
+          const { data: already } = await admin
+            .from("report_deliveries")
+            .select("id, report_snapshots!inner(desk_id, cadence, period_start)")
+            .eq("chat_id", destination.chat_id)
+            .eq("report_snapshots.desk_id", desk.id)
+            .eq("report_snapshots.cadence", cadence)
+            .eq("report_snapshots.period_start", candidate.start)
+            .limit(1)
+            .maybeSingle();
 
-        if (already) continue;
+          if (already) continue;
 
-        // One implementation of "find or freeze this period", shared with the
-        // button and the Telegram commands, so all three cannot drift on what
-        // yesterday's report for a desk actually is.
-        const ensured = await ensureSnapshot(
-          admin,
-          desk,
-          cadence as Cadence,
-          now,
-        );
+          // The candidate's own instant, so the snapshot is built for THAT day
+          // rather than today.
+          const ensured = await ensureSnapshot(
+            admin,
+            desk,
+            cadence as Cadence,
+            candidate.instant,
+          );
 
-        if (ensured.kind === "empty") {
-          results.push({ desk: desk.name, cadence, outcome: "skipped: no trades" });
-          continue;
-        }
-        if (ensured.kind === "error") {
+          // An empty day is not worth a result line: with a week of lookback
+          // that would be eight entries per desk per tick, every tick, drowning
+          // anything real. Move on and try the next day.
+          if (ensured.kind === "empty") continue;
+
+          if (ensured.kind === "error") {
+            results.push({
+              desk: desk.name,
+              cadence,
+              outcome: "failed",
+              detail: ensured.message,
+            });
+            break;
+          }
+
+          const outcome = await publishSnapshot({
+            admin,
+            snapshot: ensured.snapshot,
+            deskName: desk.name,
+            templateIds: desk.template_ids,
+            destination,
+            botToken,
+            appUrl,
+            msLeft,
+          });
+
           results.push({
             desk: desk.name,
-            cadence,
-            outcome: "failed",
-            detail: ensured.message,
+            cadence: `${cadence} ${candidate.start}`,
+            outcome: outcome.status,
+            detail: outcome.error,
           });
-          continue;
+
+          // One per tick per desk, whatever happened. A failure should not send
+          // the loop on to publish a different day in its place.
+          break;
         }
-        const snapshot = ensured.snapshot;
-
-        const outcome = await publishSnapshot({
-          admin,
-          snapshot,
-          deskName: desk.name,
-          templateIds: desk.template_ids,
-          destination,
-          botToken,
-          appUrl,
-          msLeft,
-        });
-
-        results.push({
-          desk: desk.name,
-          cadence,
-          outcome: outcome.status,
-          detail: outcome.error,
-        });
       }
     }
 
