@@ -36,43 +36,71 @@ alter table public.report_desks
 -- logos lived in localStorage, so a poster rendered anywhere but the uploader's
 -- own browser silently printed the name instead. Private bucket, because a
 -- brand asset is not something to expose on a guessable public URL.
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('desk-logos', 'desk-logos', false, 2097152, array['image/png'])
-on conflict (id) do update
-  set file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
+--
+-- GUARDED, because `storage` is a SUPABASE schema, not a Postgres one. The RLS
+-- coverage job replays every migration against a bare Postgres container where
+-- storage.buckets does not exist, and an unguarded reference fails the whole
+-- run. It did: CI went red here and stayed red for four merges.
+--
+-- Skipping storage there is correct rather than a workaround. That job exists
+-- to prove every PUBLIC table has RLS and a policy; storage is Supabase's own
+-- schema, already governed by its own policies, and nothing in it is part of
+-- what the job checks.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'storage' and table_name = 'buckets'
+  ) then
+    raise notice 'storage schema absent (bare Postgres); skipping logo bucket';
+    return;
+  end if;
 
--- Path convention is `<owner_user_id>/<desk_id>.png`, which is what makes the
--- policy below expressible: the first folder segment IS the owner, so storage
--- can enforce tenancy without a join back to report_desks.
-drop policy if exists "owners read their desk logos" on storage.objects;
-create policy "owners read their desk logos"
-  on storage.objects for select to authenticated
-  using (
-    bucket_id = 'desk-logos'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('desk-logos', 'desk-logos', false, 2097152, array['image/png'])
+  on conflict (id) do update
+    set file_size_limit = excluded.file_size_limit,
+        allowed_mime_types = excluded.allowed_mime_types;
 
-drop policy if exists "owners write their desk logos" on storage.objects;
-create policy "owners write their desk logos"
-  on storage.objects for insert to authenticated
-  with check (
-    bucket_id = 'desk-logos'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
+  -- Path convention is `<owner_user_id>/<desk_id>.png`, which is what makes
+  -- these expressible: the first folder segment IS the owner, so storage
+  -- enforces tenancy without a join back to report_desks.
+  --
+  -- EXECUTE because CREATE POLICY is not valid directly inside a conditional
+  -- block; the statements are otherwise exactly as they would be written.
+  execute 'drop policy if exists "owners read their desk logos" on storage.objects';
+  execute $p$
+    create policy "owners read their desk logos"
+      on storage.objects for select to authenticated
+      using (
+        bucket_id = 'desk-logos'
+        and (storage.foldername(name))[1] = (select auth.uid())::text
+      )$p$;
 
-drop policy if exists "owners replace their desk logos" on storage.objects;
-create policy "owners replace their desk logos"
-  on storage.objects for update to authenticated
-  using (
-    bucket_id = 'desk-logos'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
+  execute 'drop policy if exists "owners write their desk logos" on storage.objects';
+  execute $p$
+    create policy "owners write their desk logos"
+      on storage.objects for insert to authenticated
+      with check (
+        bucket_id = 'desk-logos'
+        and (storage.foldername(name))[1] = (select auth.uid())::text
+      )$p$;
 
-drop policy if exists "owners delete their desk logos" on storage.objects;
-create policy "owners delete their desk logos"
-  on storage.objects for delete to authenticated
-  using (
-    bucket_id = 'desk-logos'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
+  execute 'drop policy if exists "owners replace their desk logos" on storage.objects';
+  execute $p$
+    create policy "owners replace their desk logos"
+      on storage.objects for update to authenticated
+      using (
+        bucket_id = 'desk-logos'
+        and (storage.foldername(name))[1] = (select auth.uid())::text
+      )$p$;
+
+  execute 'drop policy if exists "owners delete their desk logos" on storage.objects';
+  execute $p$
+    create policy "owners delete their desk logos"
+      on storage.objects for delete to authenticated
+      using (
+        bucket_id = 'desk-logos'
+        and (storage.foldername(name))[1] = (select auth.uid())::text
+      )$p$;
+end $$;
