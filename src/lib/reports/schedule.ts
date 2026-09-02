@@ -16,18 +16,35 @@ import {
  * ticks often and this function answers "has the local trigger passed today?"
  * That is correct all year, in every zone, with no DST table.
  *
- * It also survives a missed tick. A single daily trigger that gets dropped
- * means no report and nobody notices until a partner asks; a window that stays
- * open for the rest of the day means the next tick picks it up.
+ * It also survives a missed tick, but only briefly. The window is deliberately
+ * NARROW: a report is published in the couple of hours after its trigger, or
+ * not automatically at all.
+ *
+ * An earlier version kept the window open until midnight, so a dropped tick
+ * could still recover late in the day. That sounded generous and was wrong: it
+ * meant marketing images could land in front of partners at two in the
+ * afternoon with nothing scheduled for then. "Daily at 06:00" has to mean
+ * 06:00, or the schedule is not a schedule. Anything outside the window is a
+ * deliberate act through the app, never something that happens on its own.
  *
  * Running repeatedly is safe because publishing is idempotent: the snapshot is
  * unique per period and the delivery claim refuses a second send. This function
  * decides WHEN to look, never whether something has already been sent.
  */
 
+/**
+ * How long after the trigger hour a report may still publish automatically.
+ *
+ * Long enough to absorb a dropped tick or a slow morning; short enough that
+ * nothing arrives at an hour nobody scheduled. Past this the run waits for
+ * tomorrow, which is the safe failure: a late report is a nuisance, an
+ * unexpected one in a partner channel is not.
+ */
+export const PUBLISH_WINDOW_HOURS = 2;
+
 export interface CadenceSchedule {
   readonly cadence: Cadence;
-  /** Local hour, 24h, at or after which the report may go out. */
+  /** Local hour, 24h, at which the report goes out. */
   readonly hour: number;
   /** Local weekday it runs on, 0 = Sunday. Undefined means any day. */
   readonly weekday?: number;
@@ -49,12 +66,15 @@ export const SCHEDULE: readonly CadenceSchedule[] = [
   { cadence: "monthly", hour: 9, dayOfMonth: 1 },
 ];
 
-/** Whether one cadence's local trigger has passed, given a local wall clock. */
+/** Whether the local clock is inside this cadence's publishing window. */
 export function isCadenceDue(
   schedule: CadenceSchedule,
   local: ZonedDate,
 ): boolean {
   if (local.hour < schedule.hour) return false;
+  // The closing edge. Without it "due" means "any time from 06:00 to
+  // midnight", which is how posters reached a partner channel at 14:31.
+  if (local.hour >= schedule.hour + PUBLISH_WINDOW_HOURS) return false;
   if (schedule.weekday !== undefined && local.weekday !== schedule.weekday) {
     return false;
   }
