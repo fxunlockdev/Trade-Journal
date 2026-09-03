@@ -17,7 +17,7 @@ import {
   clearButtons,
   type InlineButton,
 } from "@/lib/telegram/chat";
-import { findClaimCode } from "@/lib/telegram/claim";
+import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import { publishSnapshot } from "@/lib/reports/publish";
 import { escapeHtml } from "@/lib/reports/caption";
@@ -168,6 +168,82 @@ async function claimChatIfCoded(
   return "Confirmed. This group is now available to connect on the Posters page.";
 }
 
+/**
+ * Link a Telegram account to the app account that minted this code.
+ *
+ * The proof is that the message came FROM that Telegram account: only it can
+ * send from itself. That is the whole mechanism, and it is why the code must be
+ * single-use and short-lived -- otherwise a code seen once could link a
+ * different account later.
+ *
+ * This is what makes "whose journals?" answerable. The chat-to-owner mapping is
+ * one chat to one owner, so in a shared room it cannot tell two people apart.
+ *
+ * Returns a message for the sender, or null when there was no link code.
+ */
+async function linkAccountIfCoded(
+  admin: ReturnType<typeof createAdminClient>,
+  msg: TgMessage,
+): Promise<string | null> {
+  const code = findLinkCode(msg.text);
+  if (!code) return null;
+
+  // An anonymous sender cannot be linked: there is no account to link TO.
+  const telegramUserId = msg.from?.id;
+  if (!telegramUserId) {
+    return "I can't tell which account sent that. Send the code from your own Telegram account, not as a channel or group.";
+  }
+
+  const { data: link } = await admin
+    .from("telegram_account_links")
+    .select("code, user_id")
+    .eq("code", code)
+    .is("claimed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (!link) {
+    // Wrong, used and expired share one message. Distinguishing them would
+    // tell someone probing codes which ones exist.
+    return "That code is not valid any more. Open Settings in Trade Journal for a fresh one.";
+  }
+
+  // Conditional on still being unclaimed, so two messages racing one code
+  // cannot both win.
+  const { data: claimed } = await admin
+    .from("telegram_account_links")
+    .update({
+      telegram_user_id: telegramUserId,
+      claimed_at: new Date().toISOString(),
+    })
+    .eq("code", code)
+    .is("claimed_at", null)
+    .select("user_id")
+    .maybeSingle();
+
+  if (!claimed) return "That code has already been used.";
+
+  // One Telegram account per app account and vice versa, both enforced by
+  // unique indexes. Re-linking REPLACES rather than erroring: someone changing
+  // phone or Telegram account should not need support to fix it.
+  const { error } = await admin
+    .from("telegram_accounts")
+    .upsert(
+      {
+        telegram_user_id: telegramUserId,
+        user_id: claimed.user_id as string,
+        linked_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+
+  if (error) {
+    return "Couldn't finish linking. Try a fresh code from Settings.";
+  }
+
+  return "Linked. You can log trades here now, and I'll ask which journal each time.";
+}
+
 /** The chat's owner and their connected destination, or null. */
 async function resolveChat(
   admin: ReturnType<typeof createAdminClient>,
@@ -228,6 +304,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply) {
         await sendChatMessage(botToken, String(posted.chat.id), reply);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    /* ── an account-link code ──────────────────────────────────────── */
+    // Only from a real message, never a channel post: a channel post carries
+    // no `from`, so there is no account to link. Handled before commands so a
+    // brand-new DM works with nothing else set up.
+    if (update.message?.chat?.id) {
+      const reply = await linkAccountIfCoded(admin, update.message);
+      if (reply) {
+        await sendChatMessage(botToken, String(update.message.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
     }
