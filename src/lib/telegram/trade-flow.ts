@@ -12,6 +12,7 @@ import {
   nextStage,
   promptFor,
   describeConversation,
+  PENDING_TTL_MINUTES,
   type Conversation,
 } from "@/lib/telegram/conversation";
 import { escapeHtml } from "@/lib/reports/caption";
@@ -32,7 +33,13 @@ export interface OpenDraft {
 
 export interface FlowStore {
   editableJournals(userId: string): Promise<readonly JournalChoice[]>;
-  saveConversation(id: string, conversation: Conversation): Promise<void>;
+  /**
+   * MERGE the patch into the stored conversation (answers one level deep)
+   * and extend the draft's life to `expiresAt`. False when the draft is
+   * gone or already finished, which the caller must say rather than show a
+   * picker that can never be tapped.
+   */
+  saveConversation(id: string, patch: Conversation, expiresAt: string): Promise<boolean>;
   /** Sizes this person used before for this instrument, most recent first, distinct. */
   recentLots(userId: string, instrument: string): Promise<readonly number[]>;
   /** Tags this person uses most. */
@@ -45,56 +52,85 @@ export interface FlowReply {
   readonly text: string;
   readonly buttons?: readonly InlineButton[];
   readonly perRow?: number;
+  /** The draft cannot continue; the caller drops it. */
+  readonly dropped?: boolean;
+}
+
+export const COULD_NOT_HOLD = "Couldn't hold that answer. Send it again.";
+
+export function lifeFrom(now: Date): string {
+  return new Date(now.getTime() + PENDING_TTL_MINUTES * 60_000).toISOString();
 }
 
 /**
  * Ask the next question, or, when nothing is left to ask, show the summary
  * and the journal picker. The picker is built from the journal ids stored
  * with the draft so the indexes on its buttons stay true; a journal lost
- * since then simply has no button.
+ * since then simply has no button, and a draft with no journal left is
+ * dropped rather than shown as ready.
  */
 export async function advance(store: FlowStore, d: OpenDraft, now: Date): Promise<FlowReply> {
-  void now;
   const quick = await store.isQuick(d.telegramUserId);
   const stage = nextStage(d.draft, d.conversation, quick);
+  const expiresAt = lifeFrom(now);
 
   if (stage !== "journal") {
-    const { prompt, conversation } = await (async () => {
-      const ctx = {
-        recentLots: stage === "size" ? await store.recentLots(d.userId, d.draft.instrument) : [],
-        topTags: stage === "tags" ? await store.topTags(d.userId) : [],
-      };
-      return promptFor(stage, d.id, d.conversation, ctx);
-    })();
-    await store.saveConversation(d.id, conversation);
+    const ctx = {
+      recentLots: stage === "size" ? await store.recentLots(d.userId, d.draft.instrument) : [],
+      topTags: stage === "tags" ? await store.topTags(d.userId) : [],
+    };
+    const { prompt, conversation } = promptFor(stage, d.id, d.conversation, ctx);
+    // Only what this prompt offered is written; the answers travel separately.
+    const patch: Conversation = {
+      answers: {},
+      ...(conversation.offeredLots ? { offeredLots: conversation.offeredLots } : {}),
+      ...(conversation.offeredTags ? { offeredTags: conversation.offeredTags } : {}),
+    };
+    if (!(await store.saveConversation(d.id, patch, expiresAt))) return { text: COULD_NOT_HOLD };
     return { text: prompt.text, buttons: prompt.buttons, perRow: prompt.perRow };
   }
 
-  await store.saveConversation(d.id, { ...d.conversation, ready: true });
   const known = await store.editableJournals(d.userId);
   const buttons: InlineButton[] = [];
   d.journalIds.forEach((id, i) => {
     const j = known.find((k) => k.id === id);
     if (j) buttons.push({ text: j.name, callback_data: encodeTrade(d.id, i) });
   });
+  if (buttons.length === 0) {
+    return {
+      text: "Your account can't write to any journal any more, so that trade has nowhere to go.",
+      dropped: true,
+    };
+  }
   buttons.push({ text: "Cancel", callback_data: encodeTrade(d.id, null) });
+
+  if (!(await store.saveConversation(d.id, { answers: {}, ready: true }, expiresAt))) {
+    return { text: COULD_NOT_HOLD };
+  }
 
   const openNote = draftIsClosed(d.draft)
     ? ""
     : "\n<i>Still open, so it won't appear on a poster until it's closed.</i>";
   return {
-    text: `${escapeHtml(describeConversation(d.draft, d.conversation.answers))}${openNote}\n\nWhich journal?`,
+    text:
+      `${escapeHtml(describeConversation(d.draft, d.conversation.answers))}${openNote}` +
+      `\n\nWhich journal? (To change something first, type e.g. "size 0.5" or "date 28 aug".)`,
     buttons,
     perRow: 1,
   };
 }
+
+/** One message for "no such draft", "expired" and "somebody else's". */
+export const NOT_YOURS = "That one isn't yours or has expired. Send the trade again.";
 
 /**
  * Why a tap on a draft is refused, or null when it may proceed.
  *
  * The tapper must be the author, the tap must come from the chat the draft
  * was shown in (a forwarded picker satisfies neither for anyone else), and
- * the account link must still stand: unlinking is a revocation.
+ * the account link must still stand: unlinking is a revocation. A draft that
+ * does not exist and a draft that belongs to someone else get the same
+ * answer, so a crafted tap learns nothing about which ids exist.
  */
 export function refuseTap(
   d: { readonly telegramUserId: number; readonly chatId: string; readonly userId: string; readonly expiresAt: string } | null,
@@ -102,10 +138,9 @@ export function refuseTap(
   linkedUserId: string | null,
   now: Date,
 ): string | null {
-  if (!d || new Date(d.expiresAt).getTime() <= now.getTime()) {
-    return "That one has expired. Send the trade again.";
+  if (!d || new Date(d.expiresAt).getTime() <= now.getTime() || d.telegramUserId !== tap.tapperId) {
+    return NOT_YOURS;
   }
-  if (d.telegramUserId !== tap.tapperId) return "That isn't your trade to save.";
   if (d.chatId !== tap.chatId) return "Use the picker in your own chat with me.";
   if (!linkedUserId || linkedUserId !== d.userId) return "Your account is no longer linked.";
   return null;

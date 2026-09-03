@@ -7,6 +7,8 @@
 alter table public.telegram_pending_trades
   add column if not exists conversation jsonb not null default '{}'::jsonb;
 alter table public.telegram_pending_trades
+  drop constraint if exists telegram_pending_trades_conversation_object;
+alter table public.telegram_pending_trades
   add constraint telegram_pending_trades_conversation_object
     check (jsonb_typeof(conversation) = 'object');
 

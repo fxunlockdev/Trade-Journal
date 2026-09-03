@@ -74,7 +74,9 @@ function fake(o: Partial<TradeDmStore> = {}, opts: { open?: OpenDraft | null; qu
     isQuick: async () => quick,
     saveConversation: async (id, c) => {
       saved.push([id, c]);
+      return true;
     },
+    saveDraft: async () => true,
     recentLots: async () => [0.5, 1],
     topTags: async () => ["scalp"],
     ...o,
@@ -178,9 +180,9 @@ describe("a new trade", () => {
 
     expect(r?.text).toMatch(/\+80[.,]0 pips/);
     expect(r?.text).toMatch(/Size in lots\?/);
-    expect(r?.buttons?.map((b) => b.text)).toEqual(["0.5 lots", "1 lots"]);
     expect(decodeAnswer(r?.buttons?.[0].callback_data)).toEqual({ pendingId: "aB3_x-9Q", field: "s", value: "0.5" });
     expect(f.saved.at(-1)?.[1].offeredLots).toEqual([0.5, 1]);
+    expect(r?.buttons?.map((b) => b.text)).toEqual(["0.5 lots", "1 lot"]);
   });
 
   it("goes straight to the journal picker when nothing is missing and quick mode is on", async () => {
@@ -251,5 +253,88 @@ describe("answering the open question by typing", () => {
   it("ignores an answer once the link no longer matches the draft", async () => {
     const f = fake({ linkedUser: async () => "someone-else" }, { open: openDraft() });
     expect(await handleTradeMessage(f.store, msg("0.5"), NOW)).toBeNull();
+  });
+});
+
+describe("what the reviewers found", () => {
+  it("counts greetings and commands against the allowance, and stays quiet over it", async () => {
+    const f = fake({ allow: async () => false });
+    expect(await handleTradeMessage(f.store, msg("/start", 999), NOW)).toBeNull();
+    expect(await handleTradeMessage(f.store, msg("hey", 999), NOW)).toBeNull();
+    expect(await handleTradeMessage(f.store, msg("/cancel"), NOW)).toBeNull();
+  });
+
+  it("tells a person their draft expired instead of saying nothing", async () => {
+    const f = fake({}, { open: openDraft({ answers: {} }, { expiresAt: "2026-09-03T13:00:00Z" }) });
+    const r = await handleTradeMessage(f.store, msg("0.5"), NOW);
+    expect(r?.text).toMatch(/expired/);
+    expect(f.cancelled).toEqual(["aB3_x-9Q"]);
+  });
+
+  it("answers, cancels and replaces a draft whose picker is already showing", async () => {
+    const ready = openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), emotion: null, tags: [], notes: null }, ready: true });
+    const chat = fake({}, { open: ready });
+    expect((await handleTradeMessage(chat.store, msg("thanks!"), NOW))?.text).toMatch(/Pick a journal/);
+    const cancel = fake({}, { open: ready });
+    expect((await handleTradeMessage(cancel.store, msg("/cancel"), NOW))?.text).toMatch(/Cancelled/);
+    const replace = fake({}, { open: ready });
+    await handleTradeMessage(replace.store, msg("EURUSD sell 1.0850 sl 1.0880 closed 1.0820"), NOW);
+    expect(replace.cancelled).toEqual(["aB3_x-9Q"]);
+    expect(replace.held).toHaveLength(1);
+  });
+
+  it("changes an earlier answer by name, at any stage", async () => {
+    const f = fake({}, { open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), date_label: "today" } }) });
+    const r = await handleTradeMessage(f.store, msg("date 28 aug"), NOW);
+    expect(f.saved[0][1].answers.entry_time?.slice(0, 10)).toBe("2026-08-28");
+    // The open question (mood) is asked again, not skipped.
+    expect(r?.text).toMatch(/How did it feel/);
+  });
+
+  it("changes an answer after the picker and shows the new summary", async () => {
+    const f = fake({}, {
+      quick: true,
+      open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), date_label: "today" }, ready: true }),
+    });
+    const r = await handleTradeMessage(f.store, msg("size 1"), NOW);
+    expect(f.saved[0][1].answers.lots).toBe(1);
+    expect(r?.text).toMatch(/1 lots/);
+    expect(r?.text).toMatch(/Which journal\?/);
+  });
+
+  it("treats a result word as a correction to the trade, not as a note", async () => {
+    const saves: TradeDraft[] = [];
+    const f = fake({ saveDraft: async (_id, d) => { saves.push(d); return true; } }, {
+      open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), emotion: null, tags: [] } }),
+    });
+    const r = await handleTradeMessage(f.store, msg("sl"), NOW);
+    expect(saves[0]?.outcome).toEqual({ kind: "result", result: "sl" });
+    expect(r?.text).toMatch(/stopped out/);
+    expect(f.saved.every(([, c]) => c.answers.notes === undefined)).toBe(true);
+  });
+
+  it("refuses a correction it cannot work out", async () => {
+    const f = fake({}, { open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString() } }) });
+    const r = await handleTradeMessage(f.store, msg("tp2 hit"), NOW);
+    expect(r?.text).toMatch(/TP2 price is missing/);
+  });
+
+  it("reminds about the waiting draft when a half-typed trade arrives", async () => {
+    const f = fake({}, { open: openDraft() });
+    const r = await handleTradeMessage(f.store, msg("EURUSD buy 1.0850"), NOW);
+    expect(r?.text).toMatch(/Not yet/);
+    expect(r?.text).toMatch(/earlier XAUUSD trade is still waiting/);
+    expect(f.cancelled).toHaveLength(0);
+  });
+
+  it("does not take an answer from a different chat than the draft's", async () => {
+    const f = fake({}, { open: openDraft({ answers: {} }, { chatId: "other-chat" }) });
+    expect(await handleTradeMessage(f.store, msg("0.5"), NOW)).toBeNull();
+  });
+
+  it("says so when an answer could not be held", async () => {
+    const f = fake({ saveConversation: async () => false }, { open: openDraft() });
+    const r = await handleTradeMessage(f.store, msg("0.5"), NOW);
+    expect(r?.text).toMatch(/Couldn't hold/);
   });
 });

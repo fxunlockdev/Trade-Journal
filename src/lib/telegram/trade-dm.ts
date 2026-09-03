@@ -1,22 +1,28 @@
 /**
  * A message typed in a private chat with the bot.
  *
- * Either the start of a trade, or the answer to the question the bot last
- * asked about one. Pure over a small store interface, so every branch --
- * help, unlinked, incomplete, no journals, rate-limited, an answer, a new
- * trade replacing an old draft, /cancel, /quick -- is a unit test rather
- * than a production incident. The route implements the store over the
- * admin client.
+ * Either the start of a trade, an answer to the question the bot last asked
+ * about one, a change to an earlier answer ("date 28 aug"), a correction to
+ * the trade itself ("sl", "closed 1.0820"), or a command. Pure over a small
+ * store interface, so every branch is a unit test rather than a production
+ * incident. The route implements the store over the admin client.
  */
 
 import { parseCommand } from "@/lib/telegram/commands";
-import { parseTradeIntent, type TradeDraft } from "@/lib/telegram/trade-intent";
-import { applyText, nextStage, EMPTY_CONVERSATION, type Conversation } from "@/lib/telegram/conversation";
-import { advance, type FlowStore, type OpenDraft, type FlowReply } from "@/lib/telegram/trade-flow";
+import { parseTradeIntent, describeDraft, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { parseOutcome } from "@/lib/trades/outcome-parser";
+import {
+  applyText,
+  nextStage,
+  parseFieldEdit,
+  EMPTY_CONVERSATION,
+  PENDING_TTL_MINUTES,
+  type Conversation,
+} from "@/lib/telegram/conversation";
+import { advance, lifeFrom, type FlowStore, type OpenDraft, type FlowReply } from "@/lib/telegram/trade-flow";
 import { escapeHtml } from "@/lib/reports/caption";
 
-/** How long a shown draft stays tappable. */
-export const PENDING_TTL_MINUTES = 30;
+export { PENDING_TTL_MINUTES };
 
 export interface DraftToHold {
   readonly id: string;
@@ -34,11 +40,13 @@ export interface TradeDmStore extends FlowStore {
   allow(telegramUserId: number): Promise<boolean>;
   linkedUser(telegramUserId: number): Promise<string | null>;
   newPendingId(): string;
-  /** False when the draft could not be stored. */
+  /** False when the draft could not be stored (including a second open draft). */
   holdDraft(draft: DraftToHold): Promise<boolean>;
-  /** The draft this person is still answering questions about, if any. */
+  /** This person's unfinished draft, expired or not, ready or not. */
   openDraft(telegramUserId: number): Promise<OpenDraft | null>;
   cancelDraft(id: string): Promise<void>;
+  /** The trade itself changed (an outcome correction). */
+  saveDraft(id: string, draft: TradeDraft): Promise<boolean>;
   setQuick(telegramUserId: number, quick: boolean): Promise<void>;
 }
 
@@ -54,6 +62,7 @@ const EXAMPLE = "XAUUSD buy 3340 sl 3335 tp1 3350 closed 3348";
 const GREETING_RE = /^(?:hi|hello|hey|yo|start|help|hola)\b[!. ]*$/i;
 const LINK_HINT =
   "open <b>Settings → Telegram</b> in the app, get a link code, and send it to me here.";
+const EDIT_HINT = 'To change an earlier answer, type e.g. "date 28 aug" or "size 0.5".';
 
 function helpText(linked: boolean, quick: boolean): string {
   const how =
@@ -63,7 +72,7 @@ function helpText(linked: boolean, quick: boolean): string {
     (quick
       ? `Quick mode is on, so I only ask for size and date. /quick turns it off.`
       : `I'll also ask how it felt, for tags and for notes; each can be skipped, and /quick turns those three off.`) +
-    ` /cancel drops the trade I'm asking about.`;
+    ` ${EDIT_HINT} /cancel drops the trade I'm asking about.`;
   if (linked) return how;
   return `First, link this chat to your Trade Journal account: ${LINK_HINT}\n\n${how}`;
 }
@@ -82,11 +91,44 @@ function asOpenDraft(held: DraftToHold): OpenDraft {
 }
 
 /**
+ * A change to the trade's result, typed while a draft is open: "sl", "be",
+ * "closed 1.0820", "tp1 hit", "still open". Returns the corrected draft, a
+ * reason it cannot be applied, or null when the text is not a result.
+ */
+function correctOutcome(draft: TradeDraft, text: string): TradeDraft | string | null {
+  const outcome = parseOutcome(text);
+  // "unknown" is not a correction, whatever the parser's reason: "half a lot"
+  // at the size question is an answer, not a partial close.
+  if (outcome.kind === "unknown") return null;
+  if (outcome.kind === "result" && outcome.result === "hit") {
+    const slot = outcome.tpIndex ?? 1;
+    const tpPrice = (draft as unknown as Record<string, unknown>)[`tp${slot}`];
+    if (tpPrice == null) return `the TP${slot} price is missing, so TP${slot} hit can't be worked out`;
+  }
+  if (outcome.kind === "result" && outcome.result === "sl" && draft.stop_loss === null) {
+    return "the stop loss price is missing, so a stop-out can't be worked out";
+  }
+  return { ...draft, outcome };
+}
+
+async function continueDraft(
+  store: TradeDmStore,
+  open: OpenDraft,
+  now: Date,
+  prefix?: string,
+): Promise<BotReply> {
+  const reply = await advance(store, open, now);
+  if (reply.dropped) await store.cancelDraft(open.id);
+  return prefix ? { ...reply, text: `${prefix}\n\n${reply.text}` } : reply;
+}
+
+/**
  * Reply to a DM, or null to stay silent.
  *
  * Silence is deliberate for anything that is neither a trade nor an answer:
  * "thanks" must not get a parse error, and a stranger who was never linked
- * must not be able to make the bot talk by sending it words.
+ * must not be able to make the bot talk by sending it words. Everything
+ * that makes the bot do work sits behind the sender's allowance first.
  */
 export async function handleTradeMessage(
   store: TradeDmStore,
@@ -95,6 +137,16 @@ export async function handleTradeMessage(
 ): Promise<BotReply | null> {
   const text = msg.text.trim();
   const first = text.split(/\s+/)[0]?.toLowerCase() ?? "";
+  const isCommand = first.startsWith("/") || GREETING_RE.test(text);
+  const intent = isCommand ? null : parseTradeIntent(text, now);
+
+  // Plain chat with nothing waiting on it is not counted at all.
+  const open = intent?.kind === "not_a_trade" || isCommand || intent?.kind !== undefined
+    ? await store.openDraft(msg.telegramUserId)
+    : null;
+  if (!isCommand && intent?.kind === "not_a_trade" && !open) return null;
+
+  if (!(await store.allow(msg.telegramUserId))) return null;
 
   if (first === "/start" || first === "/help" || GREETING_RE.test(text)) {
     const userId = await store.linkedUser(msg.telegramUserId);
@@ -103,7 +155,6 @@ export async function handleTradeMessage(
   }
 
   if (first === "/cancel") {
-    const open = await store.openDraft(msg.telegramUserId);
     if (!open) return { text: "Nothing to cancel." };
     await store.cancelDraft(open.id);
     return { text: "Cancelled. Send the trade again whenever you like." };
@@ -126,32 +177,71 @@ export async function handleTradeMessage(
       text: "Reports publish to a connected group or channel, not to this chat. Run that command in the group, or use <b>Post to Telegram</b> on the Posters page.",
     };
   }
+  if (isCommand || !intent) return null;
 
-  const intent = parseTradeIntent(text, now);
-
-  // An answer to the open question, unless the message is itself a trade,
-  // which replaces the draft being asked about.
-  const open = await store.openDraft(msg.telegramUserId);
-  if (open && intent.kind === "not_a_trade") {
-    if (!(await store.allow(msg.telegramUserId))) return null;
+  /* ── something typed while a draft is waiting ─────────────────── */
+  if (open && intent.kind !== "ready") {
+    // Bound to the person AND the chat, the same invariant the tap path holds.
+    if (open.chatId !== msg.chatId) return null;
     const linked = await store.linkedUser(msg.telegramUserId);
     if (linked !== open.userId) return null;
+
+    if (new Date(open.expiresAt).getTime() <= now.getTime()) {
+      await store.cancelDraft(open.id);
+      return { text: "That trade waited too long and has expired. Send it again." };
+    }
+
+    // A half-typed NEW trade: say what is missing, and that the old one waits.
+    if (intent.kind === "incomplete") {
+      return {
+        text:
+          `Not yet. Fix these and send it again:\n• ${intent.missing.map(escapeHtml).join("\n• ")}` +
+          `\n\nYour earlier ${escapeHtml(open.draft.instrument)} trade is still waiting; answer its question, or /cancel it.`,
+      };
+    }
+
+    // "date 28 aug", "size 0.5", "mood calm", "tags ...", "notes ...": an
+    // answer to a NAMED question, at any point, including after the picker.
+    const edit = parseFieldEdit(text);
+    if (edit) {
+      const applied = applyText(edit.stage, edit.value, open.conversation, now);
+      if (!applied.ok) return { text: escapeHtml(applied.hint) };
+      if (!(await store.saveConversation(open.id, { answers: applied.conversation.answers }, lifeFrom(now)))) {
+        return { text: "Couldn't hold that answer. Send it again." };
+      }
+      // Changed after the picker: the answers are re-read at save time, so
+      // the picker already shown still works; show the new summary anyway.
+      const updated = { ...open, conversation: { ...applied.conversation, ready: undefined } };
+      return continueDraft(store, updated, now);
+    }
+
+    // "sl", "be", "closed 1.0820", "tp1 hit", "still open": the result changed.
+    const corrected = correctOutcome(open.draft, text);
+    if (typeof corrected === "string") return { text: `Can't apply that: ${escapeHtml(corrected)}.` };
+    if (corrected) {
+      if (!(await store.saveDraft(open.id, corrected))) return { text: "Couldn't hold that change. Send it again." };
+      const updated = { ...open, draft: corrected, conversation: { ...open.conversation, ready: undefined } };
+      return continueDraft(store, updated, now, escapeHtml(describeDraft(corrected)));
+    }
+
+    if (open.conversation.ready) {
+      return { text: `Pick a journal with the buttons on my last message, or /cancel. ${EDIT_HINT}` };
+    }
+
     const quick = await store.isQuick(msg.telegramUserId);
     const stage = nextStage(open.draft, open.conversation, quick);
     const applied = applyText(stage, text, open.conversation, now);
     if (!applied.ok) {
-      const again = await advance(store, open, now);
-      return { ...again, text: `${escapeHtml(applied.hint)}\n\n${again.text}` };
+      const again = await continueDraft(store, open, now);
+      return { ...again, text: `${escapeHtml(applied.hint)} ${EDIT_HINT}\n\n${again.text}` };
     }
-    await store.saveConversation(open.id, applied.conversation);
-    return advance(store, { ...open, conversation: applied.conversation }, now);
+    if (!(await store.saveConversation(open.id, { answers: applied.conversation.answers }, lifeFrom(now)))) {
+      return { text: "Couldn't hold that answer. Send it again." };
+    }
+    return continueDraft(store, { ...open, conversation: applied.conversation }, now);
   }
 
   if (intent.kind === "not_a_trade") return null;
-
-  // Before any reply and before any write: a message that looks like a trade
-  // is the cheapest way to make the bot do work.
-  if (!(await store.allow(msg.telegramUserId))) return null;
 
   const userId = await store.linkedUser(msg.telegramUserId);
   if (!userId) {
@@ -169,7 +259,7 @@ export async function handleTradeMessage(
     return { text: "Your account can't write to any journal, so there's nowhere to put that trade." };
   }
 
-  // A new trade replaces whatever was still being asked about.
+  // A new trade replaces whatever was still waiting, picker or not.
   if (open) await store.cancelDraft(open.id);
 
   // The draft outlives this request: it has to survive the questions and the
@@ -183,14 +273,13 @@ export async function handleTradeMessage(
     draft: intent.draft,
     journalIds: journals.map((j) => j.id),
     conversation: EMPTY_CONVERSATION,
-    expiresAt: new Date(now.getTime() + PENDING_TTL_MINUTES * 60_000).toISOString(),
+    expiresAt: lifeFrom(now),
   };
   if (!(await store.holdDraft(held))) return { text: "Couldn't hold that trade. Try again." };
 
-  const reply = await advance(store, asOpenDraft(held), now);
   // The first question comes with what was understood, so a person can see
   // straight away if the trade itself was misread.
-  const stage = nextStage(held.draft, held.conversation, await store.isQuick(msg.telegramUserId));
-  if (stage === "journal") return reply;
-  return { ...reply, text: `${escapeHtml(intent.summary)}\n\n${reply.text}` };
+  const quick = await store.isQuick(msg.telegramUserId);
+  const stage = nextStage(held.draft, held.conversation, quick);
+  return continueDraft(store, asOpenDraft(held), now, stage === "journal" ? undefined : escapeHtml(intent.summary));
 }

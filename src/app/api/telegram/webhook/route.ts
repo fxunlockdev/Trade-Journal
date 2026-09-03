@@ -434,7 +434,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { choice, tapperId: cb.from.id, chatId },
         new Date(),
       );
-      await answerCallback(botToken, cb.id, result.answer, result.alert);
+      await answerCallback(botToken, cb.id, result.answer || undefined, result.alert);
       if (result.clearPicker && cb.message?.message_id) {
         await clearButtons(botToken, chatId, cb.message.message_id);
       }

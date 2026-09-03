@@ -47,11 +47,17 @@ const PER_ROW: Record<Stage, number> = {
   size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
 };
 
-const SKIP_WORDS = /^(?:skip|none|no|-|nothing|n\/a)$/i;
+const SKIP_WORDS = /^(?:skip|none|-|nothing|n\/a)$/i;
 const MAX_LOTS = 1000;
 const MAX_TAGS = 10;
 const MAX_TAG_LENGTH = 30;
-const MAX_NOTES_LENGTH = 5000;
+/** Well under the row's 5000 and Telegram's 4096-character message, since the
+ *  note is echoed back in the summary before the picker. */
+const MAX_NOTES_LENGTH = 1000;
+/** How much of a note the summary shows; the row keeps all of it. */
+const NOTES_SHOWN = 300;
+/** How long a draft stays alive, extended on every answer. */
+export const PENDING_TTL_MINUTES = 30;
 const DAY_MS = 24 * 3600 * 1000;
 
 /** The next question, or "journal" when there is nothing left to ask. */
@@ -124,7 +130,9 @@ export function promptFor(
   c: Conversation,
   ctx: PromptContext,
 ): { prompt: Prompt; conversation: Conversation } {
-  const skip = { text: "Skip", callback_data: encodeAnswer(pendingId, "k") };
+  // The stage rides on the Skip button: three consecutive prompts carry one,
+  // and a Skip tapped on an earlier prompt must not skip the current question.
+  const skip = { text: "Skip", callback_data: encodeAnswer(pendingId, "k", stage) };
   switch (stage) {
     case "size": {
       const lots = ctx.recentLots.slice(0, 3);
@@ -133,7 +141,7 @@ export function promptFor(
           text: lots.length > 0
             ? "Size in lots? Tap one, or type a number like 0.5."
             : "Size in lots? Type a number like 0.5.",
-          buttons: lots.map((l) => ({ text: `${l} lots`, callback_data: encodeAnswer(pendingId, "s", String(l)) })),
+          buttons: lots.map((l) => ({ text: `${l} ${l === 1 ? "lot" : "lots"}`, callback_data: encodeAnswer(pendingId, "s", String(l)) })),
           perRow: PER_ROW.size,
         },
         conversation: { ...c, offeredLots: lots },
@@ -214,7 +222,34 @@ function readTags(text: string): readonly string[] | null {
   const tags = t.split(",").map((s) => s.trim()).filter(Boolean);
   if (tags.length === 0 || tags.length > MAX_TAGS) return null;
   if (tags.some((s) => s.length > MAX_TAG_LENGTH)) return null;
-  return [...new Set(tags)];
+  // "Scalp" and "scalp" are one tag, spelled the way it was typed first.
+  const seen = new Set<string>();
+  return tags.filter((s) => {
+    const k = s.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+const FIELD_WORDS: Record<string, Exclude<Stage, "journal">> = {
+  size: "size", lot: "size", lots: "size",
+  date: "date", when: "date", day: "date",
+  mood: "emotion", feel: "emotion", feeling: "emotion", emotion: "emotion",
+  tag: "tags", tags: "tags",
+  note: "notes", notes: "notes",
+};
+
+/**
+ * "size 0.5", "date 28 aug", "mood calm", "tags scalp, london", "notes ...":
+ * a person changing an answer, at any point before the trade is saved.
+ * Without this there was no way back once a question had been answered.
+ */
+export function parseFieldEdit(text: string): { stage: Exclude<Stage, "journal">; value: string } | null {
+  const m = /^([a-z]+)\s*[:=]?\s+([\s\S]+)$/i.exec(text.trim());
+  if (!m) return null;
+  const stage = FIELD_WORDS[m[1].toLowerCase()];
+  return stage ? { stage, value: m[2].trim() } : null;
 }
 
 /** A typed reply to the open question. */
@@ -259,12 +294,16 @@ export function applyText(stage: Stage, text: string, c: Conversation, now: Date
 /** A tapped button on the open question. */
 export function applyButton(stage: Stage, tap: AnswerTap, c: Conversation, now: Date): Applied {
   if (tap.field === "k") {
+    // Only the Skip of the question that is open. An older prompt's Skip is
+    // a button from a question that has moved on.
+    if (tap.value !== stage) return { ok: false, hint: "" };
     if (stage === "emotion") return withAnswers(c, { emotion: null });
     if (stage === "tags") return withAnswers(c, { tags: [] });
     if (stage === "notes") return withAnswers(c, { notes: null });
     return { ok: false, hint: "That one can't be skipped." };
   }
   if (stage === "size" && tap.field === "s") {
+    if (!/^\d+(?:\.\d+)?$/.test(tap.value)) return { ok: false, hint: "Type the size in lots, like 0.5." };
     const lots = readLots(tap.value);
     // Only a size that was offered, so a crafted button cannot pick a number
     // this person never used.
@@ -285,7 +324,7 @@ export function applyButton(stage: Stage, tap: AnswerTap, c: Conversation, now: 
     return e ? withAnswers(c, { emotion: e }) : { ok: false, hint: "Tap one of the moods, or skip." };
   }
   if (stage === "tags" && tap.field === "t") {
-    const tag = (c.offeredTags ?? [])[Number(tap.value)];
+    const tag = /^\d{1,2}$/.test(tap.value) ? (c.offeredTags ?? [])[Number(tap.value)] : undefined;
     return tag ? withAnswers(c, { tags: [tag] }) : { ok: false, hint: "Type the tags separated by commas, or skip." };
   }
   // A button from an earlier question, tapped again after the conversation
@@ -311,6 +350,8 @@ export function describeConversation(draft: TradeDraft, a: Answers): string {
   const lines = [describeDraft(effectiveDraft(draft, a))];
   if (a.emotion) lines.push(`Mood: ${a.emotion}`);
   if (a.tags && a.tags.length > 0) lines.push(`Tags: ${a.tags.join(", ")}`);
-  if (a.notes) lines.push(`Notes: ${a.notes}`);
+  if (a.notes) {
+    lines.push(`Notes: ${a.notes.length > NOTES_SHOWN ? `${a.notes.slice(0, NOTES_SHOWN)}…` : a.notes}`);
+  }
   return lines.join("\n");
 }

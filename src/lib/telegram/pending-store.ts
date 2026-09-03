@@ -47,8 +47,18 @@ function toOpen(r: OpenRow): OpenDraft & { consumedAt: string | null; tradeId: s
 function flowStore(admin: Admin): FlowStore {
   return {
     editableJournals: (userId) => editableJournals(admin, userId),
-    saveConversation: async (id, conversation) => {
-      await admin.from("telegram_pending_trades").update({ conversation }).eq("id", id);
+    saveConversation: async (id, patch, expiresAt) => {
+      // Merged and life-extended in one statement on the database side.
+      const { data, error } = await admin.rpc("touch_pending_conversation", {
+        p_id: id,
+        p_patch: patch,
+        p_expires_at: expiresAt,
+      });
+      if (error) {
+        console.error("[telegram/trade] conversation write failed", { id, message: error.message });
+        return false;
+      }
+      return data === true;
     },
     recentLots: async (userId, instrument) => {
       const { data } = await admin
@@ -67,17 +77,11 @@ function flowStore(admin: Admin): FlowStore {
       return [...seen].slice(0, 3);
     },
     topTags: async (userId) => {
-      const { data } = await admin
-        .from("trades")
-        .select("tags")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(300);
-      const counts = new Map<string, number>();
-      for (const r of data ?? []) {
-        for (const t of (r.tags ?? []) as string[]) counts.set(t, (counts.get(t) ?? 0) + 1);
-      }
-      return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
+      const { data } = await admin.rpc("telegram_top_tags", { p_user_id: userId });
+      return ((data ?? []) as { tag: string }[])
+        .map((r) => r.tag)
+        .filter((t) => typeof t === "string" && t.length > 0)
+        .map((t) => (t.length > 30 ? `${t.slice(0, 29)}…` : t));
     },
     isQuick: async (telegramUserId) => {
       const { data } = await admin
@@ -111,25 +115,25 @@ export function dmStore(admin: Admin): TradeDmStore {
       return !error;
     },
     openDraft: async (telegramUserId) => {
+      // Expired or ready included: the handler decides what each means.
       const { data } = await admin
         .from("telegram_pending_trades")
         .select(OPEN_COLUMNS)
         .eq("telegram_user_id", telegramUserId)
         .is("consumed_at", null)
-        .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!data) return null;
-      const open = toOpen(data as unknown as OpenRow);
-      return open.conversation.ready ? null : open;
+      return data ? toOpen(data as unknown as OpenRow) : null;
     },
-    cancelDraft: async (id) => {
-      await admin
+    cancelDraft: (id) => cancelDraft(admin, id),
+    saveDraft: async (id, draft) => {
+      const { error } = await admin
         .from("telegram_pending_trades")
-        .update({ consumed_at: new Date().toISOString() })
+        .update({ draft })
         .eq("id", id)
         .is("consumed_at", null);
+      return !error;
     },
     setQuick: async (telegramUserId, quick) => {
       await admin.from("telegram_accounts").update({ quick }).eq("telegram_user_id", telegramUserId);
@@ -137,10 +141,20 @@ export function dmStore(admin: Admin): TradeDmStore {
   };
 }
 
+async function cancelDraft(admin: Admin, id: string): Promise<void> {
+  await admin
+    .from("telegram_pending_trades")
+    .update({ consumed_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("consumed_at", null);
+}
+
 export function answerStore(admin: Admin): TradeAnswerStore {
   return {
     ...flowStore(admin),
+    allow: (telegramUserId) => allowRequest(admin, LIMITS.telegramDm, String(telegramUserId)),
     linkedUser: (telegramUserId) => linkedUser(admin, telegramUserId),
+    cancelDraft: (id) => cancelDraft(admin, id),
     loadOpen: async (id) => {
       const { data } = await admin.from("telegram_pending_trades").select(OPEN_COLUMNS).eq("id", id).maybeSingle();
       return data ? toOpen(data as unknown as OpenRow) : null;
@@ -150,6 +164,7 @@ export function answerStore(admin: Admin): TradeAnswerStore {
 
 export function tapStore(admin: Admin): TradeTapStore {
   return {
+    allow: (telegramUserId) => allowRequest(admin, LIMITS.telegramDm, String(telegramUserId)),
     loadPending: async (id) => {
       const { data } = await admin.from("telegram_pending_trades").select(OPEN_COLUMNS).eq("id", id).maybeSingle();
       if (!data) return null;

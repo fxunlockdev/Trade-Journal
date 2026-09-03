@@ -8,6 +8,7 @@ import {
   decodeAnswer,
   effectiveDraft,
   describeConversation,
+  parseFieldEdit,
   EMPTY_CONVERSATION,
   type Conversation,
 } from "@/lib/telegram/conversation";
@@ -63,7 +64,7 @@ describe("which question comes next", () => {
 describe("prompts", () => {
   it("offers the sizes this person used, and remembers what it offered", () => {
     const { prompt, conversation } = promptFor("size", ID, EMPTY_CONVERSATION, ctx);
-    expect(prompt.buttons.map((b) => b.text)).toEqual(["0.5 lots", "1 lots", "0.1 lots"]);
+    expect(prompt.buttons.map((b) => b.text)).toEqual(["0.5 lots", "1 lot", "0.1 lots"]);
     expect(conversation.offeredLots).toEqual([0.5, 1, 0.1]);
     expect(prompt.perRow).toBe(3);
   });
@@ -148,11 +149,47 @@ describe("tapped answers", () => {
   });
 
   it("cannot skip a required question", () => {
-    expect(applyButton("size", { pendingId: ID, field: "k", value: "" }, offered, NOW)).toMatchObject({ ok: false });
-    expect(applyButton("emotion", { pendingId: ID, field: "k", value: "" }, offered, NOW)).toMatchObject({
+    expect(applyButton("size", { pendingId: ID, field: "k", value: "size" }, offered, NOW)).toMatchObject({ ok: false });
+    expect(applyButton("emotion", { pendingId: ID, field: "k", value: "emotion" }, offered, NOW)).toMatchObject({
       ok: true,
       conversation: { answers: { emotion: null } },
     });
+  });
+
+  it("ignores a Skip from an earlier question", () => {
+    // The mood prompt's Skip, tapped after the tags question opened, must not
+    // skip the tags.
+    const r = applyButton("tags", { pendingId: ID, field: "k", value: "emotion" }, offered, NOW);
+    expect(r).toMatchObject({ ok: false, hint: "" });
+    const { prompt } = promptFor("emotion", ID, EMPTY_CONVERSATION, ctx);
+    expect(decodeAnswer(prompt.buttons.at(-1)?.callback_data)).toEqual({ pendingId: ID, field: "k", value: "emotion" });
+  });
+
+  it("de-duplicates tags regardless of case and shows a long note cut short", () => {
+    expect(applyText("tags", "Scalp, scalp, SCALP, london", EMPTY_CONVERSATION, NOW)).toMatchObject({
+      ok: true,
+      conversation: { answers: { tags: ["Scalp", "london"] } },
+    });
+    const long = "x".repeat(400);
+    const text = describeConversation(draft(), { lots: 1, notes: long });
+    expect(text).toContain("x".repeat(300) + "…");
+    expect(text).not.toContain("x".repeat(301));
+    expect(applyText("notes", "y".repeat(1001), EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false });
+  });
+
+  it("says 1 lot, not 1 lots", () => {
+    const { prompt } = promptFor("size", ID, EMPTY_CONVERSATION, { recentLots: [1, 0.5], topTags: [] });
+    expect(prompt.buttons.map((b) => b.text)).toEqual(["1 lot", "0.5 lots"]);
+  });
+
+  it("reads a named field edit", () => {
+    expect(parseFieldEdit("date 28 aug")).toEqual({ stage: "date", value: "28 aug" });
+    expect(parseFieldEdit("Size: 0.5")).toEqual({ stage: "size", value: "0.5" });
+    expect(parseFieldEdit("mood calm")).toEqual({ stage: "emotion", value: "calm" });
+    expect(parseFieldEdit("tags scalp, london")).toEqual({ stage: "tags", value: "scalp, london" });
+    expect(parseFieldEdit("notes held it")).toEqual({ stage: "notes", value: "held it" });
+    expect(parseFieldEdit("thanks a lot")).toBeNull();
+    expect(parseFieldEdit("0.5")).toBeNull();
   });
 
   it("resolves a tag by the index it was offered at", () => {
@@ -171,7 +208,7 @@ describe("tapped answers", () => {
 
 describe("callback data", () => {
   it("round-trips and stays inside the cap", () => {
-    for (const [f, v] of [["s", "0.5"], ["d", "today"], ["e", "overconfident"], ["t", "3"], ["k", ""]] as const) {
+    for (const [f, v] of [["s", "0.5"], ["d", "today"], ["e", "overconfident"], ["t", "3"], ["k", "emotion"]] as const) {
       const data = encodeAnswer(ID, f, v);
       expect(data.length).toBeLessThanOrEqual(64);
       expect(decodeAnswer(data)).toEqual({ pendingId: ID, field: f, value: v });
