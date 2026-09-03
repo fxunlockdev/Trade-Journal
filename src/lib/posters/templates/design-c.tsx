@@ -297,7 +297,7 @@ export function DesignC({
             </div>
           </div>
           <div style={statCell}>
-            <div style={statLabel}>Avg R:R</div>
+            <div style={statLabel}>Avg R</div>
             <div style={{ ...statValue, color: theme.tAccent }}>
               {formatAvgR(stats.avgR)}
             </div>

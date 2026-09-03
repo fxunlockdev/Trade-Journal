@@ -250,7 +250,7 @@ export function DesignB({
                 <div style={{ ...cellValue, color: theme.tAccent }}>
                   {formatAvgR(stats.avgR)}
                 </div>
-                <div style={cellLabel}>Avg R:R</div>
+                <div style={cellLabel}>Avg R</div>
               </div>
             </div>
           </div>
