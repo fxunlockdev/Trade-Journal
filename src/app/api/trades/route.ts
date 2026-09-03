@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
+import { tradeInsertPayload } from "@/lib/trades/insert-payload";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
 
 // Hard-coded allowlist — prevents arbitrary column injection via sort_by.
@@ -237,20 +238,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
     const computed = computeTradeFields(tradeData);
 
-    // Bulletproof: re-apply user_id + journal_id AFTER computeTradeFields so
-    // they cannot be overwritten by any stray key in the spread chain. These
-    // two fields are what RLS checks against — if either is wrong, the INSERT
-    // fails with "new row violates row-level security policy".
-    const insertPayload = {
-      ...computed,
-      user_id: user.id,
-      journal_id: activeJournal.id,
-      // Broker provenance ("csv" / "mt5_webhook") is written ONLY by the import
-      // and sync ingest, never by this public create endpoint. Force manual so a
-      // client can't mint a fake broker-sourced trade that would then bypass the
-      // P&L recompute guard on later edits.
-      source: "manual" as const,
-    };
+    // Ownership and provenance stamped by the shared builder, which requires a
+    // journal id in its type. Two hand-written versions of this existed and
+    // one of them silently omitted journal_id for two months.
+    const insertPayload = tradeInsertPayload(computed, {
+      userId: user.id,
+      journalId: activeJournal.id,
+    });
 
     // Admin client — we've verified user auth + journal membership + role
     // above. SSR client's auth wasn't reliably carrying to trades INSERT

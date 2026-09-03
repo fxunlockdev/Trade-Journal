@@ -4,11 +4,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getOpenAIClient, OPENAI_MODEL, modelTuning } from "@/lib/openai/client";
 import { createTradeSchema } from "@/lib/validators/trade";
 import { computeTradeFields } from "@/lib/trades/computations";
+import { tradeInsertPayload } from "@/lib/trades/insert-payload";
 import {
   TRADE_CHAT_SYSTEM_PROMPT,
   buildTurnContext,
 } from "@/lib/chat/system-prompt";
 import { parseTradeAction, getTradeParseErrors } from "@/lib/chat/parse-action";
+import {
+  getActiveJournal,
+  canEditTrades,
+} from "@/lib/journals/active-journal";
 import type { Trade, ChatMessage } from "@/types/database";
 
 interface ChatRequestBody {
@@ -87,6 +92,7 @@ interface TradeCreateResult {
 async function createTradeFromAction(
   adminDB: AdminDB,
   userId: string,
+  journalId: string,
   actionData: Record<string, unknown>,
 ): Promise<TradeCreateResult> {
   const tags =
@@ -165,9 +171,16 @@ async function createTradeFromAction(
 
   const computed = computeTradeFields(tradeData);
 
+  // This insert omitted journal_id, which is NOT NULL, so every trade the AI
+  // chat ever tried to create failed on a null violation -- silently, since
+  // the error became a chat reply rather than a report. Fourteen messages from
+  // one user in July, not one trade.
+  //
+  // Now built by the shared builder, whose type requires a journal, so the
+  // same omission cannot be written again.
   const { data, error } = await adminDB
     .from("trades")
-    .insert(computed)
+    .insert(tradeInsertPayload(computed, { userId, journalId }))
     .select()
     .single();
 
@@ -275,13 +288,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let tradeError: string | null = null;
 
     if (tradeAction) {
-      const result = await createTradeFromAction(
-        adminDB,
-        user.id,
-        tradeAction.data as unknown as Record<string, unknown>,
-      );
-      createdTrade = result.trade;
-      tradeError = result.error;
+      // Which journal, resolved the same way /api/trades does: the active
+      // journal from the session, then the role gate. This route HAS a browser
+      // session, so it can use the cookie-based resolver; a webhook cannot,
+      // which is why the Telegram path asks instead.
+      try {
+        const active = await getActiveJournal(supabase, user.id);
+        if (!canEditTrades(active.role)) {
+          tradeError =
+            "You don't have permission to add trades to this journal.";
+        } else {
+          const result = await createTradeFromAction(
+            adminDB,
+            user.id,
+            active.journal.id,
+            tradeAction.data as unknown as Record<string, unknown>,
+          );
+          createdTrade = result.trade;
+          tradeError = result.error;
+        }
+      } catch {
+        // getActiveJournal throws when the user belongs to no journal at all.
+        tradeError =
+          "You don't have a journal yet, so there is nowhere to put that trade.";
+      }
 
       await saveChatMessage(adminDB, user.id, "assistant", aiContent, {
         trade_id: createdTrade?.id ?? null,
