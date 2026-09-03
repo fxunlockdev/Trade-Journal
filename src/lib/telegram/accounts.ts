@@ -87,15 +87,15 @@ export async function editableJournals(admin: Admin, userId: string): Promise<Jo
  * convention of theirs. An error is null too; the caller's fallback and the
  * confirmation message cover it.
  */
-export async function lastQuantity(
+export async function lastSize(
   admin: Admin,
   userId: string,
   journalId: string,
   instrument: string,
-): Promise<number | null> {
+): Promise<{ quantity: number; lots: number | null } | null> {
   const { data, error } = await admin
     .from("trades")
-    .select("quantity")
+    .select("quantity, lot_size")
     .eq("user_id", userId)
     .eq("journal_id", journalId)
     .eq("instrument", instrument)
@@ -104,5 +104,7 @@ export async function lastQuantity(
     .maybeSingle();
   if (error) return null;
   const q = data?.quantity;
-  return typeof q === "number" && q > 0 ? q : null;
+  if (typeof q !== "number" || q <= 0) return null;
+  const lots = data?.lot_size;
+  return { quantity: q, lots: typeof lots === "number" && lots > 0 ? lots : null };
 }

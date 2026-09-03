@@ -46,8 +46,10 @@ export interface TradeDraft {
   readonly dated_from_text: boolean;
   /** "today" or "yesterday" when typed that way; null shows the ISO day. */
   readonly date_label: string | null;
-  /** From "0.5 lots" in the text; null means the caller picks a size. */
-  readonly quantity: number | null;
+  /** Standard lots from "0.5 lots" in the text; null means the caller picks
+   *  a size. Lots, not units: the row's `quantity` is units and is derived
+   *  from this through the instrument's contract size at save time. */
+  readonly lots: number | null;
   /** Exactly what was typed. Kept with the trade so a wrong figure can be traced. */
   readonly message: string;
 }
@@ -105,7 +107,7 @@ export function describeDraft(d: TradeDraft): string {
     parts.push("still open");
   }
 
-  if (d.quantity !== null) parts.push(`${d.quantity} lots`);
+  if (d.lots !== null) parts.push(`${d.lots} lots`);
 
   const when = d.date_label ?? (d.dated_from_text ? d.entry_time.slice(0, 10) : "today");
   return `${parts.join(" · ")}\n${when}`;
@@ -256,7 +258,7 @@ export function parseTradeIntent(text: string, now: Date): TradeIntent {
     entry_time: dated?.iso ?? now.toISOString(),
     dated_from_text: dated !== null,
     date_label: dated && (dated.label === "today" || dated.label === "yesterday") ? dated.label : null,
-    quantity: plan.quantity ?? null,
+    lots: plan.lots ?? null,
     message: t,
   };
 

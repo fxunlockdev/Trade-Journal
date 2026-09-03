@@ -31,7 +31,7 @@ const draft = (o: Partial<TradeDraft> = {}): TradeDraft => ({
   entry_time: "2026-09-03T12:00:00.000Z",
   dated_from_text: false,
   date_label: null,
-  quantity: null,
+  lots: null,
   message: "XAUUSD buy 3340 sl 3335 tp1 3350 closed 3348",
   ...o,
 });
@@ -70,7 +70,7 @@ function fake(p: PendingTrade | null, o: Partial<TradeTapStore> = {}): Fake {
       return true;
     },
     retake: async () => false,
-    lastQuantity: async () => 2.5,
+    lastSize: async () => ({ quantity: 250, lots: 2.5 }),
     insertTrade: async (row) => {
       inserts.push(row);
       return { id: "t1" };
@@ -174,29 +174,35 @@ describe("saving", () => {
     expect(f.saved).toEqual([["aB3_x-9Q", "t1"]]);
   });
 
-  it("sizes from history when the message did not, and says so", async () => {
+  it("sizes from history when the message did not, and says so in lots", async () => {
     const f = fake(pending());
     const r = await handleTradeTap(f.store, tap(), NOW);
-    expect(f.inserts[0].quantity).toBe(2.5);
-    expect(r.message).toContain("(size 2.5, as last time)");
+    expect(f.inserts[0].quantity).toBe(250);
+    expect(f.inserts[0].lot_size).toBe(2.5);
+    expect(r.message).toContain("(size 2.5 lots, as last time)");
   });
 
-  it("uses the typed size without comment", async () => {
-    const f = fake(pending({ draft: draft({ quantity: 0.5 }) }));
+  it("converts typed lots to units through the contract size", async () => {
+    // Gold is 100 oz a lot. 0.5 lots is 50 units, not 0.5 units: the first
+    // version stored the lots as units and priced a gold trade at eight dollars.
+    const f = fake(pending({ draft: draft({ lots: 0.5 }) }));
     const r = await handleTradeTap(f.store, tap(), NOW);
-    expect(f.inserts[0].quantity).toBe(0.5);
-    expect(r.message).not.toContain("as last time");
+    expect(f.inserts[0].quantity).toBe(50);
+    expect(f.inserts[0].lot_size).toBe(0.5);
+    expect(r.message).toBe("Saved to <b>TTC GOLD &lt;SCALP&gt;</b>.");
   });
 
-  it("falls back to 1 when there is no history", async () => {
-    const f = fake(pending(), { lastQuantity: async () => null });
+  it("never sizes silently: with no history it says it used one unit", async () => {
+    const f = fake(pending(), { lastSize: async () => null });
     const r = await handleTradeTap(f.store, tap(), NOW);
     expect(f.inserts[0].quantity).toBe(1);
-    expect(r.message).not.toContain("as last time");
+    expect(f.inserts[0].lot_size).toBeNull();
+    expect(r.message).toMatch(/size 1 unit/);
+    expect(r.message).toMatch(/0\.5 lots/);
   });
 
   it("escapes the journal name in the confirmation", async () => {
-    const f = fake(pending());
+    const f = fake(pending({ draft: draft({ lots: 1 }) }));
     const r = await handleTradeTap(f.store, tap(), NOW);
     expect(r.message).toContain("TTC GOLD &lt;SCALP&gt;");
   });
