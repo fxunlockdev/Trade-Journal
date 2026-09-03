@@ -93,6 +93,14 @@ export function ReportActivity({
 
   const instant = new Date(now);
 
+  // Setups publishing to the same chat should almost always share a timezone.
+  // When they do not, their reports arrive hours apart for no visible reason:
+  // one setup created after the others kept the default zone, published three
+  // hours later than its siblings, and looked broken. The zone was not shown
+  // anywhere, so nothing on screen could have explained it.
+  const zones = new Set(active.map((d) => d.timezone));
+  const mixedZones = zones.size > 1;
+
   return (
     <Card className="border-border bg-card">
       <CardContent className="space-y-4 pt-6">
@@ -103,6 +111,12 @@ export function ReportActivity({
           {!connected && (
             <p className="text-xs text-warn">
               No Telegram group is connected, so nothing will publish.
+            </p>
+          )}
+          {mixedZones && (
+            <p className="text-xs text-warn" data-testid="mixed-timezones">
+              These setups use different timezones ({[...zones].join(", ")}), so
+              their reports will arrive hours apart.
             </p>
           )}
         </div>
@@ -136,7 +150,14 @@ export function ReportActivity({
                 className="space-y-1.5 border-t border-border pt-3 first:border-0 first:pt-0"
                 data-testid={`report-activity-${desk.id}`}
               >
-                <p className="text-sm font-medium">{desk.name}</p>
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-sm font-medium">{desk.name}</p>
+                  {/* Shown always, not only on mismatch: a wrong zone is
+                      invisible until someone can read the right one. */}
+                  <p className="text-xs text-muted-foreground">
+                    {desk.timezone}
+                  </p>
+                </div>
 
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {CADENCES.map((cadence) => {
@@ -213,8 +234,8 @@ export function ReportActivity({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Times are in each setup&rsquo;s own timezone. A period with no closed
-          trades is skipped rather than published empty.
+          Times are in each setup&rsquo;s own timezone, shown beside its name. A
+          period with no closed trades is skipped rather than published empty.
         </p>
       </CardContent>
     </Card>
