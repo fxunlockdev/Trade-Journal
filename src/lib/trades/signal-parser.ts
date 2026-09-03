@@ -27,6 +27,7 @@
 
 import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
 import { PRICE, NOT_A_PRICE_AFTER, parsePrice } from "@/lib/trades/parse-price";
+import { expandAliases } from "@/lib/trades/instrument-aliases";
 
 export type ParsedDirection = "buy" | "sell";
 
@@ -54,8 +55,8 @@ export interface ParsedSignal {
   readonly warnings: readonly string[];
 }
 
-const DIR_BUY_RE = /\b(?:buy|long|bull|bullish)\b/i;
-const DIR_SELL_RE = /\b(?:sell|short|bear|bearish)\b/i;
+const DIR_BUY_RE = /\b(?:buy|bought|long|longed|bull|bullish)\b/i;
+const DIR_SELL_RE = /\b(?:sell|short|shorted|bear|bearish)\b/i;
 
 /** A captured price with the "not a time, not a unit" guard. */
 const PRICE_G = `(${PRICE})${NOT_A_PRICE_AFTER}`;
@@ -121,7 +122,7 @@ function findDirection(text: string): {
   return {};
 }
 
-const DIR = "(?:buy|sell|long|short)";
+const DIR = "(?:buy|bought|sell|long|short|shorted)";
 /**
  * An explicit entry marker. "at" counts, but NOT when it follows an outcome
  * verb: "out at 66000", "closed at 3348" and "stopped at 3332" are exits, and
@@ -288,7 +289,8 @@ function findTps(text: string): {
 }
 
 export function parseSignalText(input: string): ParsedSignal {
-  const text = input.trim();
+  // "gold" -> XAUUSD, "cable" -> GBPUSD, before anything else looks at it.
+  const text = expandAliases(input.trim());
   if (!text) return { instruments: [], warnings: [] };
 
   const warnings: string[] = [];

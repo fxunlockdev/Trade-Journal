@@ -52,6 +52,12 @@ export interface TradeDraft {
   readonly lots: number | null;
   /** Exactly what was typed. Kept with the trade so a wrong figure can be traced. */
   readonly message: string;
+  /** The message was plain words, translated by the model; the summary says so. */
+  readonly read_from_prose?: boolean;
+  /** "+80 pips" when the exit was worked out from a stated result. */
+  readonly derived_exit?: string | null;
+  /** Where a stated result disagrees with the prices. Shown, never hidden. */
+  readonly warnings?: readonly string[];
 }
 
 export type TradeIntent =
@@ -98,7 +104,8 @@ export function describeDraft(d: TradeDraft): string {
   const o = d.outcome;
   if (o.kind === "closed_at") {
     const pips = pipsBetween(d.instrument, d.direction, d.entry_price, o.exit_price);
-    parts.push(`closed ${o.exit_price} (${signed(pips)} pips)`);
+    const from = d.derived_exit ? `, from ${d.derived_exit}` : "";
+    parts.push(`closed ${o.exit_price} (${signed(pips)} pips${from})`);
   } else if (o.kind === "result") {
     if (o.result === "hit") parts.push(`TP${o.tpIndex ?? 1} hit`);
     else if (o.result === "sl") parts.push("stopped out");
@@ -110,7 +117,9 @@ export function describeDraft(d: TradeDraft): string {
   if (d.lots !== null) parts.push(`${d.lots} lots`);
 
   const when = d.date_label ?? (d.dated_from_text ? d.entry_time.slice(0, 10) : "today");
-  return `${parts.join(" · ")}\n${when}`;
+  const lines = [`${parts.join(" · ")}\n${when}`];
+  for (const w of d.warnings ?? []) lines.push(`⚠ ${w}`);
+  return lines.join("\n");
 }
 
 /**

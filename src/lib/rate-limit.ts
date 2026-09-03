@@ -69,4 +69,7 @@ export const LIMITS = {
    *  allowance is sized for that rather than for one message per trade.
    *  Keyed on the Telegram user, so a flood from one account is contained. */
   telegramDm: { name: "telegram_dm", max: 200, windowSeconds: 600 },
+  /** A model call per message the grammar could not read. Costs money and
+   *  seconds, so it is its own, tighter allowance. */
+  telegramProse: { name: "telegram_prose", max: 40, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;

@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { canEditTrades } from "@/lib/journals/active-journal";
 import { allowRequest, LIMITS } from "@/lib/rate-limit";
+import { extractTradeWithModel } from "@/lib/telegram/prose-model";
 import { PENDING_ID_BYTES } from "@/lib/telegram/commands";
 import { type Admin, editableJournals, lastSize, linkedUser } from "@/lib/telegram/accounts";
 import type { TradeDmStore } from "@/lib/telegram/trade-dm";
@@ -137,6 +138,11 @@ export function dmStore(admin: Admin): TradeDmStore {
     },
     setQuick: async (telegramUserId, quick) => {
       await admin.from("telegram_accounts").update({ quick }).eq("telegram_user_id", telegramUserId);
+    },
+    readProse: async (telegramUserId, text) => {
+      if (!process.env.OPENAI_API_KEY) return null;
+      if (!(await allowRequest(admin, LIMITS.telegramProse, String(telegramUserId)))) return null;
+      return extractTradeWithModel(text);
     },
   };
 }

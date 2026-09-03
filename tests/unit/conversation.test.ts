@@ -263,3 +263,25 @@ describe("how people actually answer", () => {
     expect(applyText("size", "no", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false });
   });
 });
+
+describe("confirming a trade read from plain words", () => {
+  it("comes before every other question, and only for prose", () => {
+    expect(nextStage(draft({ read_from_prose: true, lots: 0.5, dated_from_text: true }), EMPTY_CONVERSATION, true)).toBe("confirm");
+    expect(nextStage(draft({ read_from_prose: true }), { answers: {}, confirmed: true }, false)).toBe("size");
+    expect(nextStage(draft(), EMPTY_CONVERSATION, false)).toBe("size");
+  });
+
+  it("offers yes and no", () => {
+    const { prompt } = promptFor("confirm", ID, EMPTY_CONVERSATION, ctx);
+    expect(prompt.buttons.map((b) => b.text)).toEqual(["Yes, that's right", "No, cancel"]);
+    expect(decodeAnswer(prompt.buttons[1].callback_data)).toEqual({ pendingId: ID, field: "c", value: "no" });
+  });
+
+  it("reads yes, no and anything else", () => {
+    expect(applyText("confirm", "yep", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { confirmed: true } });
+    expect(applyText("confirm", "no", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false, cancel: true });
+    expect(applyText("confirm", "maybe", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false });
+    expect(applyButton("confirm", { pendingId: ID, field: "c", value: "yes" }, EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { confirmed: true } });
+    expect(applyButton("size", { pendingId: ID, field: "c", value: "yes" }, EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false, hint: "" });
+  });
+});

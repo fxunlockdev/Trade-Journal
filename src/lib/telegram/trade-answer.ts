@@ -51,6 +51,15 @@ export async function handleTradeAnswer(
   const stage = nextStage(d.draft, d.conversation, quick);
   const applied = applyButton(stage, tap, d.conversation, now);
   if (!applied.ok) {
+    if (applied.cancel) {
+      await store.cancelDraft(d.id);
+      return {
+        answer: "Cancelled.",
+        alert: false,
+        clearPicker: true,
+        reply: { text: "Cancelled. Send it again with what I got wrong." },
+      };
+    }
     // A button from a question that has moved on: re-send the open one.
     if (applied.hint === "") {
       const reply = await advance(store, d, now);
@@ -60,7 +69,11 @@ export async function handleTradeAnswer(
     return { answer: applied.hint.slice(0, CALLBACK_TEXT_MAX), alert: true, clearPicker: false };
   }
 
-  if (!(await store.saveConversation(d.id, { answers: applied.conversation.answers }, lifeFrom(now)))) {
+  const patch = {
+    answers: applied.conversation.answers,
+    ...(applied.conversation.confirmed ? { confirmed: true } : {}),
+  };
+  if (!(await store.saveConversation(d.id, patch, lifeFrom(now)))) {
     return { answer: "Couldn't hold that answer. Tap again.", alert: true, clearPicker: false };
   }
   const reply = await advance(store, { ...d, conversation: applied.conversation }, now);

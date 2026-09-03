@@ -161,7 +161,8 @@ export function TelegramLinkCard() {
               <code className="rounded bg-muted/40 px-1">
                 XAUUSD buy 3340 sl 3335 tp1 3350 closed 3348
               </code>
-              . Say what happened (an exit price, <code className="rounded bg-muted/40 px-1">tp1 hit</code>,{" "}
+              , or just describe it: &ldquo;bought gold at 3340 this morning, stop 3335, out at 3348&rdquo;.
+              Say what happened (an exit price, <code className="rounded bg-muted/40 px-1">tp1 hit</code>,{" "}
               <code className="rounded bg-muted/40 px-1">sl</code>,{" "}
               <code className="rounded bg-muted/40 px-1">be</code> or{" "}
               <code className="rounded bg-muted/40 px-1">still open</code>). The bot then asks for anything
