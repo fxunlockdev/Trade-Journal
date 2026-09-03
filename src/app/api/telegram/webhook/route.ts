@@ -23,7 +23,9 @@ import { secretMatches } from "@/lib/telegram/webhook-secret";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
-import { dmStore, tapStore } from "@/lib/telegram/pending-store";
+import { handleTradeAnswer } from "@/lib/telegram/trade-answer";
+import { decodeAnswer } from "@/lib/telegram/conversation";
+import { dmStore, tapStore, answerStore } from "@/lib/telegram/pending-store";
 import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import { publishSnapshot } from "@/lib/reports/publish";
@@ -305,7 +307,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { text: msg.text ?? msg.caption ?? "", telegramUserId: msg.from!.id!, chatId },
         new Date(),
       );
-      if (reply) await sendChatMessage(botToken, chatId, reply.text, reply.buttons);
+      if (reply) await sendChatMessage(botToken, chatId, reply.text, reply.buttons, reply.perRow);
       return NextResponse.json({ ok: true });
     }
 
@@ -390,6 +392,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ ok: true });
     }
 
+    /* ── a tapped answer to one of the bot's questions ─────────────── */
+    if (update.callback_query && decodeAnswer(update.callback_query.data)) {
+      const cb = update.callback_query;
+      const tap = decodeAnswer(cb.data)!;
+      const chatId = cb.message?.chat?.id ? String(cb.message.chat.id) : null;
+      if (!cb.id || !chatId || !cb.from?.id) {
+        if (cb.id) await answerCallback(botToken, cb.id);
+        return NextResponse.json({ ok: true });
+      }
+      const result = await handleTradeAnswer(
+        answerStore(admin),
+        { ...tap, tapperId: cb.from.id, chatId },
+        new Date(),
+      );
+      await answerCallback(botToken, cb.id, result.answer || undefined, result.alert);
+      if (result.clearPicker && cb.message?.message_id) {
+        await clearButtons(botToken, chatId, cb.message.message_id);
+      }
+      if (result.reply) {
+        await sendChatMessage(botToken, chatId, result.reply.text, result.reply.buttons, result.reply.perRow);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     /* ── a tapped journal button ───────────────────────────────────── */
     if (update.callback_query && decodeTrade(update.callback_query.data)) {
       const cb = update.callback_query;
@@ -408,7 +434,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { choice, tapperId: cb.from.id, chatId },
         new Date(),
       );
-      await answerCallback(botToken, cb.id, result.answer, result.alert);
+      await answerCallback(botToken, cb.id, result.answer || undefined, result.alert);
       if (result.clearPicker && cb.message?.message_id) {
         await clearButtons(botToken, chatId, cb.message.message_id);
       }

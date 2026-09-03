@@ -64,7 +64,9 @@ export const LIMITS = {
   /** Minting a link code creates a credential; a page reload must not mint
    *  another, and a script must not mint hundreds. */
   telegramLink: { name: "telegram_link", max: 10, windowSeconds: 3600 },
-  /** A DM that looks like a trade costs a lookup, a reply and a stored draft.
+  /** Every DM and every button tap that makes the bot do work. A guided trade
+   *  is six messages, and an evening's backfill is twenty trades, so the
+   *  allowance is sized for that rather than for one message per trade.
    *  Keyed on the Telegram user, so a flood from one account is contained. */
-  telegramDm: { name: "telegram_dm", max: 30, windowSeconds: 600 },
+  telegramDm: { name: "telegram_dm", max: 200, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;

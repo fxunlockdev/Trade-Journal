@@ -164,9 +164,10 @@ export function TelegramLinkCard() {
               . Say what happened (an exit price, <code className="rounded bg-muted/40 px-1">tp1 hit</code>,{" "}
               <code className="rounded bg-muted/40 px-1">sl</code>,{" "}
               <code className="rounded bg-muted/40 px-1">be</code> or{" "}
-              <code className="rounded bg-muted/40 px-1">still open</code>), add a date like{" "}
-              <code className="rounded bg-muted/40 px-1">28 aug</code> for a past trade, and{" "}
-              <code className="rounded bg-muted/40 px-1">0.5 lots</code> for the size. One trade per message.
+              <code className="rounded bg-muted/40 px-1">still open</code>). The bot then asks for anything
+              missing: size, date, how it felt, tags and notes, each with buttons or Skip. Send it{" "}
+              <code className="rounded bg-muted/40 px-1">/quick</code> to be asked only for size and date. One
+              trade per message.
             </p>
             <Button
               type="button"

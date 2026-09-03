@@ -64,20 +64,29 @@ export interface InlineButton {
   readonly callback_data: string;
 }
 
-/** A message with one button per row, so long desk names stay readable. */
+/**
+ * A message, optionally with buttons. One per row by default, so long desk
+ * and journal names stay readable; a question with twelve short answers
+ * asks for three to a row.
+ */
 export async function sendChatMessage(
   botToken: string,
   chatId: string,
   text: string,
   buttons?: readonly InlineButton[],
+  perRow = 1,
 ): Promise<void> {
+  const rows: InlineButton[][] = [];
+  for (const b of buttons ?? []) {
+    const last = rows[rows.length - 1];
+    if (last && last.length < Math.max(1, perRow)) last.push(b);
+    else rows.push([b]);
+  }
   await call(botToken, "sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
-    ...(buttons && buttons.length > 0
-      ? { reply_markup: { inline_keyboard: buttons.map((b) => [b]) } }
-      : {}),
+    ...(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : {}),
   });
 }
 

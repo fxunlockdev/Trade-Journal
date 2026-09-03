@@ -236,7 +236,7 @@ const createTradeObjectSchema = z.object({
   split_risk: z.coerce.boolean().default(false),
   fees: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(5000).nullable().optional(),
-  tags: z.array(z.string().trim()).default([]),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   // Psychology — optional single-select at two stages. Same vocabulary.
   emotion: z.enum(EMOTION_VALUES).nullable().optional(),
   emotion_post: z.enum(EMOTION_VALUES).nullable().optional(),

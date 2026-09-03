@@ -18,6 +18,8 @@ import { outcomeFields } from "@/lib/trades/outcome-parser";
 import { escapeHtml } from "@/lib/reports/caption";
 import type { TradeChoice } from "@/lib/telegram/commands";
 import type { TradeDraft } from "@/lib/telegram/trade-intent";
+import { effectiveDraft, type Conversation } from "@/lib/telegram/conversation";
+import { refuseTap } from "@/lib/telegram/trade-flow";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 
 /**
@@ -37,6 +39,8 @@ export interface PendingTrade {
   readonly expiresAt: string;
   readonly consumedAt: string | null;
   readonly tradeId: string | null;
+  /** The questions asked and answered since the draft was held. */
+  readonly conversation: Conversation;
 }
 
 export interface LastSize {
@@ -58,6 +62,8 @@ export type InsertOutcome =
   | { readonly error: string };
 
 export interface TradeTapStore {
+  /** Within this sender's allowance. */
+  allow(telegramUserId: number): Promise<boolean>;
   /** The draft in whatever state it is in, or null if it never existed. */
   loadPending(id: string): Promise<PendingTrade | null>;
   linkedUser(telegramUserId: number): Promise<string | null>;
@@ -91,32 +97,28 @@ export interface TapResult {
   readonly message?: string;
 }
 
+/** The row's notes column takes 5000 characters; the typed message rides
+ *  along whatever else was said, so the note gives way, never the message. */
+const NOTES_MAX = 5000;
+function notesWithProvenance(note: string | null, message: string): string {
+  const suffix = `Logged from Telegram: ${message}`;
+  if (!note) return suffix.slice(0, NOTES_MAX);
+  const room = NOTES_MAX - suffix.length - 2;
+  return `${room > 0 ? note.slice(0, room) : ""}\n\n${suffix}`.slice(0, NOTES_MAX);
+}
+
 function refuse(answer: string): TapResult {
   return { answer, alert: true, clearPicker: false };
 }
 
 export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date): Promise<TapResult> {
+  if (!(await store.allow(tap.tapperId))) return { answer: "", alert: false, clearPicker: false };
+
   const pending = await store.loadPending(tap.choice.pendingId);
-  if (!pending || new Date(pending.expiresAt).getTime() <= now.getTime()) {
-    return refuse("That one has expired. Send the trade again.");
-  }
-
-  // The tapper must be the person who typed it, and the tap must come from
-  // the chat the picker was shown in. A forwarded picker satisfies neither
-  // for anyone else and would otherwise answer -- with the journal name --
-  // wherever it was forwarded to.
-  if (pending.telegramUserId !== tap.tapperId) {
-    return refuse("That isn't your trade to save.");
-  }
-  if (pending.chatId !== tap.chatId) {
-    return refuse("Use the picker in your own chat with me.");
-  }
-
-  // Their link must still stand: unlinking is a revocation.
-  const userId = await store.linkedUser(tap.tapperId);
-  if (!userId || userId !== pending.userId) {
-    return refuse("Your account is no longer linked.");
-  }
+  // Author, chat and link, the same three checks as every other tap.
+  const userId = pending ? await store.linkedUser(tap.tapperId) : null;
+  const why = refuseTap(pending, tap, userId, now);
+  if (why || !pending || !userId) return refuse(why ?? "That one has expired.");
 
   if (tap.choice.journalIndex === null) {
     if (await store.consume(pending.id, now)) {
@@ -127,6 +129,11 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
 
   const journalId = pending.journalIds[tap.choice.journalIndex];
   if (!journalId) return refuse("That option isn't valid.");
+
+  // A picker is only shown once every question is answered. Anything else
+  // carrying a journal index is stale, crafted, or from before the questions
+  // existed; all three get the same advice.
+  if (!pending.conversation.ready) return refuse("That picker is out of date. Send the trade again.");
 
   // Membership is checked NOW, against the database, not against the list
   // stored half an hour ago. Access can be revoked between the two.
@@ -150,7 +157,8 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
     };
   }
 
-  const d = pending.draft;
+  const answers = pending.conversation.answers;
+  const d = effectiveDraft(pending.draft, answers);
 
   // SIZE. The row's `quantity` is UNITS (P&L is price move x quantity); what a
   // person types is LOTS. The conversion is the instrument's contract size,
@@ -192,7 +200,11 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
       tp1: d.tp1, tp2: d.tp2, tp3: d.tp3, tp4: d.tp4, tp5: d.tp5, tp6: d.tp6, tp7: d.tp7,
       tp4_trailing: d.tp4_trailing,
       take_profit: d.tp1,
-      notes: `Logged from Telegram: ${d.message}`,
+      emotion: answers.emotion ?? null,
+      tags: answers.tags ?? [],
+      // The typed message stays with the row whatever else was said, so a
+      // wrong figure can be traced to what was typed.
+      notes: notesWithProvenance(answers.notes ?? null, d.message),
       ...outcomeFields(d.outcome),
     },
     { userId, journalId },
