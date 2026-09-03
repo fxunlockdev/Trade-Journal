@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { nextRunFor } from "@/lib/reports/schedule";
-import type { Cadence } from "@/lib/reports/periods-tz";
+import { resolveReportPeriod, type Cadence } from "@/lib/reports/periods-tz";
 import type { ReportDesk } from "@/types/database";
 
 /**
@@ -24,13 +24,21 @@ export interface DeliverySummary {
   readonly images: number;
   readonly attempted: number;
   readonly sentAt: string | null;
+  /** Always set, unlike sentAt. This is what "most recent" must mean. */
+  readonly updatedAt: string;
   readonly error: string | null;
 }
 
 interface ReportActivityProps {
   readonly desks: readonly ReportDesk[];
   readonly deliveries: readonly DeliverySummary[];
-  /** Latest closed-trade date per desk, ISO, for the quiet-journal warning. */
+  /**
+   * Latest closed-trade date per desk, as a LOCAL date in that desk's zone.
+   *
+   * Null means genuinely none, not merely none recently: the page looks beyond
+   * its own 75-day read before concluding that, because "no closed trades in
+   * these journals" shown next to a partner-facing channel has to be true.
+   */
   readonly lastTradeByDesk: Readonly<Record<string, string | null>>;
   readonly connected: boolean;
   /** Injected so the component stays pure and the page owns the clock. */
@@ -101,9 +109,16 @@ export function ReportActivity({
 
         <div className="space-y-4">
           {active.map((desk) => {
+            // Sorted by updatedAt, NOT sentAt.
+            //
+            // A failed or in-doubt delivery never gets sent_at set, so sorting
+            // by it ranks every failure below any past success. A desk that
+            // published once and has been failing since would show a green
+            // "posted 3 images" with the real problem hidden underneath, which
+            // is precisely the silence this panel exists to end.
             const mine = deliveries
               .filter((d) => d.deskId === desk.id)
-              .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""));
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
             const last = mine[0];
             const lastTrade = lastTradeByDesk[desk.id] ?? null;
 
@@ -126,11 +141,33 @@ export function ReportActivity({
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {CADENCES.map((cadence) => {
                     const next = nextRunFor(cadence, instant, desk.timezone);
+
+                    // "Due now" is only honest if it has not already gone.
+                    //
+                    // The window stays open for two hours, so a report
+                    // published at 06:00 would otherwise still read "due now"
+                    // at 07:30. A panel that exists to answer "is this
+                    // working?" must not imply something is pending when it
+                    // has already happened.
+                    const current = resolveReportPeriod(
+                      cadence,
+                      instant,
+                      desk.timezone,
+                    );
+                    const done = mine.some(
+                      (d) =>
+                        d.cadence === cadence &&
+                        d.periodStart === current.start &&
+                        (d.status === "sent" || d.status === "superseded"),
+                    );
+
                     return (
                       <span key={cadence}>
                         <span className="capitalize">{cadence}</span>{" "}
-                        {next.dueNow ? (
+                        {next.dueNow && !done ? (
                           <span className="text-pos">due now</span>
+                        ) : next.dueNow && done ? (
+                          <span className="text-muted-foreground">sent today</span>
                         ) : (
                           whenLabel(next.date, next.hour)
                         )}
