@@ -205,7 +205,7 @@ describe("what the adversarial review found", () => {
 
   it("reads a typed lot size and shows it", () => {
     const r = parseTradeIntent("XAUUSD buy 3340 sl 3335 closed 3348 0.5 lots", NOW);
-    expect(r.kind === "ready" && r.draft.quantity).toBe(0.5);
+    expect(r.kind === "ready" && r.draft.lots).toBe(0.5);
     expect(r.kind === "ready" && r.draft.entry_price).toBe(3340);
     expect(r.kind === "ready" && r.draft.dated_from_text).toBe(false);
     expect(r.kind === "ready" && r.summary).toContain("0.5 lots");
@@ -213,7 +213,7 @@ describe("what the adversarial review found", () => {
 
   it("leaves the size to the journal when none was typed", () => {
     const r = parseTradeIntent("XAUUSD buy 3340 sl 3335 closed 3348", NOW);
-    expect(r.kind === "ready" && r.draft.quantity).toBeNull();
+    expect(r.kind === "ready" && r.draft.lots).toBeNull();
   });
 
   it("keeps the real date when a price looks like one", () => {
@@ -277,7 +277,7 @@ describe("describeDraft", () => {
     entry_time: "2026-09-03T14:00:00.000Z",
     dated_from_text: false,
     date_label: null,
-    quantity: null,
+    lots: null,
     message: "",
     ...o,
   });

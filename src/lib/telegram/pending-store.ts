@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { canEditTrades } from "@/lib/journals/active-journal";
 import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { PENDING_ID_BYTES } from "@/lib/telegram/commands";
-import { type Admin, editableJournals, lastQuantity, linkedUser } from "@/lib/telegram/accounts";
+import { type Admin, editableJournals, lastSize, linkedUser } from "@/lib/telegram/accounts";
 import type { TradeDmStore } from "@/lib/telegram/trade-dm";
 import type { PendingTrade, TradeTapStore } from "@/lib/telegram/trade-tap";
 import type { TradeDraft } from "@/lib/telegram/trade-intent";
@@ -92,7 +92,7 @@ export function tapStore(admin: Admin): TradeTapStore {
         .maybeSingle();
       return data !== null;
     },
-    lastQuantity: (userId, journalId, instrument) => lastQuantity(admin, userId, journalId, instrument),
+    lastSize: (userId, journalId, instrument) => lastSize(admin, userId, journalId, instrument),
     insertTrade: async (row) => {
       const { data, error } = await admin.from("trades").insert(row).select("id").single();
       if (error) {

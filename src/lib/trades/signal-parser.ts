@@ -49,8 +49,8 @@ export interface ParsedSignal {
   readonly tp7?: number;
   /** True when the final TP (tp4 historically, now tp7) is marked "open" or "runner". */
   readonly tp4_trailing?: boolean;
-  /** "0.5 lots", when the message sized the trade. */
-  readonly quantity?: number;
+  /** "0.5 lots", when the message sized the trade. Standard lots, NOT units. */
+  readonly lots?: number;
   readonly warnings: readonly string[];
 }
 
@@ -339,7 +339,7 @@ export function parseSignalText(input: string): ParsedSignal {
     tp6: tps.tp6,
     tp7: tps.tp7,
     tp4_trailing: tps.tp4_trailing,
-    quantity: findLotSize(text),
+    lots: findLotSize(text),
     warnings,
   };
 }

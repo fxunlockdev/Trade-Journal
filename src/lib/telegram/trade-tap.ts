@@ -18,6 +18,7 @@ import { outcomeFields } from "@/lib/trades/outcome-parser";
 import { escapeHtml } from "@/lib/reports/caption";
 import type { TradeChoice } from "@/lib/telegram/commands";
 import type { TradeDraft } from "@/lib/telegram/trade-intent";
+import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 
 /**
  * A draft consumed this long ago with no trade recorded was taken by a tap
@@ -36,6 +37,13 @@ export interface PendingTrade {
   readonly expiresAt: string;
   readonly consumedAt: string | null;
   readonly tradeId: string | null;
+}
+
+export interface LastSize {
+  /** Units, as stored in trades.quantity. */
+  readonly quantity: number;
+  /** Standard lots, when the earlier trade recorded them. */
+  readonly lots: number | null;
 }
 
 export interface Membership {
@@ -58,7 +66,8 @@ export interface TradeTapStore {
   consume(id: string, now: Date): Promise<boolean>;
   /** Re-take a draft consumed before `staleBefore` with no trade recorded. */
   retake(id: string, now: Date, staleBefore: Date): Promise<boolean>;
-  lastQuantity(userId: string, journalId: string, instrument: string): Promise<number | null>;
+  /** The size this person last used for this instrument in this journal. */
+  lastSize(userId: string, journalId: string, instrument: string): Promise<LastSize | null>;
   insertTrade(row: Record<string, unknown>): Promise<InsertOutcome>;
   /** The trade already saved for this draft, if the insert was refused as a duplicate. */
   savedTradeFor(pendingId: string): Promise<string | null>;
@@ -142,8 +151,32 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
   }
 
   const d = pending.draft;
-  const quantity = d.quantity ?? (await store.lastQuantity(userId, journalId, d.instrument)) ?? 1;
-  const sizedByHistory = d.quantity === null;
+
+  // SIZE. The row's `quantity` is UNITS (P&L is price move x quantity); what a
+  // person types is LOTS. The conversion is the instrument's contract size,
+  // the same one the form and the lot-size calculator use. A typed size wins;
+  // then what this person last used here; then one unit, said out loud, because
+  // a silent default is how a gold trade ends up worth eight dollars.
+  const { contractSize } = getInstrumentSpec(d.instrument);
+  let quantity: number;
+  let lotSize: number | null;
+  let sizeNote: string;
+  if (d.lots !== null) {
+    quantity = d.lots * contractSize;
+    lotSize = d.lots;
+    sizeNote = "";
+  } else {
+    const last = await store.lastSize(userId, journalId, d.instrument);
+    if (last) {
+      quantity = last.quantity;
+      lotSize = last.lots;
+      sizeNote = ` (size ${last.lots !== null ? `${last.lots} lots` : `${last.quantity} units`}, as last time)`;
+    } else {
+      quantity = 1;
+      lotSize = null;
+      sizeNote = ' (size 1 unit: add "0.5 lots" to the message to set it)';
+    }
+  }
 
   const built = buildTradeRow(
     {
@@ -153,6 +186,7 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
       entry_price: d.entry_price,
       entry_price_high: d.entry_price_high,
       quantity,
+      lot_size: lotSize,
       entry_time: d.entry_time,
       stop_loss: d.stop_loss,
       tp1: d.tp1, tp2: d.tp2, tp3: d.tp3, tp4: d.tp4, tp5: d.tp5, tp6: d.tp6, tp7: d.tp7,
@@ -197,12 +231,10 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
   }
 
   await store.markSaved(pending.id, tradeId);
-  const sizeNote =
-    sizedByHistory && quantity !== 1 ? ` (size ${quantity}, as last time)` : "";
   return {
     answer: "Saved.",
     alert: false,
     clearPicker: true,
-    message: `Saved to <b>${escapeHtml(m.name)}</b>${sizeNote}.`,
+    message: `Saved to <b>${escapeHtml(m.name)}</b>${escapeHtml(sizeNote)}.`,
   };
 }
