@@ -64,6 +64,39 @@ function authorised(request: NextRequest): boolean {
   return diff === 0;
 }
 
+/** How long a claim may sit before an invocation is assumed dead. Mirrors the
+ *  interval inside claim_report_delivery. */
+const STALE_CLAIM_MS = 15 * 60 * 1000;
+
+/**
+ * Would the claim refuse this delivery?
+ *
+ * The cheap pre-check exists to avoid rendering three posters just to have the
+ * claim turn them down. It therefore has to agree with the claim exactly: too
+ * loose and the work is wasted, too strict and a retryable period becomes
+ * invisible to the scheduler forever. Both mistakes have already happened here.
+ */
+function blocksRetry(row: {
+  readonly status: string;
+  readonly claimed_at: string | null;
+  readonly send_started_at: string | null;
+}): boolean {
+  // Published, or published-and-unverifiable. Neither is ours to redo.
+  if (row.status === "sent" || row.status === "in_doubt") return true;
+
+  if (row.status === "pending") {
+    // A send that started may already be in the chat, so it is never retried
+    // automatically, however old.
+    if (row.send_started_at !== null) return true;
+    const claimed = row.claimed_at ? Date.parse(row.claimed_at) : 0;
+    // Still within the window: another invocation is probably alive.
+    return Date.now() - claimed <= STALE_CLAIM_MS;
+  }
+
+  // failed, skipped, superseded: the claim re-takes these.
+  return false;
+}
+
 interface DeskResult {
   readonly desk: string;
   readonly cadence: string;
@@ -119,7 +152,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { data: desks, error: desksError } = await admin
       .from("report_desks")
       .select("*")
-      .eq("is_active", true);
+      .eq("is_active", true)
+      // ORDERED, so position in the list is not destiny. Unordered, Postgres
+      // returns a stable heap order, the loop always restarts at its head, and
+      // the same desk is last on every tick of every window. When a cap binds,
+      // the loss then lands on the same tenants forever instead of rotating.
+      .order("updated_at", { ascending: true });
 
     if (desksError) {
       return NextResponse.json({ error: "Could not read desks." }, { status: 503 });
@@ -127,6 +165,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     for (const desk of (desks ?? []) as ReportDesk[]) {
       if (published >= MAX_ALBUMS_PER_TICK) break;
+      try {
       if (msLeft() < PER_DESK_MS) {
         results.push({
           desk: desk.name,
@@ -188,9 +227,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
           // Cheap check before expensive work. Without it every tick would
           // render posters just to have the claim refuse them.
+          // Skip only what the CLAIM would refuse, decided by the claim's own
+          // rule rather than a second copy of it in a query filter.
+          //
+          // This used to skip whenever any delivery row existed, which made
+          // the retry path dead: one transient failure and the scheduler never
+          // looked at that period again. Filtering on status alone then went
+          // slightly too far the other way, hiding a 'pending' row left by an
+          // invocation that died BEFORE sending, which the claim does re-take
+          // and which is the expected failure when three renders can be killed
+          // at 300s.
           const { data: already } = await admin
             .from("report_deliveries")
-            .select("id, report_snapshots!inner(desk_id, cadence, period_start)")
+            .select(
+              "id, status, claimed_at, send_started_at, report_snapshots!inner(desk_id, cadence, period_start)",
+            )
             .eq("chat_id", destination.chat_id)
             .eq("report_snapshots.desk_id", desk.id)
             .eq("report_snapshots.cadence", cadence)
@@ -198,7 +249,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             .limit(1)
             .maybeSingle();
 
-          if (already) continue;
+          if (already && blocksRetry(already)) continue;
 
           // The candidate's own instant, so the snapshot is built for THAT day
           // rather than today.
@@ -215,13 +266,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           if (ensured.kind === "empty") continue;
 
           if (ensured.kind === "error") {
+            // CONTINUE, not break. Candidates are oldest first, so breaking
+            // let one unpublishable old day gate every newer one -- including
+            // yesterday, the report anyone is actually waiting for -- on all
+            // 96 ticks a day until it aged out of the lookback.
             results.push({
               desk: desk.name,
-              cadence,
+              cadence: `${cadence} ${candidate.start}`,
               outcome: "failed",
               detail: ensured.message,
             });
-            break;
+            continue;
           }
 
           const outcome = await publishSnapshot({
@@ -235,7 +290,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             msLeft,
           });
 
-          published += 1;
+          // Only a send that actually put images in a chat spends a slot.
+          // Counting failures too let four broken desks exhaust the cap on
+          // every tick of the window, so healthy desks published nothing all
+          // morning -- and failures are the cheapest to produce repeatedly,
+          // so the broken desks reliably won the race.
+          if (outcome.status === "sent" || outcome.status === "not_recorded") {
+            published += 1;
+          }
           results.push({
             desk: desk.name,
             cadence: `${cadence} ${candidate.start}`,
@@ -247,6 +309,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // the loop on to publish a different day in its place.
           break;
         }
+      }
+      } catch (err: unknown) {
+        // ONE DESK MUST NOT STOP THE OTHERS.
+        //
+        // `timezone` is text with no validity constraint, and RLS is the only
+        // real write gate, so a row can hold something Intl rejects. Without
+        // this, `dueCadences(now, desk.timezone)` throws, the whole tick
+        // aborts, and every remaining tenant's reports are skipped -- every
+        // fifteen minutes, until someone finds the one bad row.
+        results.push({
+          desk: desk.name,
+          cadence: "-",
+          outcome: "failed",
+          detail: err instanceof Error ? err.message : "desk failed",
+        });
       }
     }
 

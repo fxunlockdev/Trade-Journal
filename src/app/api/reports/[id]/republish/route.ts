@@ -192,18 +192,41 @@ export async function POST(
 
     // 3. Release the claim, recording WHY. 'superseded' is re-claimable;
     //    'sent' is not, which is what made this impossible before.
-    await admin
+    // CONDITIONAL on the status we read, so two concurrent replaces cannot
+    // both proceed. Without the guard the slower request writes 'superseded'
+    // over the faster one's live claim, returning the row to a re-claimable
+    // state and letting both post an album.
+    //
+    // `retracted_at` is never written back to null: an album deleted earlier
+    // stays deleted, and overwriting the stamp would lose that fact.
+    const { data: released } = await admin
       .from("report_deliveries")
       .update({
         status: "superseded",
-        retracted_at: removed > 0 ? new Date().toISOString() : null,
+        ...(removed > 0 ? { retracted_at: new Date().toISOString() } : {}),
+        // The old ids describe messages that are gone; keeping them would make
+        // the next replace report failures about an album that no longer exists.
+        message_ids: [],
         send_started_at: null,
         error:
           removed === oldIds.length
             ? null
             : `Replaced, but ${oldIds.length - removed} of ${oldIds.length} old images could not be deleted (Telegram allows this for about 48 hours).`,
       })
-      .eq("id", existing.id as string);
+      .eq("id", existing.id as string)
+      .eq("status", existing.status as string)
+      .select("id")
+      .maybeSingle();
+
+    if (!released) {
+      return NextResponse.json(
+        {
+          error:
+            "Someone else changed this report while you were replacing it. Reload and check the chat before trying again.",
+        },
+        { status: 409 },
+      );
+    }
 
     // 4. Publish the refreshed figures.
     const outcome = await publishSnapshot({
