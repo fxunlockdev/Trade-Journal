@@ -2,9 +2,9 @@ import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyRenderToken } from "@/lib/reports/render-token";
 import { getTemplate } from "@/lib/posters/templates";
-import { getTheme, POSTER_DISCLAIMER } from "@/lib/posters/theme";
+import { getTheme } from "@/lib/posters/theme";
+import { posterDisclaimer } from "@/lib/posters/disclaimer";
 import { POSTER_SIZE } from "@/lib/posters/templates/types";
-import { combinedDisclaimerNote } from "@/lib/posters/scope";
 import { formatPeriodLabel } from "@/lib/reports/periods-tz";
 import type { ReportMetrics } from "@/lib/reports/metrics";
 import type { Cadence } from "@/lib/reports/periods-tz";
@@ -91,15 +91,18 @@ export default async function RenderPosterPage({
     logoUrl = signed.data?.signedUrl ?? null;
   }
 
-  // A desk spanning several journals must SAY so on the artefact. The
-  // on-screen breakdown is not published, and a reader would otherwise take
-  // two traders' combined figures for one person's record.
-  const combined = combinedDisclaimerNote(
+  // The SAME notes the preview shows a human.
+  //
+  // This used to build its own shorter version, carrying only the combined
+  // note and the boilerplate. So every automatically published poster went to
+  // partners with three qualifications stripped: which trades the Avg R
+  // actually covers, that the win rate excludes breakevens, and how many
+  // trades were placed by entry date because no close time was recorded. The
+  // path with no human in the loop had the least disclosure.
+  const disclaimer = posterDisclaimer(
+    snapshot.metrics.stats,
     snapshot.report_desks.journal_ids.length,
   );
-  const disclaimer = [combined, POSTER_DISCLAIMER]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <div

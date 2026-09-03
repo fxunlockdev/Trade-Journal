@@ -27,7 +27,6 @@ import {
 import {
   DEFAULT_THEME_ID,
   getTheme,
-  POSTER_DISCLAIMER,
   POSTER_THEMES,
 } from "@/lib/posters/theme";
 import {
@@ -43,6 +42,7 @@ import {
   posterToBlob,
 } from "@/lib/posters/export";
 import { logoStorageKey } from "@/lib/posters/logo";
+import { posterDisclaimer } from "@/lib/posters/disclaimer";
 import { usePosterLogo } from "@/hooks/use-poster-logo";
 import { safeGet, safeRemove, safeSet } from "@/lib/safe-storage";
 import {
@@ -52,7 +52,6 @@ import {
 import { FilterChips } from "@/components/analytics/filter-chips";
 import { COLOR_CLASS } from "@/components/journals/journal-switcher";
 import {
-  combinedDisclaimerNote,
   contributingJournalCount,
   defaultGroupName,
   groupStorageKey,
@@ -359,31 +358,13 @@ export function PostersClient({
    * beside "12 TRADES" reads as a 12-trade average even when only three trades
    * had a stop.
    */
-  const disclaimer = useMemo(() => {
-    if (!stats) return POSTER_DISCLAIMER;
-    const notes: string[] = [];
-    // A poster carrying two traders' results has to say so ON the artefact:
-    // the on-screen breakdown is not published, and a reader would otherwise
-    // take these figures for one person's record.
-    const combined = combinedDisclaimerNote(journalsClaimed);
-    if (combined) notes.push(combined);
-    if (stats.rCovered > 0 && stats.rCovered < stats.tradeCount) {
-      notes.push(
-        `Avg R covers the ${stats.rCovered} of ${stats.tradeCount} trades that had a stop loss.`,
-      );
-    }
-    if (stats.breakeven > 0) {
-      notes.push(
-        `Win rate excludes ${stats.breakeven} breakeven ${stats.breakeven === 1 ? "trade" : "trades"}.`,
-      );
-    }
-    if (fallbackCount > 0) {
-      notes.push(
-        `${fallbackCount} ${fallbackCount === 1 ? "trade" : "trades"} placed by entry date (no close time recorded).`,
-      );
-    }
-    return [...notes, POSTER_DISCLAIMER].join(" ");
-  }, [stats, fallbackCount, journalsClaimed]);
+  // ONE builder, shared with the scheduled render. It was two, and only this
+  // one carried the qualifications, so every automatically published poster
+  // went out without them.
+  const disclaimer = useMemo(
+    () => posterDisclaimer(stats, journalsClaimed),
+    [stats, journalsClaimed],
+  );
 
   const render = useCallback(
     async (mode: "download" | "copy") => {

@@ -127,6 +127,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     for (const desk of (desks ?? []) as ReportDesk[]) {
       if (published >= MAX_ALBUMS_PER_TICK) break;
+      try {
       if (msLeft() < PER_DESK_MS) {
         results.push({
           desk: desk.name,
@@ -188,10 +189,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
           // Cheap check before expensive work. Without it every tick would
           // render posters just to have the claim refuse them.
+          // FILTERED BY STATUS, which it was not.
+          //
+          // This skipped a period whenever ANY delivery row existed. But the
+          // claim deliberately re-takes 'failed', 'skipped' and 'superseded',
+          // so a single transient failure meant the scheduler never looked at
+          // that period again: the retry path this table was designed around
+          // was unreachable, and the only recovery was a person noticing.
+          //
+          // Only the states the claim would refuse are worth skipping here.
           const { data: already } = await admin
             .from("report_deliveries")
             .select("id, report_snapshots!inner(desk_id, cadence, period_start)")
             .eq("chat_id", destination.chat_id)
+            .in("status", ["sent", "pending", "in_doubt"])
             .eq("report_snapshots.desk_id", desk.id)
             .eq("report_snapshots.cadence", cadence)
             .eq("report_snapshots.period_start", candidate.start)
@@ -247,6 +258,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // the loop on to publish a different day in its place.
           break;
         }
+      }
+      } catch (err: unknown) {
+        // ONE DESK MUST NOT STOP THE OTHERS.
+        //
+        // `timezone` is text with no validity constraint, and RLS is the only
+        // real write gate, so a row can hold something Intl rejects. Without
+        // this, `dueCadences(now, desk.timezone)` throws, the whole tick
+        // aborts, and every remaining tenant's reports are skipped -- every
+        // fifteen minutes, until someone finds the one bad row.
+        results.push({
+          desk: desk.name,
+          cadence: "-",
+          outcome: "failed",
+          detail: err instanceof Error ? err.message : "desk failed",
+        });
       }
     }
 

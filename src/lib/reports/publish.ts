@@ -155,14 +155,36 @@ export async function publishSnapshot(
     // mean one style failed or that only two were ever chosen, and the setup
     // may have been edited since. It is the intent, so it is written here
     // rather than derived from the desk later.
-    sendStarted = true;
-    await admin
+    const { error: markError } = await admin
       .from("report_deliveries")
       .update({
         send_started_at: new Date().toISOString(),
         attempted_styles: chosen.map((t) => t.id),
       })
       .eq("id", deliveryId);
+
+    // CHECKED, because the whole in-doubt guarantee rests on it.
+    //
+    // If this write fails and we send anyway, a later crash leaves the row
+    // reading `send_started_at is null`, the claim treats it as a stale
+    // attempt that never sent, and the scheduler posts the album a second
+    // time. A marker that is not durable cannot classify anything, so the send
+    // does not start.
+    if (markError) {
+      await admin
+        .from("report_deliveries")
+        .update({
+          status: "failed",
+          error: "Could not record the start of the send, so it was not sent.",
+        })
+        .eq("id", deliveryId);
+      return {
+        status: "failed",
+        error: "Could not record the start of the send.",
+        chat: destination.chat_title,
+      };
+    }
+    sendStarted = true;
 
     const sent = await sendTelegramAlbum(
       input.botToken,
