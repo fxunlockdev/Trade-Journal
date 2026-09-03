@@ -243,3 +243,23 @@ describe("the result", () => {
     expect(d.entry_time).toBe("2026-08-20T12:00:00.000Z");
   });
 });
+
+describe("how people actually answer", () => {
+  it("finds the mood inside a short sentence, longest word first", () => {
+    expect(applyText("emotion", "felt calm", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { emotion: "calm" } } });
+    expect(applyText("emotion", "a bit anxious tbh", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { emotion: "anxious" } } });
+    expect(applyText("emotion", "was overconfident", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { emotion: "overconfident" } } });
+  });
+
+  it("reads hashtags as tags", () => {
+    expect(applyText("tags", "#scalp #london", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { tags: ["scalp", "london"] } } });
+  });
+
+  it("treats a decline in chat as a skip on a skippable question, never as the answer", () => {
+    for (const t of ["no", "thanks", "ok", "nah!", "nothing"]) {
+      expect(applyText("notes", t, EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { notes: null } } });
+      expect(applyText("tags", t, EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: true, conversation: { answers: { tags: [] } } });
+    }
+    expect(applyText("size", "no", EMPTY_CONVERSATION, NOW)).toMatchObject({ ok: false });
+  });
+});
