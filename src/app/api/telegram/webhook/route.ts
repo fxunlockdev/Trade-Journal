@@ -6,6 +6,7 @@ import {
   parseCommand,
   decodePublish,
   encodePublish,
+  decodeTrade,
   isAdminStatus,
   CADENCE_PROMPT,
   type Cadence,
@@ -17,24 +18,38 @@ import {
   clearButtons,
   type InlineButton,
 } from "@/lib/telegram/chat";
-import { findClaimCode } from "@/lib/telegram/claim";
+import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
+import { secretMatches } from "@/lib/telegram/webhook-secret";
+import { linkAccountWithCode } from "@/lib/telegram/accounts";
+import { handleTradeMessage } from "@/lib/telegram/trade-dm";
+import { handleTradeTap } from "@/lib/telegram/trade-tap";
+import { dmStore, tapStore } from "@/lib/telegram/pending-store";
+import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import { publishSnapshot } from "@/lib/reports/publish";
 import { escapeHtml } from "@/lib/reports/caption";
 import type { ReportDesk } from "@/types/database";
 
 /**
- * Telegram commands: /daily, /weekly, /monthly.
+ * Everything Telegram sends the bot arrives here. Three responsibilities:
  *
- * TWO INDEPENDENT QUESTIONS, ANSWERED BY TWO DIFFERENT AUTHORITIES.
+ *   reports   /daily, /weekly, /monthly in a connected GROUP, and the desk
+ *             button that follows. Two independent questions answered by two
+ *             different authorities -- "is the sender an admin of THIS chat?"
+ *             (Telegram, getChatMember) and "chat -> destination -> owner ->
+ *             desks" (our database). Partners in the group see the images
+ *             arrive; the buttons do nothing for them.
+ *   linking   a ME- code sent in a PRIVATE chat binds that Telegram account
+ *             to the app account that minted it. The proof is the sender.
+ *   trades    a trade typed in a PRIVATE chat by a linked account, shown back
+ *             as a summary with a journal picker, and written on the tap.
+ *             Identity is the person, resolved from the link, not the room.
  *
- *   who   Is the sender an admin of THIS chat?      Telegram (getChatMember)
- *   what  chat -> destination -> owner -> desks     our database
- *
- * Nothing in the request is trusted for either. `callback_data` is a string the
- * client chose, so a tap re-runs the whole chain server-side rather than
- * believing the desk id it carries. Partners in the group see the images
- * arrive; the buttons do nothing for them.
+ * Nothing in the request is trusted. `callback_data` is a string the client
+ * chose, so a tap re-runs the whole chain server-side rather than believing
+ * the id it carries. The trade and link handlers live in `src/lib/telegram/`
+ * behind small store interfaces so every refusal is a unit test; this file
+ * is the secret check, the parse, and the dispatch.
  *
  * This endpoint is PUBLIC and can cause a post to a partner group, so the
  * secret header is checked before anything else is read.
@@ -44,19 +59,13 @@ export const maxDuration = 300;
 
 const BUDGET_MS = 280_000;
 
-/** Length-guarded constant-time compare of Telegram's secret header. */
 function verifySecret(request: NextRequest): boolean {
   // The SAME derivation the setup route registered with. Both call one
   // function precisely so they cannot disagree about what the secret is.
-  const expected = telegramWebhookSecret();
-  if (!expected) return false;
-  const got = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
-  if (got.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < got.length; i += 1) {
-    diff |= got.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
+  return secretMatches(
+    request.headers.get("x-telegram-bot-api-secret-token"),
+    telegramWebhookSecret(),
+  );
 }
 
 interface TgUser {
@@ -71,6 +80,8 @@ interface TgChat {
 interface TgMessage {
   readonly message_id?: number;
   readonly text?: string;
+  /** A photo's caption. A screenshot with the trade written under it. */
+  readonly caption?: string;
   readonly chat?: TgChat;
   readonly from?: TgUser;
   /** Present when someone posts AS the group, hiding their user identity. */
@@ -224,6 +235,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // admins can post, so a code appearing there is stronger proof of
     // authority than the same code in a group, not weaker.
     const posted = update.message ?? update.channel_post;
+    if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
+      // Two different grants in one message. Branch order would silently pick
+      // one; saying so is better than guessing which was meant.
+      await sendChatMessage(
+        botToken,
+        String(posted.chat.id),
+        "That message has a group code and an account code in it. Send one at a time.",
+      );
+      return NextResponse.json({ ok: true });
+    }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply) {
@@ -232,16 +253,72 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    /* ── an account-link code ──────────────────────────────────────── */
+    // Only in a PRIVATE chat from a real user. A code is a credential: a
+    // group is the wrong place to redeem one, and an anonymous-admin post
+    // (`sender_chat`) would bind GroupAnonymousBot's id to the account.
+    // Handled before commands so a brand-new DM works with nothing else set up.
+    if (update.message?.chat?.id && findLinkCode(update.message.text)) {
+      const msg = update.message;
+      const chatId = String(msg.chat!.id);
+      if (msg.chat!.type !== "private" || !msg.from?.id || msg.sender_chat) {
+        await sendChatMessage(
+          botToken,
+          chatId,
+          "Send your link code to me in a private chat, not in a group.",
+        );
+        return NextResponse.json({ ok: true });
+      }
+      // Guessing is the unmitigated half of a six-character code; this is the
+      // mitigation. Same allowance as trade messages, keyed on the sender.
+      if (!(await allowRequest(admin, LIMITS.telegramDm, String(msg.from.id)))) {
+        return NextResponse.json({ ok: true });
+      }
+      const outcome = await linkAccountWithCode(admin, findLinkCode(msg.text)!, msg.from.id);
+      const reply =
+        outcome === "linked"
+          ? "Linked. Send me a trade and I'll ask which journal to put it in. /help shows the format."
+          : outcome === "invalid"
+            // Wrong, used and expired share one message: distinguishing them
+            // would tell someone probing codes which ones exist.
+            ? "That code is not valid any more. Open <b>Settings → Telegram</b> in Trade Journal for a fresh one."
+            : "Couldn't finish linking. Try again in a moment.";
+      await sendChatMessage(botToken, chatId, reply);
+      return NextResponse.json({ ok: true });
+    }
+
+    /* ── anything else typed in a DM ───────────────────────────────── */
+    // A trade, /start, /help, or a report command that belongs in a group.
+    // The handler decides, and stays silent for chat. Identity is the PERSON,
+    // resolved from the linked account, not the room; an anonymous sender has
+    // no person behind it and is ignored.
+    if (
+      update.message?.chat?.type === "private" &&
+      update.message.chat.id &&
+      update.message.from?.id &&
+      !update.message.sender_chat
+    ) {
+      const msg = update.message;
+      const chatId = String(msg.chat!.id);
+      const reply = await handleTradeMessage(
+        dmStore(admin),
+        { text: msg.text ?? msg.caption ?? "", telegramUserId: msg.from!.id!, chatId },
+        new Date(),
+      );
+      if (reply) await sendChatMessage(botToken, chatId, reply.text, reply.buttons);
+      return NextResponse.json({ ok: true });
+    }
+
     /* ── a command typed in a CHANNEL ──────────────────────────────── */
     // A channel post carries no `from`: it is published BY the channel, so
     // there is no user to run the admin check against and no honest way to
     // decide who asked. Rather than fall through to the group handler and emit
     // its "turn off Remain anonymous" advice, which is not a setting channels
     // have, say what actually works.
-    if (update.channel_post && parseCommand(update.channel_post.text)) {
+    if (update.channel_post?.chat?.id && parseCommand(update.channel_post.text)) {
       await sendChatMessage(
         botToken,
-        String(update.channel_post.chat?.id),
+        String(update.channel_post.chat.id),
         "Commands don't work in a channel, because a channel post doesn't say who wrote it. Use <b>Post to Telegram</b> on the Posters page instead. Scheduled reports still publish here automatically.",
       );
       return NextResponse.json({ ok: true });
@@ -310,6 +387,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         CADENCE_PROMPT[cadence],
         buttons,
       );
+      return NextResponse.json({ ok: true });
+    }
+
+    /* ── a tapped journal button ───────────────────────────────────── */
+    if (update.callback_query && decodeTrade(update.callback_query.data)) {
+      const cb = update.callback_query;
+      const choice = decodeTrade(cb.data)!;
+      const chatId = cb.message?.chat?.id ? String(cb.message.chat.id) : null;
+
+      if (!cb.id || !chatId || !cb.from?.id) {
+        if (cb.id) await answerCallback(botToken, cb.id);
+        return NextResponse.json({ ok: true });
+      }
+
+      // RE-VERIFIED, not trusted: author, chat, link, membership, then a
+      // conditional consume and an idempotent insert. All in the handler.
+      const result = await handleTradeTap(
+        tapStore(admin),
+        { choice, tapperId: cb.from.id, chatId },
+        new Date(),
+      );
+      await answerCallback(botToken, cb.id, result.answer, result.alert);
+      if (result.clearPicker && cb.message?.message_id) {
+        await clearButtons(botToken, chatId, cb.message.message_id);
+      }
+      if (result.message) await sendChatMessage(botToken, chatId, result.message);
       return NextResponse.json({ ok: true });
     }
 

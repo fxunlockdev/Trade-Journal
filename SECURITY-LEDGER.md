@@ -47,3 +47,11 @@ every wave.
 
 Baseline confined to `src/lib/supabase/admin.ts` consumers. Enumerated fully at W6.
 New service-role usages introduced this wave: **0**.
+
+Telegram trade-ingest (2026-09-03): **3** new admin-client call sites, each on a
+table that revokes writes from `authenticated` so the client cannot claim to be
+anybody — `POST /api/telegram/link` (mints into `telegram_account_links`),
+`DELETE /api/telegram/link` (retires that user's open codes and drafts on
+unlink), and `src/lib/telegram/pending-store.ts` (the webhook's drafts in
+`telegram_pending_trades` and the `trades` insert, both after the
+`handleTradeTap` chain re-verifies author, chat, link and membership).

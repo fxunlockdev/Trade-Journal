@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createTradeSchema } from "@/lib/validators/trade";
-import { computeTradeFields } from "@/lib/trades/computations";
+import { buildTradeRow } from "@/lib/trades/build-trade";
 import { canEditTrades, getActiveJournal } from "@/lib/journals/active-journal";
 
 // Hard-coded allowlist — prevents arbitrary column injection via sort_by.
@@ -180,77 +179,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const parsed = createTradeSchema.safeParse({
-      ...bodyObj,
-      user_id: user.id,
-    });
-
-    if (!parsed.success) {
+    // One pipeline for the form, the chat and the bot: validate, normalise,
+    // compute, stamp ownership from the session.
+    const built = buildTradeRow(bodyObj, { userId: user.id, journalId: activeJournal.id });
+    if (!built.ok) {
       return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { error: "Validation failed", details: built.fieldErrors },
         { status: 400 },
       );
     }
-
-    // Normalize all nullable fields to `null` (never `undefined`) so Supabase
-    // receives a clean row. Also keep `take_profit` (legacy single-TP) in sync
-    // with `tp1` so older reports / MT5 webhook readers keep working.
-    const tp1 = parsed.data.tp1 ?? null;
-    const legacyTp = tp1 ?? parsed.data.take_profit ?? null;
-
-    const tradeData = {
-      ...parsed.data,
-      journal_id: activeJournal.id,
-      exit_price: parsed.data.exit_price ?? null,
-      entry_price_high: parsed.data.entry_price_high ?? null,
-      stop_loss: parsed.data.stop_loss ?? null,
-      sl_pips: parsed.data.sl_pips ?? null,
-      take_profit: legacyTp,
-      tp1,
-      tp2: parsed.data.tp2 ?? null,
-      tp3: parsed.data.tp3 ?? null,
-      tp4: parsed.data.tp4 ?? null,
-      tp5: parsed.data.tp5 ?? null,
-      tp6: parsed.data.tp6 ?? null,
-      tp7: parsed.data.tp7 ?? null,
-      tp1_pips: parsed.data.tp1_pips ?? null,
-      tp2_pips: parsed.data.tp2_pips ?? null,
-      tp3_pips: parsed.data.tp3_pips ?? null,
-      tp4_pips: parsed.data.tp4_pips ?? null,
-      tp5_pips: parsed.data.tp5_pips ?? null,
-      tp6_pips: parsed.data.tp6_pips ?? null,
-      tp7_pips: parsed.data.tp7_pips ?? null,
-      tp1_result: parsed.data.tp1_result ?? null,
-      tp2_result: parsed.data.tp2_result ?? null,
-      tp3_result: parsed.data.tp3_result ?? null,
-      tp4_result: parsed.data.tp4_result ?? null,
-      tp5_result: parsed.data.tp5_result ?? null,
-      tp6_result: parsed.data.tp6_result ?? null,
-      tp7_result: parsed.data.tp7_result ?? null,
-      tp4_trailing: parsed.data.tp4_trailing ?? false,
-      order_type: parsed.data.order_type ?? "market",
-      num_positions: parsed.data.num_positions ?? 1,
-      split_risk: parsed.data.split_risk ?? false,
-      lot_size: parsed.data.lot_size ?? null,
-      notes: parsed.data.notes ?? null,
-      exit_time: parsed.data.exit_time ?? null,
-    };
-    const computed = computeTradeFields(tradeData);
-
-    // Bulletproof: re-apply user_id + journal_id AFTER computeTradeFields so
-    // they cannot be overwritten by any stray key in the spread chain. These
-    // two fields are what RLS checks against — if either is wrong, the INSERT
-    // fails with "new row violates row-level security policy".
-    const insertPayload = {
-      ...computed,
-      user_id: user.id,
-      journal_id: activeJournal.id,
-      // Broker provenance ("csv" / "mt5_webhook") is written ONLY by the import
-      // and sync ingest, never by this public create endpoint. Force manual so a
-      // client can't mint a fake broker-sourced trade that would then bypass the
-      // P&L recompute guard on later edits.
-      source: "manual" as const,
-    };
+    const insertPayload = built.row;
 
     // Admin client — we've verified user auth + journal membership + role
     // above. SSR client's auth wasn't reliably carrying to trades INSERT
@@ -310,15 +248,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         journal_id: activeJournal.id,
       });
 
+      // The detail is in the server log above. Constraint names and CHECK
+      // expressions are a schema map, not a user message.
       return NextResponse.json(
-        { error: error.message },
+        { error: "Couldn't save that trade. Nothing was written." },
         { status: 500 },
       );
     }
 
     return NextResponse.json({ data }, { status: 201 });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[trades/POST] unexpected:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

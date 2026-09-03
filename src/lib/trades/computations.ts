@@ -447,7 +447,7 @@ export function computeTradeFields<T extends TradeForComputation>(
   }
 
   // Legacy single-exit path (back-compat for existing trades).
-  if (trade.exit_price === null) {
+  if (trade.exit_price == null) {
     return {
       ...trade,
       pnl_absolute: null,

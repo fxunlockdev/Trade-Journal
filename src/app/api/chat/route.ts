@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getOpenAIClient, OPENAI_MODEL, modelTuning } from "@/lib/openai/client";
-import { createTradeSchema } from "@/lib/validators/trade";
-import { computeTradeFields } from "@/lib/trades/computations";
+import { buildTradeRow } from "@/lib/trades/build-trade";
 import {
   TRADE_CHAT_SYSTEM_PROMPT,
   buildTurnContext,
 } from "@/lib/chat/system-prompt";
 import { parseTradeAction, getTradeParseErrors } from "@/lib/chat/parse-action";
+import {
+  getActiveJournal,
+  canEditTrades,
+} from "@/lib/journals/active-journal";
 import type { Trade, ChatMessage } from "@/types/database";
 
 interface ChatRequestBody {
@@ -87,6 +90,7 @@ interface TradeCreateResult {
 async function createTradeFromAction(
   adminDB: AdminDB,
   userId: string,
+  journalId: string,
   actionData: Record<string, unknown>,
 ): Promise<TradeCreateResult> {
   const tags =
@@ -97,83 +101,39 @@ async function createTradeFromAction(
           .filter(Boolean)
       : [];
 
-  const parsed = createTradeSchema.safeParse({
-    ...actionData,
-    tags,
-    user_id: userId,
-    source: "manual",
-    exit_price: actionData.exit_price ?? null,
-    stop_loss: actionData.stop_loss ?? null,
-    take_profit: actionData.take_profit ?? null,
-    lot_size: actionData.lot_size ?? null,
-    exit_time: actionData.exit_time ?? null,
-    notes: actionData.notes ?? null,
-  });
+  // One pipeline for the form, the chat and the bot. `journal_id` is NOT NULL
+  // and the builder's type requires one, so the omission that silently broke
+  // this route for two months cannot be written again.
+  const built = buildTradeRow(
+    {
+      ...actionData,
+      tags,
+      exit_price: actionData.exit_price ?? null,
+      stop_loss: actionData.stop_loss ?? null,
+      take_profit: actionData.take_profit ?? null,
+      lot_size: actionData.lot_size ?? null,
+      exit_time: actionData.exit_time ?? null,
+      notes: actionData.notes ?? null,
+    },
+    { userId, journalId },
+  );
 
-  if (!parsed.success) {
-    const fieldErrors = parsed.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join(", ");
-    console.error("[chat] trade schema validation failed:", fieldErrors);
-    return { trade: null, error: `Validation failed: ${fieldErrors}` };
+  if (!built.ok) {
+    console.error("[chat] trade schema validation failed:", built.issues.join(", "));
+    return { trade: null, error: `Couldn't log that trade: ${built.issues.join(", ")}` };
   }
-
-  // Normalize all nullable fields to `null` (never `undefined`) and keep the
-  // legacy `take_profit` column in sync with `tp1` so downstream readers
-  // (insights analyzer, MT5 webhook consumers) don't drift. Mirrors the
-  // normalization in `/api/trades` POST so AI-logged and UI-logged trades
-  // are indistinguishable on the row level.
-  const tp1 = parsed.data.tp1 ?? null;
-  const legacyTp = tp1 ?? parsed.data.take_profit ?? null;
-
-  const tradeData = {
-    ...parsed.data,
-    exit_price: parsed.data.exit_price ?? null,
-    entry_price_high: parsed.data.entry_price_high ?? null,
-    stop_loss: parsed.data.stop_loss ?? null,
-    sl_pips: parsed.data.sl_pips ?? null,
-    take_profit: legacyTp,
-    tp1,
-    tp2: parsed.data.tp2 ?? null,
-    tp3: parsed.data.tp3 ?? null,
-    tp4: parsed.data.tp4 ?? null,
-    tp5: parsed.data.tp5 ?? null,
-    tp6: parsed.data.tp6 ?? null,
-    tp7: parsed.data.tp7 ?? null,
-    tp1_pips: parsed.data.tp1_pips ?? null,
-    tp2_pips: parsed.data.tp2_pips ?? null,
-    tp3_pips: parsed.data.tp3_pips ?? null,
-    tp4_pips: parsed.data.tp4_pips ?? null,
-    tp5_pips: parsed.data.tp5_pips ?? null,
-    tp6_pips: parsed.data.tp6_pips ?? null,
-    tp7_pips: parsed.data.tp7_pips ?? null,
-    tp1_result: parsed.data.tp1_result ?? null,
-    tp2_result: parsed.data.tp2_result ?? null,
-    tp3_result: parsed.data.tp3_result ?? null,
-    tp4_result: parsed.data.tp4_result ?? null,
-    tp5_result: parsed.data.tp5_result ?? null,
-    tp6_result: parsed.data.tp6_result ?? null,
-    tp7_result: parsed.data.tp7_result ?? null,
-    tp4_trailing: parsed.data.tp4_trailing ?? false,
-    order_type: parsed.data.order_type ?? "market",
-    num_positions: parsed.data.num_positions ?? 1,
-    split_risk: parsed.data.split_risk ?? false,
-    lot_size: parsed.data.lot_size ?? null,
-    notes: parsed.data.notes ?? null,
-    exit_time: parsed.data.exit_time ?? null,
-  };
-
-  const computed = computeTradeFields(tradeData);
 
   const { data, error } = await adminDB
     .from("trades")
-    .insert(computed)
+    .insert(built.row)
     .select()
     .single();
 
   if (error) {
+    // Detail stays in the log: this string is shown in the chat and persisted
+    // with the message, and Postgres error text is a schema map.
     console.error("[chat] trade insert error:", error.message, error.details, error.hint);
-    return { trade: null, error: `DB error: ${error.message}` };
+    return { trade: null, error: "Couldn't save that trade. Nothing was written." };
   }
 
   return { trade: data as Trade, error: null };
@@ -275,13 +235,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let tradeError: string | null = null;
 
     if (tradeAction) {
-      const result = await createTradeFromAction(
-        adminDB,
-        user.id,
-        tradeAction.data as unknown as Record<string, unknown>,
-      );
-      createdTrade = result.trade;
-      tradeError = result.error;
+      // Which journal, resolved the same way /api/trades does: the active
+      // journal from the session, then the role gate. This route HAS a browser
+      // session, so it can use the cookie-based resolver; a webhook cannot,
+      // which is why the Telegram path asks instead.
+      // Only the journal lookup is inside the try: it throws when the user
+      // belongs to no journal at all. An insert failure must keep its own
+      // message rather than be reported as a missing journal.
+      let active: Awaited<ReturnType<typeof getActiveJournal>> | null = null;
+      try {
+        active = await getActiveJournal(supabase, user.id);
+      } catch {
+        tradeError =
+          "You don't have a journal yet, so there is nowhere to put that trade.";
+      }
+      if (active && !canEditTrades(active.role)) {
+        tradeError = "You don't have permission to add trades to this journal.";
+      } else if (active) {
+        const result = await createTradeFromAction(
+          adminDB,
+          user.id,
+          active.journal.id,
+          tradeAction.data as unknown as Record<string, unknown>,
+        );
+        createdTrade = result.trade;
+        tradeError = result.error;
+      }
 
       await saveChatMessage(adminDB, user.id, "assistant", aiContent, {
         trade_id: createdTrade?.id ?? null,

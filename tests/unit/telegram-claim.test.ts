@@ -4,6 +4,9 @@ import {
   findClaimCode,
   CLAIM_PREFIX,
   CLAIM_BODY_LENGTH,
+  LINK_PREFIX,
+  generateLinkCode,
+  findLinkCode,
 } from "@/lib/telegram/claim";
 
 /**
@@ -66,5 +69,56 @@ describe("findClaimCode", () => {
 
   it("rejects a short or long body", () => {
     expect(findClaimCode("TJ-ACDE")).toBeNull();
+    // Not truncated to a code that was never issued.
+    expect(findClaimCode("TJ-ACDEFGHJ")).toBeNull();
+    expect(findClaimCode("xxTJ-ACDEFGxx")).toBeNull();
+    expect(findClaimCode("code: TJ-ACDEFG.")).toBe("TJ-ACDEFG");
+  });
+
+  it("does not find a code inside an ordinary word", () => {
+    // Every digit 2-7 is in the alphabet, so "volume-234567" ends in what
+    // looks like ME-234567. The prefix must start a token.
+    expect(findLinkCode("volume-234567 today")).toBeNull();
+    expect(findLinkCode("time-234567")).toBeNull();
+    expect(findLinkCode("my code is me-234567")).toBe("ME-234567");
+  });
+});
+
+describe("the two kinds of code cannot be confused", () => {
+  // A chat-connect code and an account-link code are very different grants:
+  // one says "publish my reports here", the other says "this Telegram account
+  // is me". Distinct prefixes are the only thing keeping them apart, so this
+  // pins that they do not match each other's finder.
+  it("a chat code is not found by the link finder", () => {
+    const chat = generateClaimCode(bytes(0, 1, 2, 3, 4, 5));
+    expect(findLinkCode(chat)).toBeNull();
+  });
+
+  it("a link code is not found by the chat finder", () => {
+    const link = generateLinkCode(bytes(0, 1, 2, 3, 4, 5));
+    expect(findClaimCode(link)).toBeNull();
+  });
+
+  it("each finder finds its own", () => {
+    const chat = generateClaimCode(bytes(6, 7, 8, 9, 10, 11));
+    const link = generateLinkCode(bytes(6, 7, 8, 9, 10, 11));
+    expect(findClaimCode(chat)).toBe(chat);
+    expect(findLinkCode(link)).toBe(link);
+  });
+
+  it("the two prefixes differ", () => {
+    expect(CLAIM_PREFIX).not.toBe(LINK_PREFIX);
+  });
+
+  it("a link code is case insensitive and normalises upward", () => {
+    expect(findLinkCode("me-acdefg")).toBe("ME-ACDEFG");
+  });
+
+  it("a link code excludes the same misread characters", () => {
+    const all = Array.from({ length: 256 }, (_, i) => i);
+    for (let start = 0; start < 250; start += 6) {
+      const code = generateLinkCode(bytes(...all.slice(start, start + 6)));
+      expect(code.slice(LINK_PREFIX.length)).not.toMatch(/[01OIL8B]/);
+    }
   });
 });

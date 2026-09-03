@@ -8,6 +8,7 @@
  *
  * Supported patterns (non-exhaustive):
  *   Buy XAUUSD 4819 SL 4823 TP 4830/4840/4850
+ *   XAUUSD buy 3340 sl 3335 tp1 3350
  *   SELL EURUSD @ 1.0850 - 1.0860 SL: 1.0880 TP1 1.0820 TP2 1.0800 TP3 1.0780
  *   BUY GBPJPY NOW SL 190.50 TP1: 192.00 TP2: 193.00 TP3: 194.50 TP4: OPEN
  *   LONG BTCUSD entry 65000-65100 stop 64500 target 66000, 67000
@@ -15,15 +16,27 @@
  * The parser returns a partial result — missing fields simply aren't
  * included — and a list of human-readable warnings for fields it
  * noticed but couldn't confidently map.
+ *
+ * What it will NOT do, because each of these once reached a poster as a
+ * wrong number: read a time ("at 10:30") or a unit ("1.5 lots") as a price,
+ * take an outcome verb's number as the entry ("closed at 3348"), pick a
+ * direction when both a buy word and a sell word appear, or report one
+ * instrument when two were named. Those are surfaced -- `direction_conflict`,
+ * `instruments` -- for the caller to refuse on.
  */
 
 import { ALL_INSTRUMENTS } from "@/lib/constants/instruments";
+import { PRICE, NOT_A_PRICE_AFTER, parsePrice } from "@/lib/trades/parse-price";
 
 export type ParsedDirection = "buy" | "sell";
 
 export interface ParsedSignal {
   readonly instrument?: string;
+  /** Every instrument named, in order of appearance. Two means two trades. */
+  readonly instruments: readonly string[];
   readonly direction?: ParsedDirection;
+  /** Both a buy word and a sell word appeared, so no direction was chosen. */
+  readonly direction_conflict?: true;
   readonly entry_price?: number;
   readonly entry_price_high?: number;
   readonly stop_loss?: number;
@@ -36,112 +49,172 @@ export interface ParsedSignal {
   readonly tp7?: number;
   /** True when the final TP (tp4 historically, now tp7) is marked "open" or "runner". */
   readonly tp4_trailing?: boolean;
+  /** "0.5 lots", when the message sized the trade. */
+  readonly quantity?: number;
   readonly warnings: readonly string[];
 }
 
-const DIR_BUY_RE = /\b(buy|long|bull|bullish)\b/i;
-const DIR_SELL_RE = /\b(sell|short|bear|bearish)\b/i;
+const DIR_BUY_RE = /\b(?:buy|long|bull|bullish)\b/i;
+const DIR_SELL_RE = /\b(?:sell|short|bear|bearish)\b/i;
 
-/**
- * Match a decimal number — supports both "1,2345" (comma decimal) and
- * "1.2345" (dot decimal). We normalize to dot at extraction time.
- */
-const NUM_RE = /-?\d+(?:[.,]\d+)?/;
+/** A captured price with the "not a time, not a unit" guard. */
+const PRICE_G = `(${PRICE})${NOT_A_PRICE_AFTER}`;
+/** An entry range: "3340 - 3345", "1.0850/1.0860". */
+const RANGE_G = `(${PRICE})\\s*[-/–]\\s*(${PRICE})${NOT_A_PRICE_AFTER}`;
 
-function toNumber(raw: string): number | null {
-  const normalized = raw.replace(",", ".");
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : null;
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function findInstrument(text: string): string | undefined {
+/** "XAUUSD" as a pattern that also matches "XAU/USD", "xau-usd", "BTC/USDT". */
+function looseSymbol(symbol: string): string {
+  return symbol.split("").map(escapeRe).join("[\\s/.\\-]?") + "[A-Z]{0,2}";
+}
+
+const SORTED_INSTRUMENTS = [...ALL_INSTRUMENTS].sort((a, b) => b.length - a.length);
+
+/**
+ * Every instrument named in the text, in order of first appearance.
+ *
+ * Longest symbols are matched first and a shorter symbol inside a longer
+ * match is ignored, so "XAUUSD" does not also yield "XAU". Word boundaries
+ * use a character class rather than \b, which does not treat "/" or "-" as
+ * boundaries for pairs like "EUR/USD".
+ */
+export function findInstruments(text: string): string[] {
   const upper = text.toUpperCase();
-  // Prefer longer matches first so "XAUUSD" wins over "AU" if both present.
-  const sorted = [...ALL_INSTRUMENTS].sort((a, b) => b.length - a.length);
-  for (const sym of sorted) {
-    // Word-boundary match using a char class that treats non-alphanumeric as a
-    // boundary. \b won't catch "/" or "-" cleanly for pairs like "EUR/USD".
-    const re = new RegExp(`(^|[^A-Z0-9])${sym}([^A-Z0-9]|$)`);
-    if (re.test(upper)) return sym;
-  }
-  // Try stripping common separators (EUR/USD, GBP-JPY) and retrying.
-  const normalized = upper.replace(/[\s/\-.]/g, "");
-  for (const sym of sorted) {
-    if (normalized.includes(sym)) return sym;
-  }
-  return undefined;
-}
-
-function findDirection(text: string): ParsedDirection | undefined {
-  if (DIR_BUY_RE.test(text)) return "buy";
-  if (DIR_SELL_RE.test(text)) return "sell";
-  return undefined;
-}
-
-/**
- * Extract the entry price(s). Handles:
- *   "entry 1.2345", "@ 1.2345", "at 1.2345"
- *   range "1.2345 - 1.2355", "1.2345/1.2355"
- *   bare price right after BUY/SELL: "BUY XAUUSD 1950" — last resort
- */
-function findEntry(text: string): { low?: number; high?: number } {
-  // Prefer an explicit "entry" / "@" / "at" marker.
-  const rangeRe = new RegExp(
-    `(?:entry|@|at)\\s*:?\\s*(${NUM_RE.source})\\s*[-/–]\\s*(${NUM_RE.source})`,
-    "i",
-  );
-  const range = text.match(rangeRe);
-  if (range) {
-    const a = toNumber(range[1]);
-    const b = toNumber(range[2]);
-    if (a != null && b != null) {
-      return a <= b ? { low: a, high: b } : { low: b, high: a };
+  const spans: { sym: string; start: number; end: number }[] = [];
+  for (const sym of SORTED_INSTRUMENTS) {
+    const re = new RegExp(`(^|[^A-Z0-9])(${escapeRe(sym)})(?=[^A-Z0-9]|$)`, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(upper)) !== null) {
+      const start = m.index + m[1].length;
+      const end = start + sym.length;
+      if (spans.some((s) => start >= s.start && end <= s.end)) continue;
+      spans.push({ sym, start, end });
     }
   }
+  if (spans.length === 0) {
+    // Separators typed inside the symbol (EUR/USD, GBP-JPY): strip and retry.
+    const normalized = upper.replace(/[\s/\-.]/g, "");
+    const sym = SORTED_INSTRUMENTS.find((s) => normalized.includes(s));
+    return sym ? [sym] : [];
+  }
+  const seen = new Set<string>();
+  return spans
+    .sort((a, b) => a.start - b.start)
+    .map((s) => s.sym)
+    .filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+}
 
-  const singleRe = new RegExp(
-    `(?:entry|@|at)\\s*:?\\s*(${NUM_RE.source})`,
-    "i",
-  );
-  const single = text.match(singleRe);
-  if (single) {
-    const a = toNumber(single[1]);
-    if (a != null) return { low: a };
+function findDirection(text: string): {
+  readonly direction?: ParsedDirection;
+  readonly conflict?: true;
+} {
+  const buy = DIR_BUY_RE.test(text);
+  const sell = DIR_SELL_RE.test(text);
+  // "XAUUSD sell 3340 ... long day" is not a buy. Choosing would be a guess
+  // that flips the sign of the whole trade, so neither is chosen.
+  if (buy && sell) return { conflict: true };
+  if (buy) return { direction: "buy" };
+  if (sell) return { direction: "sell" };
+  return {};
+}
+
+const DIR = "(?:buy|sell|long|short)";
+/**
+ * An explicit entry marker. "at" counts, but NOT when it follows an outcome
+ * verb: "out at 66000", "closed at 3348" and "stopped at 3332" are exits, and
+ * reading them as entries publishes a trade with its result as its start.
+ */
+const MARKER = "(?:entry|@|(?<!\\b(?:closed?|exit(?:ed)?|out|stopped|hit|took)\\s+)at)";
+/** "0.5 lots" between the direction and the price is a size, not the price. */
+const LOT_SKIP = `(?:${PRICE}\\s*lots?\\s+)?`;
+
+function readRange(m: RegExpMatchArray | null): { low: number; high: number } | null {
+  if (!m) return null;
+  const a = parsePrice(m[1]);
+  const b = parsePrice(m[2]);
+  if (a == null || b == null) return null;
+  return a <= b ? { low: a, high: b } : { low: b, high: a };
+}
+
+function readSingle(m: RegExpMatchArray | null): { low: number } | null {
+  if (!m) return null;
+  const a = parsePrice(m[1]);
+  return a == null ? null : { low: a };
+}
+
+/**
+ * The entry price.
+ *
+ * Anchored on the instrument first, in either order people type it --
+ * "XAUUSD buy 3340" or "buy XAUUSD 3340", with an optional marker ("buy XAUUSD
+ * at 3340") and an optional lot size in between. Then an explicit marker
+ * anywhere ("entry 3340", "@ 3340"). The old lenient `<dir> <word> <number>`
+ * form survives only for messages where no instrument was recognised, which
+ * is the paste box in the trade form: for "XAUUSD buy closed 3348" it took
+ * "closed" as the symbol and the exit as the entry.
+ */
+function findEntry(
+  text: string,
+  instrument?: string,
+): { low?: number; high?: number } {
+  if (instrument) {
+    // The instrument may have been typed with separators anywhere -- "XAU/USD",
+    // "USD/JPY", "BTC-USD" -- and with a quote suffix the catalogue does not
+    // carry ("BTC/USDT"). Match the canonical symbol loosely rather than the
+    // one spelling.
+    const sym = looseSymbol(instrument);
+    for (const head of [`${sym}\\s+${DIR}`, `${DIR}\\s+${sym}`]) {
+      const lead = `${head}\\s+${LOT_SKIP}(?:${MARKER}\\s*:?\\s*)?`;
+      const range = readRange(text.match(new RegExp(`${lead}${RANGE_G}`, "i")));
+      if (range) return range;
+      const single = readSingle(text.match(new RegExp(`${lead}${PRICE_G}`, "i")));
+      if (single) return single;
+    }
+    // "buy 3340 xauusd": the price between the direction and the symbol.
+    const between = readSingle(
+      text.match(new RegExp(`${DIR}\\s+${LOT_SKIP}${PRICE_G}\\s+${sym}`, "i")),
+    );
+    if (between) return between;
   }
 
-  // Fallback: "BUY XAUUSD 1950" — first bare number after direction + symbol.
-  const dirSymNumRe = new RegExp(
-    `(?:buy|sell|long|short)\\s+[A-Z0-9/.\\-]+\\s+(${NUM_RE.source})`,
-    "i",
-  );
-  const fallback = text.match(dirSymNumRe);
-  if (fallback) {
-    const a = toNumber(fallback[1]);
-    if (a != null) return { low: a };
+  const range = readRange(text.match(new RegExp(`${MARKER}\\s*:?\\s*${RANGE_G}`, "i")));
+  if (range) return range;
+  const single = readSingle(text.match(new RegExp(`${MARKER}\\s*:?\\s*${PRICE_G}`, "i")));
+  if (single) return single;
+
+  if (!instrument) {
+    const fallback = readSingle(
+      text.match(new RegExp(`${DIR}\\s+[A-Z0-9/.\\-]+\\s+${PRICE_G}`, "i")),
+    );
+    if (fallback) return fallback;
   }
 
   return {};
 }
 
 function findStop(text: string): number | undefined {
-  // SL: 1.2345, SL 1.2345, stop loss 1.2345, stop 1.2345, S/L 1.2345
+  // SL: 1.2345, SL 1.2345, stop loss 1.2345, stop 1.2345, S/L 1.2345, stop @ 190.50.
+  // "sl moved to 3345" is a change to the plan, not the plan; it has no number
+  // right after "sl" and so does not match.
   const re = new RegExp(
-    `(?:sl|s/l|stop\\s*loss|stop)\\s*:?\\s*(${NUM_RE.source})`,
+    `\\b(?:sl|s/l|stop\\s*loss|stop)\\s*:?\\s*(?:at\\s+|@\\s*)?${PRICE_G}`,
     "i",
   );
   const m = text.match(re);
   if (!m) return undefined;
-  return toNumber(m[1]) ?? undefined;
+  return parsePrice(m[1]) ?? undefined;
 }
 
-type ParsedTpKey =
-  | "tp1"
-  | "tp2"
-  | "tp3"
-  | "tp4"
-  | "tp5"
-  | "tp6"
-  | "tp7";
+function findLotSize(text: string): number | undefined {
+  const m = text.match(new RegExp(`(${PRICE})\\s*lots?\\b`, "i"));
+  if (!m) return undefined;
+  return parsePrice(m[1]) ?? undefined;
+}
+
+type ParsedTpKey = "tp1" | "tp2" | "tp3" | "tp4" | "tp5" | "tp6" | "tp7";
 
 const MAX_TPS = 7;
 
@@ -165,7 +238,8 @@ function findTps(text: string): {
   const tps: Partial<Record<ParsedTpKey, number>> = {};
   let tp4Trailing = false;
 
-  // Numbered TPs: TP1..TP7 with optional colon.
+  // Numbered TPs: TP1..TP7 with optional colon. "tp1 hit" yields no number
+  // and is skipped, which is what keeps a result word out of the plan.
   const numberedRe = /tp\s*([1-7])\s*:?\s*([A-Z0-9.,\-]+)/gi;
   let match: RegExpExecArray | null;
   while ((match = numberedRe.exec(text)) !== null) {
@@ -177,7 +251,7 @@ function findTps(text: string): {
       tp4Trailing = true;
       continue;
     }
-    const n = toNumber(raw);
+    const n = parsePrice(raw);
     if (n != null && idx >= 1 && idx <= MAX_TPS) {
       const key = `tp${idx}` as ParsedTpKey;
       tps[key] = n;
@@ -188,12 +262,14 @@ function findTps(text: string): {
   const anyFound = Object.values(tps).some((v) => v != null);
   if (!anyFound) {
     const listRe = new RegExp(
-      `(?:tp|take\\s*profit|target|targets)\\s*:?\\s*((?:${NUM_RE.source})(?:\\s*[/,]\\s*(?:${NUM_RE.source}|open|running))*)`,
+      `(?:tp|take\\s*profit|target|targets)\\s*:?\\s*((?:${PRICE})(?:\\s*[/,]\\s*(?:${PRICE}|open|running))*)`,
       "i",
     );
     const list = text.match(listRe);
     if (list) {
-      const parts = list[1].split(/[/,]/).map((p) => p.trim());
+      // Split on "/" and on a comma that is a separator, not a thousands or
+      // decimal comma: "4830/4840", "66000, 67000", but not "66,500".
+      const parts = list[1].split(/\s*\/\s*|,\s+/).map((p) => p.trim());
       parts.forEach((part, i) => {
         if (i >= MAX_TPS) return;
         const key = `tp${i + 1}` as ParsedTpKey;
@@ -202,7 +278,7 @@ function findTps(text: string): {
           if (i === 3) tp4Trailing = true;
           return;
         }
-        const n = toNumber(part);
+        const n = parsePrice(part);
         if (n != null) tps[key] = n;
       });
     }
@@ -213,17 +289,22 @@ function findTps(text: string): {
 
 export function parseSignalText(input: string): ParsedSignal {
   const text = input.trim();
-  if (!text) return { warnings: [] };
+  if (!text) return { instruments: [], warnings: [] };
 
   const warnings: string[] = [];
 
-  const instrument = findInstrument(text);
+  const instruments = findInstruments(text);
+  const instrument = instruments[0];
   if (!instrument) warnings.push("Could not identify instrument. Select it manually.");
+  if (instruments.length > 1) {
+    warnings.push(`More than one instrument named: ${instruments.join(", ")}.`);
+  }
 
-  const direction = findDirection(text);
-  if (!direction) warnings.push("Could not identify direction. Select BUY or SELL.");
+  const dir = findDirection(text);
+  if (dir.conflict) warnings.push("Both a buy word and a sell word appear. Select BUY or SELL.");
+  else if (!dir.direction) warnings.push("Could not identify direction. Select BUY or SELL.");
 
-  const { low: entry_price, high: entry_price_high } = findEntry(text);
+  const { low: entry_price, high: entry_price_high } = findEntry(text, instrument);
   if (entry_price == null) warnings.push("Could not identify entry price");
 
   const stop_loss = findStop(text);
@@ -244,7 +325,9 @@ export function parseSignalText(input: string): ParsedSignal {
 
   return {
     instrument,
-    direction,
+    instruments,
+    direction: dir.direction,
+    direction_conflict: dir.conflict,
     entry_price,
     entry_price_high,
     stop_loss,
@@ -256,6 +339,7 @@ export function parseSignalText(input: string): ParsedSignal {
     tp6: tps.tp6,
     tp7: tps.tp7,
     tp4_trailing: tps.tp4_trailing,
+    quantity: findLotSize(text),
     warnings,
   };
 }

@@ -85,3 +85,59 @@ export const CADENCE_PROMPT: Record<Cadence, string> = {
   weekly: "Which desk's results for last week?",
   monthly: "Which desk's results for last month?",
 };
+
+
+/* ────────────────────────── trade buttons ────────────────────────── */
+
+export interface TradeChoice {
+  /** The pending draft this tap refers to. */
+  readonly pendingId: string;
+  /** Index into the journal list offered WITH that draft, or null to cancel. */
+  readonly journalIndex: number | null;
+}
+
+/**
+ * A pending id is this many random bytes, base64url-encoded. The encoded
+ * length follows from it (6 bytes -> 8 characters) and the regex is built from
+ * that, so the two cannot drift: change the bytes and every button would
+ * otherwise fail to decode.
+ */
+export const PENDING_ID_BYTES = 6;
+export const PENDING_ID_LENGTH = Math.ceil((PENDING_ID_BYTES * 4) / 3);
+/** url-safe characters only, no colon, so it survives the delimiter below. */
+const PENDING_ID_RE = new RegExp(`^[A-Za-z0-9_-]{${PENDING_ID_LENGTH}}$`);
+
+/**
+ * The most journals a picker offers. The decoder reads a two-digit index, the
+ * draft table's CHECK allows this many ids, and one button per row makes a
+ * longer list unusable anyway. The three agree through this constant.
+ */
+export const MAX_JOURNAL_BUTTONS = 20;
+
+/**
+ * "trd:<pending>:<n>" or "trd:<pending>:x" to cancel.
+ *
+ * An INDEX rather than a journal id. The journals offered are stored with the
+ * pending draft, so the button only needs to say which one; that keeps this
+ * at 14 characters against Telegram's 64-byte cap, where a uuid would not fit
+ * beside the pending id. The index is client-chosen like everything else in
+ * callback data, so the receiver bound-checks it and re-verifies membership.
+ */
+export function encodeTrade(pendingId: string, journalIndex: number | null): string {
+  return `trd:${pendingId}:${journalIndex === null ? "x" : journalIndex}`;
+}
+
+export function decodeTrade(data: string | undefined): TradeChoice | null {
+  if (!data) return null;
+  const parts = data.split(":");
+  if (parts.length !== 3) return null;
+  const [prefix, pendingId, idx] = parts;
+  if (prefix !== "trd") return null;
+  if (!PENDING_ID_RE.test(pendingId)) return null;
+  if (idx === "x") return { pendingId, journalIndex: null };
+  // Exactly what encodeTrade emits: no leading zero, and never past the cap.
+  if (!/^(?:0|[1-9]\d?)$/.test(idx)) return null;
+  const journalIndex = Number(idx);
+  if (journalIndex >= MAX_JOURNAL_BUTTONS) return null;
+  return { pendingId, journalIndex };
+}

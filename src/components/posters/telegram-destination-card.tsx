@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { BOT_HANDLE } from "@/lib/telegram/bot";
 
 /**
  * Connect the Telegram group that marketing images publish to.
@@ -194,7 +195,7 @@ export function TelegramDestinationCard({
         ) : (
           <>
             <p className="text-xs text-muted-foreground">
-              Add <span className="font-medium">@TradingJournalImagesBot</span>{" "}
+              Add <span className="font-medium">{BOT_HANDLE}</span>{" "}
               to your marketing group and post a message there, then find it
               below. Telegram only shows a bot the groups it has seen activity
               in.
