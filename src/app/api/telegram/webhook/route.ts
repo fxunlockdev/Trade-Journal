@@ -6,10 +6,20 @@ import {
   parseCommand,
   decodePublish,
   encodePublish,
+  decodeTrade,
+  encodeTrade,
   isAdminStatus,
   CADENCE_PROMPT,
   type Cadence,
 } from "@/lib/telegram/commands";
+import { randomBytes } from "node:crypto";
+import { parseTradeIntent, draftIsClosed, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { outcomeFields } from "@/lib/trades/outcome-parser";
+import { createTradeSchema } from "@/lib/validators/trade";
+import { computeTradeFields } from "@/lib/trades/computations";
+import { tradeInsertPayload } from "@/lib/trades/insert-payload";
+import { canEditTrades } from "@/lib/journals/active-journal";
+import type { JournalRole } from "@/types/database";
 import {
   getChatMemberStatus,
   sendChatMessage,
@@ -244,6 +254,73 @@ async function linkAccountIfCoded(
   return "Linked. You can log trades here now, and I'll ask which journal each time.";
 }
 
+/** The app account behind a Telegram user, or null if never linked. */
+async function linkedAccount(
+  admin: ReturnType<typeof createAdminClient>,
+  telegramUserId: number,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("telegram_accounts")
+    .select("user_id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+  if (!data) return null;
+  // Best-effort presence; never blocks the request it rides on.
+  void admin
+    .from("telegram_accounts")
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq("telegram_user_id", telegramUserId);
+  return data.user_id as string;
+}
+
+/** Journals this account may write trades into, in a stable order. */
+async function editableJournals(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<{ id: string; name: string }[]> {
+  const { data } = await admin
+    .from("journal_members")
+    .select("role, journals!inner(id, name, is_archived, sort_order, created_at)")
+    .eq("user_id", userId)
+    .eq("journals.is_archived", false);
+  type Row = {
+    role: JournalRole;
+    journals: { id: string; name: string; sort_order: number; created_at: string };
+  };
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => canEditTrades(r.role))
+    .map((r) => r.journals)
+    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+    .map((j) => ({ id: j.id, name: j.name }));
+}
+
+/**
+ * A quantity for a trade the message never sized.
+ *
+ * Auto-sizing needs the journal's capital, and none of the journals in use
+ * have one set, so it returns null for all of them. The honest fallback is
+ * what this person last used for the same instrument in the same journal: it
+ * continues their own convention rather than inventing one. Pips and R do
+ * not depend on it, so the posters are unaffected either way; only the
+ * journal's own cash P&L is, and the confirmation shows the number used.
+ */
+async function defaultQuantity(
+  admin: ReturnType<typeof createAdminClient>,
+  journalId: string,
+  instrument: string,
+): Promise<number> {
+  const { data } = await admin
+    .from("trades")
+    .select("quantity")
+    .eq("journal_id", journalId)
+    .eq("instrument", instrument)
+    .order("entry_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const q = data?.quantity;
+  return typeof q === "number" && q > 0 ? q : 1;
+}
+
 /** The chat's owner and their connected destination, or null. */
 async function resolveChat(
   admin: ReturnType<typeof createAdminClient>,
@@ -318,6 +395,93 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await sendChatMessage(botToken, String(update.message.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
+    }
+
+    /* ── a trade typed in a DM ─────────────────────────────────────── */
+    // Only in a private chat. A trade is not a group announcement: the
+    // marketing channel has partners in it, and the journal picker below is a
+    // one-to-one conversation. Commands in groups are handled further down.
+    //
+    // Identity is the PERSON, resolved from the linked account, not the room.
+    if (
+      update.message?.chat?.type === "private" &&
+      update.message.chat.id &&
+      update.message.from?.id &&
+      !update.message.sender_chat &&
+      !parseCommand(update.message.text)
+    ) {
+      const msg = update.message;
+      const chatId = String(msg.chat!.id);
+      const telegramUserId = msg.from!.id!;
+      const intent = parseTradeIntent(msg.text ?? "", new Date());
+
+      // "thanks", "morning": stay silent rather than answer every DM with a
+      // parse error. Only something that looks like a trade gets a reply.
+      if (intent.kind === "not_a_trade") return NextResponse.json({ ok: true });
+
+      const userId = await linkedAccount(admin, telegramUserId);
+      if (!userId) {
+        await sendChatMessage(
+          botToken,
+          chatId,
+          "I don't know which Trade Journal account you are yet. Open <b>Settings</b> in the app, get a link code, and send it to me here.",
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      if (intent.kind === "incomplete") {
+        await sendChatMessage(
+          botToken,
+          chatId,
+          `Nearly. I still need:\n• ${intent.missing.map(escapeHtml).join("\n• ")}`,
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      const journals = await editableJournals(admin, userId);
+      if (journals.length === 0) {
+        await sendChatMessage(
+          botToken,
+          chatId,
+          "Your account can't write to any journal, so there's nowhere to put that trade.",
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      // The draft outlives this request: it has to survive until the tap, and
+      // callback data is 64 bytes. Stored with the journals offered, so the
+      // button only has to carry an index.
+      const pendingId = randomBytes(6).toString("base64url");
+      const { error: pendError } = await admin.from("telegram_pending_trades").insert({
+        id: pendingId,
+        telegram_user_id: telegramUserId,
+        user_id: userId,
+        chat_id: chatId,
+        draft: intent.draft,
+        journal_ids: journals.map((j) => j.id),
+      });
+      if (pendError) {
+        await sendChatMessage(botToken, chatId, "Couldn't hold that trade. Try again.");
+        return NextResponse.json({ ok: true });
+      }
+
+      const openNote = draftIsClosed(intent.draft)
+        ? ""
+        : "\n<i>Still open, so it won't appear on a poster until it's closed.</i>";
+
+      await sendChatMessage(
+        botToken,
+        chatId,
+        `${escapeHtml(intent.summary)}${openNote}\n\nWhich journal?`,
+        [
+          ...journals.map((j, i) => ({
+            text: j.name,
+            callback_data: encodeTrade(pendingId, i),
+          })),
+          { text: "Cancel", callback_data: encodeTrade(pendingId, null) },
+        ],
+      );
+      return NextResponse.json({ ok: true });
     }
 
     /* ── a command typed in a CHANNEL ──────────────────────────────── */
@@ -397,6 +561,171 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         chatId,
         CADENCE_PROMPT[cadence],
         buttons,
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    /* ── a tapped journal button ───────────────────────────────────── */
+    if (update.callback_query && decodeTrade(update.callback_query.data)) {
+      const cb = update.callback_query;
+      const choice = decodeTrade(cb.data)!;
+      const chatId = cb.message?.chat?.id ? String(cb.message.chat.id) : null;
+
+      if (!cb.id || !chatId || !cb.from?.id) {
+        if (cb.id) await answerCallback(botToken, cb.id);
+        return NextResponse.json({ ok: true });
+      }
+
+      // RE-VERIFIED, not trusted. Everything in callback data is client-chosen.
+      const { data: pending } = await admin
+        .from("telegram_pending_trades")
+        .select("id, telegram_user_id, user_id, draft, journal_ids, message_id")
+        .eq("id", choice.pendingId)
+        .is("consumed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
+
+      if (!pending) {
+        await answerCallback(botToken, cb.id, "That one has expired. Send the trade again.", true);
+        return NextResponse.json({ ok: true });
+      }
+
+      // The tapper must be the person who typed it. In a DM that is always
+      // true; it is enforced anyway so a forwarded picker cannot be used to
+      // write into somebody else's journal.
+      if (Number(pending.telegram_user_id) !== cb.from.id) {
+        await answerCallback(botToken, cb.id, "That isn't your trade to save.", true);
+        return NextResponse.json({ ok: true });
+      }
+
+      // And their link must still stand: unlinking is a revocation.
+      const userId = await linkedAccount(admin, cb.from.id);
+      if (!userId || userId !== pending.user_id) {
+        await answerCallback(botToken, cb.id, "Your account is no longer linked.", true);
+        return NextResponse.json({ ok: true });
+      }
+
+      const clearPicker = async (): Promise<void> => {
+        if (cb.message?.message_id) await clearButtons(botToken, chatId, cb.message.message_id);
+      };
+
+      if (choice.journalIndex === null) {
+        await admin
+          .from("telegram_pending_trades")
+          .update({ consumed_at: new Date().toISOString() })
+          .eq("id", pending.id);
+        await answerCallback(botToken, cb.id, "Cancelled.");
+        await clearPicker();
+        return NextResponse.json({ ok: true });
+      }
+
+      const journalIds = pending.journal_ids as string[];
+      const journalId = journalIds[choice.journalIndex];
+      if (!journalId) {
+        await answerCallback(botToken, cb.id, "That option isn't valid.", true);
+        return NextResponse.json({ ok: true });
+      }
+
+      // Membership is checked NOW, against the database, not against the list
+      // stored a minute ago. Access can be revoked between the two.
+      const { data: membership } = await admin
+        .from("journal_members")
+        .select("role, journals!inner(name, is_archived)")
+        .eq("journal_id", journalId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      type M = { role: JournalRole; journals: { name: string; is_archived: boolean } };
+      const m = membership as unknown as M | null;
+      if (!m || m.journals.is_archived || !canEditTrades(m.role)) {
+        await answerCallback(botToken, cb.id, "You can't write to that journal.", true);
+        return NextResponse.json({ ok: true });
+      }
+
+      // CONSUME FIRST, conditionally, so a double-tap cannot save twice. The
+      // second tap finds consumed_at set and stops here.
+      const { data: taken } = await admin
+        .from("telegram_pending_trades")
+        .update({ consumed_at: new Date().toISOString() })
+        .eq("id", pending.id)
+        .is("consumed_at", null)
+        .select("id")
+        .maybeSingle();
+      if (!taken) {
+        await answerCallback(botToken, cb.id, "Already saved.");
+        return NextResponse.json({ ok: true });
+      }
+
+      const draft = pending.draft as TradeDraft;
+      const quantity = await defaultQuantity(admin, journalId, draft.instrument);
+
+      const parsed = createTradeSchema.safeParse({
+        user_id: userId,
+        instrument: draft.instrument,
+        asset_type: draft.asset_type,
+        direction: draft.direction,
+        entry_price: draft.entry_price,
+        entry_price_high: draft.entry_price_high,
+        quantity,
+        entry_time: draft.entry_time,
+        stop_loss: draft.stop_loss,
+        tp1: draft.tp1, tp2: draft.tp2, tp3: draft.tp3, tp4: draft.tp4,
+        tp5: draft.tp5, tp6: draft.tp6, tp7: draft.tp7,
+        tp4_trailing: draft.tp4_trailing,
+        take_profit: draft.tp1,
+        notes: "Logged from Telegram.",
+        ...outcomeFields(draft.outcome),
+      });
+
+      if (!parsed.success) {
+        // Release the draft so they can fix the message and try again.
+        await admin
+          .from("telegram_pending_trades")
+          .update({ consumed_at: null })
+          .eq("id", pending.id);
+        const why = parsed.error.issues.map((i) => i.message).join("; ");
+        await answerCallback(botToken, cb.id);
+        await sendChatMessage(botToken, chatId, `Couldn't save that: ${escapeHtml(why)}`);
+        return NextResponse.json({ ok: true });
+      }
+
+      // Same normalisation as /api/trades: nullable fields are null, never
+      // undefined, so the computation and the row agree.
+      const normalised = Object.fromEntries(
+        Object.entries(parsed.data).map(([k, v]) => [k, v === undefined ? null : v]),
+      );
+      // Through `unknown` because fromEntries erases the shape; the schema
+      // above is what guarantees it, exactly as /api/trades relies on it.
+      const computed = computeTradeFields(
+        normalised as unknown as Parameters<typeof computeTradeFields>[0],
+      );
+
+      const { data: saved, error: saveError } = await admin
+        .from("trades")
+        .insert(tradeInsertPayload(computed, { userId, journalId }))
+        .select("id")
+        .single();
+
+      if (saveError || !saved) {
+        await admin
+          .from("telegram_pending_trades")
+          .update({ consumed_at: null })
+          .eq("id", pending.id);
+        await answerCallback(botToken, cb.id);
+        await sendChatMessage(botToken, chatId, "Couldn't save that trade. Nothing was written.");
+        return NextResponse.json({ ok: true });
+      }
+
+      await admin
+        .from("telegram_pending_trades")
+        .update({ trade_id: saved.id })
+        .eq("id", pending.id);
+
+      await answerCallback(botToken, cb.id, "Saved.");
+      await clearPicker();
+      await sendChatMessage(
+        botToken,
+        chatId,
+        `Saved to <b>${escapeHtml(m.journals.name)}</b>${quantity !== 1 ? ` (size ${quantity}, as last time)` : ""}.`,
       );
       return NextResponse.json({ ok: true });
     }

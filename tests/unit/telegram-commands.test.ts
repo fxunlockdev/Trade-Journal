@@ -6,6 +6,8 @@ import {
   isAdminStatus,
   isCadence,
   CALLBACK_DATA_MAX,
+  encodeTrade,
+  decodeTrade,
 } from "@/lib/telegram/commands";
 
 /**
@@ -152,5 +154,49 @@ describe("webhook secret derivation", () => {
     vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "");
     const { telegramWebhookSecret } = await load();
     expect(telegramWebhookSecret()).toBeNull();
+  });
+});
+
+describe("trade buttons", () => {
+  const PENDING = "aB3_x-9Q";
+
+  it("round-trips a journal choice", () => {
+    expect(decodeTrade(encodeTrade(PENDING, 2))).toEqual({
+      pendingId: PENDING,
+      journalIndex: 2,
+    });
+  });
+
+  it("round-trips a cancel", () => {
+    expect(decodeTrade(encodeTrade(PENDING, null))).toEqual({
+      pendingId: PENDING,
+      journalIndex: null,
+    });
+  });
+
+  it("stays well inside Telegram's 64-byte cap", () => {
+    // A uuid beside the pending id would not fit; an index does.
+    expect(encodeTrade(PENDING, 12).length).toBeLessThanOrEqual(CALLBACK_DATA_MAX);
+  });
+
+  it("rejects anything malformed", () => {
+    expect(decodeTrade("trd:short:1")).toBeNull();
+    expect(decodeTrade("trd:aB3_x-9Q:abc")).toBeNull();
+    expect(decodeTrade("pub:aB3_x-9Q:1")).toBeNull();
+    expect(decodeTrade("trd:aB3_x-9Q")).toBeNull();
+    expect(decodeTrade("trd:aB3_x-9Q:1:extra")).toBeNull();
+    expect(decodeTrade(undefined)).toBeNull();
+  });
+
+  it("rejects a pending id carrying the delimiter or junk", () => {
+    expect(decodeTrade("trd:a:b:c:1")).toBeNull();
+    expect(decodeTrade("trd:' or 1=:1")).toBeNull();
+  });
+
+  it("accepts an index it cannot vouch for", () => {
+    // Deliberate: the index is client-chosen. Whether journal 9 exists in the
+    // list offered, and whether the account may write to it, is decided by the
+    // receiver against the stored draft and the database.
+    expect(decodeTrade("trd:aB3_x-9Q:9")).toEqual({ pendingId: PENDING, journalIndex: 9 });
   });
 });

@@ -85,3 +85,41 @@ export const CADENCE_PROMPT: Record<Cadence, string> = {
   weekly: "Which desk's results for last week?",
   monthly: "Which desk's results for last month?",
 };
+
+
+/* ────────────────────────── trade buttons ────────────────────────── */
+
+export interface TradeChoice {
+  /** The pending draft this tap refers to. */
+  readonly pendingId: string;
+  /** Index into the journal list offered WITH that draft, or null to cancel. */
+  readonly journalIndex: number | null;
+}
+
+/** 8 url-safe characters, no colon, so it survives the delimiter below. */
+const PENDING_ID_RE = /^[A-Za-z0-9_-]{8}$/;
+
+/**
+ * "trd:<pending>:<n>" or "trd:<pending>:x" to cancel.
+ *
+ * An INDEX rather than a journal id. The journals offered are stored with the
+ * pending draft, so the button only needs to say which one; that keeps this
+ * at 14 characters against Telegram's 64-byte cap, where a uuid would not fit
+ * beside the pending id. The index is client-chosen like everything else in
+ * callback data, so the receiver bound-checks it and re-verifies membership.
+ */
+export function encodeTrade(pendingId: string, journalIndex: number | null): string {
+  return `trd:${pendingId}:${journalIndex === null ? "x" : journalIndex}`;
+}
+
+export function decodeTrade(data: string | undefined): TradeChoice | null {
+  if (!data) return null;
+  const parts = data.split(":");
+  if (parts.length !== 3) return null;
+  const [prefix, pendingId, idx] = parts;
+  if (prefix !== "trd") return null;
+  if (!PENDING_ID_RE.test(pendingId)) return null;
+  if (idx === "x") return { pendingId, journalIndex: null };
+  if (!/^\d{1,2}$/.test(idx)) return null;
+  return { pendingId, journalIndex: Number(idx) };
+}

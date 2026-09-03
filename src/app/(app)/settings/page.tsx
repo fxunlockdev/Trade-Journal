@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TelegramLinkCard } from "@/components/settings/telegram-link-card";
 import { clearTourSeen } from "@/lib/tour/steps";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
@@ -353,6 +354,9 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="profile">
         <TabsList className="mb-4">
+          <TabsTrigger value="telegram" className="flex items-center gap-1.5">
+            Telegram
+          </TabsTrigger>
           <TabsTrigger value="profile" className="flex items-center gap-1.5">
             <UserIcon className="h-3.5 w-3.5" />
             Profile
@@ -366,6 +370,10 @@ export default function SettingsPage() {
         </TabsList>
 
         {/* ── Profile tab ── */}
+        <TabsContent value="telegram">
+          <TelegramLinkCard />
+        </TabsContent>
+
         <TabsContent value="profile">
           <Card className="border-border bg-card">
             <CardContent className="pt-6 space-y-6">

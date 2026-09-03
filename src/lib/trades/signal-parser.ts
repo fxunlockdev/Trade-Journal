@@ -84,10 +84,37 @@ function findDirection(text: string): ParsedDirection | undefined {
  *   range "1.2345 - 1.2355", "1.2345/1.2355"
  *   bare price right after BUY/SELL: "BUY XAUUSD 1950" — last resort
  */
-function findEntry(text: string): { low?: number; high?: number } {
-  // Prefer an explicit "entry" / "@" / "at" marker.
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The entry price.
+ *
+ * The explicit "entry" / "@" marker wins. "at" counts too, but NOT when it
+ * follows an outcome verb: "out at 66000" and "closed at 3348" are exits, and
+ * reading them as entries publishes a trade with its result as its start.
+ *
+ * Then the bare-number forms, anchored on the instrument the parser already
+ * identified, in EITHER order:
+ *
+ *   XAUUSD buy 3340      how most people type it
+ *   buy XAUUSD 3340      how the original fallback expected it
+ *
+ * The original fallback matched `(buy|sell) <anything> <number>`, so for
+ * "XAUUSD buy closed 3348" it took "closed" as the symbol and the exit price
+ * as the entry. Anchoring on the real instrument removes that. The generic
+ * form is kept only for messages where no instrument was recognised, so the
+ * paste box in the trade form keeps its old leniency there.
+ */
+function findEntry(
+  text: string,
+  instrument?: string,
+): { low?: number; high?: number } {
+  const marker = "(?:entry|@|(?<!(?:closed?|exit(?:ed)?|out)\\s)at)";
+
   const rangeRe = new RegExp(
-    `(?:entry|@|at)\\s*:?\\s*(${NUM_RE.source})\\s*[-/–]\\s*(${NUM_RE.source})`,
+    `${marker}\\s*:?\\s*(${NUM_RE.source})\\s*[-/–]\\s*(${NUM_RE.source})`,
     "i",
   );
   const range = text.match(rangeRe);
@@ -99,19 +126,35 @@ function findEntry(text: string): { low?: number; high?: number } {
     }
   }
 
-  const singleRe = new RegExp(
-    `(?:entry|@|at)\\s*:?\\s*(${NUM_RE.source})`,
-    "i",
-  );
+  const singleRe = new RegExp(`${marker}\\s*:?\\s*(${NUM_RE.source})`, "i");
   const single = text.match(singleRe);
   if (single) {
     const a = toNumber(single[1]);
     if (a != null) return { low: a };
   }
 
-  // Fallback: "BUY XAUUSD 1950" — first bare number after direction + symbol.
+  const dir = "(?:buy|sell|long|short)";
+  if (instrument) {
+    const sym = escapeRe(instrument);
+    // The instrument may have been typed as "XAU/USD" or "xauusd"; match the
+    // canonical form and the slashed form loosely.
+    const symLoose = sym.replace(/USD$/i, "\\/?USD");
+    for (const re of [
+      new RegExp(`${symLoose}\\s+${dir}\\s+(${NUM_RE.source})`, "i"),
+      new RegExp(`${dir}\\s+${symLoose}\\s+(${NUM_RE.source})`, "i"),
+    ]) {
+      const m = text.match(re);
+      if (m) {
+        const a = toNumber(m[1]);
+        if (a != null) return { low: a };
+      }
+    }
+    return {};
+  }
+
+  // No instrument recognised: the old lenient form, for the paste box.
   const dirSymNumRe = new RegExp(
-    `(?:buy|sell|long|short)\\s+[A-Z0-9/.\\-]+\\s+(${NUM_RE.source})`,
+    `${dir}\\s+[A-Z0-9/.\\-]+\\s+(${NUM_RE.source})`,
     "i",
   );
   const fallback = text.match(dirSymNumRe);
@@ -223,7 +266,7 @@ export function parseSignalText(input: string): ParsedSignal {
   const direction = findDirection(text);
   if (!direction) warnings.push("Could not identify direction. Select BUY or SELL.");
 
-  const { low: entry_price, high: entry_price_high } = findEntry(text);
+  const { low: entry_price, high: entry_price_high } = findEntry(text, instrument);
   if (entry_price == null) warnings.push("Could not identify entry price");
 
   const stop_loss = findStop(text);
