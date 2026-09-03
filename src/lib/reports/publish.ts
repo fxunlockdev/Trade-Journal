@@ -49,6 +49,15 @@ export interface PublishInput {
   readonly msLeft: () => number;
 }
 
+/**
+ * Time one render plus its share of the upload needs, generously.
+ *
+ * A floor for "starting this is not reckless", not a measurement. Being wrong
+ * high costs a poster that waits for the next tick; being wrong low costs a
+ * delivery stuck in a state only a person can clear.
+ */
+const MIN_MS_TO_START_A_RENDER = 45_000;
+
 export type PublishStatus =
   | "sent"
   | "already"
@@ -121,6 +130,15 @@ export async function publishSnapshot(
       // Sequential, sharing one browser: three tabs at once on a 1GB lambda is
       // how a render turns into an out-of-memory kill with no error.
       for (const template of chosen) {
+        // The caller reserved a budget before admitting this desk, but nothing
+        // enforced it once inside. A desk admitted with just enough time could
+        // run past the platform limit and be killed AFTER the send marker was
+        // set, leaving a row the claim refuses forever and only a human can
+        // clear. Checked between renders, while giving up is still free.
+        if (input.msLeft() < MIN_MS_TO_START_A_RENDER) {
+          skipped.push(`${template.label}: not enough time left to draw it.`);
+          continue;
+        }
         try {
           const bytes = await renderPoster({
             snapshotId: snapshot.id,
