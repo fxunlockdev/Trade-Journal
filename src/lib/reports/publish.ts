@@ -149,10 +149,19 @@ export async function publishSnapshot(
     // Marked BEFORE the bytes move. If this invocation dies from here on, the
     // claim sees a stale pending WITH send_started_at set and refuses to hand
     // it back out, because the album may already be in the group.
+    //
+    // `attempted_styles` records what this send SET OUT to publish. Without it
+    // a short album cannot be explained after the fact: two message ids could
+    // mean one style failed or that only two were ever chosen, and the setup
+    // may have been edited since. It is the intent, so it is written here
+    // rather than derived from the desk later.
     sendStarted = true;
     await admin
       .from("report_deliveries")
-      .update({ send_started_at: new Date().toISOString() })
+      .update({
+        send_started_at: new Date().toISOString(),
+        attempted_styles: chosen.map((t) => t.id),
+      })
       .eq("id", deliveryId);
 
     const sent = await sendTelegramAlbum(

@@ -91,16 +91,19 @@ describe("buildCaption", () => {
     expect(text).toContain("with a stop");
   });
 
-  it("omits money rather than summing across currencies", () => {
-    const text = caption([
-      mk({ pnl_currency: "USD" }),
-      mk({ pnl_currency: "EUR" }),
-    ]);
-    expect(text).not.toMatch(/Net -?\+?[\d.]+ (USD|EUR)/);
+  it("never prints a cash figure, even for a single currency", () => {
+    // The posters show pips and R, never money. A caption reading
+    // "Net +1123.45 USD" under them made a different claim: it implies an
+    // account size, to a channel of business partners.
+    const text = caption([mk({ pnl_currency: "USD" })]);
+    expect(text).not.toMatch(/USD/);
+    expect(text).not.toMatch(/Net [+-][\d,]+\.\d\d/);
   });
 
-  it("prints money when the period agrees on one currency", () => {
-    expect(caption([mk({ pnl_currency: "USD" })])).toMatch(/Net \+[\d.]+ USD/);
+  it("still prints pips and R, which are what the posters show", () => {
+    const text = caption([mk({ pnl_currency: "USD" })]);
+    expect(text).toMatch(/pips/);
+    expect(text).toMatch(/R\b/);
   });
 
   it("never exceeds Telegram's caption limit", () => {

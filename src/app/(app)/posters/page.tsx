@@ -3,6 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveJournal } from "@/lib/journals/active-journal";
 import { PostersClient } from "@/components/posters/posters-client";
+import {
+  ReportActivity,
+  type DeliverySummary,
+} from "@/components/posters/report-activity";
+import { isoDate, zonedNow, type Cadence } from "@/lib/reports/periods-tz";
 import { lookbackCutoffIso } from "@/lib/posters/scope";
 import type { Journal, JournalRole, JournalWithRole, ReportDesk, Trade } from "@/types/database";
 
@@ -150,14 +155,119 @@ export default async function PostersPage() {
     .select("chat_id, chat_title, status, last_error")
     .maybeSingle();
 
+  const desks = (deskRows ?? []) as ReportDesk[];
+
+  // What the scheduler has actually done. RLS-scoped, so these are the
+  // caller's own deliveries. Read here rather than in the client because the
+  // page is already force-dynamic and one round trip beats a loading state on
+  // information that answers "is it broken?".
+  const { data: deliveryRows } = await supabase
+    .from("report_deliveries")
+    .select(
+      "status, message_ids, attempted_styles, sent_at, updated_at, error, report_snapshots!inner(desk_id, cadence, period_start)",
+    )
+    // Ordered by updated_at, which is ALWAYS set. sent_at is null for every
+    // failed and in-doubt delivery, so ordering by it would push recent
+    // failures past the limit and out of the page entirely.
+    .order("updated_at", { ascending: false })
+    .limit(60);
+
+  type DeliveryRow = {
+    readonly status: string;
+    readonly message_ids: unknown;
+    readonly attempted_styles: readonly string[] | null;
+    readonly sent_at: string | null;
+    readonly updated_at: string;
+    readonly error: string | null;
+    readonly report_snapshots: {
+      readonly desk_id: string;
+      readonly cadence: string;
+      readonly period_start: string;
+    };
+  };
+
+  const deliveries: DeliverySummary[] = ((deliveryRows ?? []) as unknown as DeliveryRow[]).map(
+    (r) => ({
+      deskId: r.report_snapshots.desk_id,
+      cadence: r.report_snapshots.cadence as Cadence,
+      periodStart: r.report_snapshots.period_start,
+      status: r.status,
+      images: Array.isArray(r.message_ids) ? r.message_ids.length : 0,
+      attempted: r.attempted_styles?.length ?? 0,
+      sentAt: r.sent_at,
+      updatedAt: r.updated_at,
+      error: r.error,
+    }),
+  );
+
+  // Latest close per setup, from the trades already read. Derived here rather
+  // than queried again: this is the number behind "nothing will publish until
+  // newer trades are imported", which is the single most common reason the
+  // group stays quiet.
+  const lastTradeByDesk: Record<string, string | null> = {};
+
+  // The desk's OWN zone, through the same Intl path the periods use. Slicing
+  // the UTC string would put a late trade on the previous day for any desk
+  // ahead of UTC, which is every desk here.
+  const localDay = (iso: string, tz: string): string =>
+    isoDate(zonedNow(new Date(iso), tz));
+
+  for (const desk of desks) {
+    const ids = new Set(desk.journal_ids);
+    let latestIso: string | null = null;
+    for (const t of trades) {
+      if (!ids.has(t.journal_id)) continue;
+      const closed = t.exit_time ?? t.entry_time;
+      if (closed && (latestIso === null || closed > latestIso)) latestIso = closed;
+    }
+    lastTradeByDesk[desk.id] = latestIso
+      ? localDay(latestIso, desk.timezone)
+      : null;
+  }
+
+  // `trades` is bounded to 75 days, so a desk whose last trade is older reads
+  // as null here and the panel would state "no closed trades in these
+  // journals" as fact, next to a partner-facing channel, while the journals
+  // are simply quiet. A second unbounded lookup runs for exactly those desks,
+  // so null always means none. Usually there are none, so this costs nothing.
+  const unknown = desks.filter((d) => lastTradeByDesk[d.id] === null);
+  if (unknown.length > 0) {
+    const olderAdmin = createAdminClient();
+    await Promise.all(
+      unknown.map(async (desk) => {
+        const { data } = await olderAdmin
+          .from("trades")
+          .select("entry_time, exit_time")
+          .in("journal_id", desk.journal_ids)
+          .not("pnl_absolute", "is", null)
+          .order("entry_time", { ascending: false })
+          .limit(1);
+        const row = data?.[0];
+        const closed = row ? (row.exit_time ?? row.entry_time) : null;
+        if (closed) lastTradeByDesk[desk.id] = localDay(closed, desk.timezone);
+      }),
+    );
+  }
+
   return (
-    <PostersClient
-      destination={destination ?? null}
-      trades={trades}
-      journals={journals}
-      desks={(deskRows ?? []) as ReportDesk[]}
-      activeJournalId={activeJournalId}
-      loadError={loadError}
-    />
+    <>
+      <PostersClient
+        destination={destination ?? null}
+        trades={trades}
+        journals={journals}
+        desks={desks}
+        activeJournalId={activeJournalId}
+        loadError={loadError}
+      />
+      <div className="mx-auto w-full max-w-md px-4 pb-10 lg:max-w-sm">
+        <ReportActivity
+          desks={desks}
+          deliveries={deliveries}
+          lastTradeByDesk={lastTradeByDesk}
+          connected={destination?.status === "connected"}
+          now={new Date().toISOString()}
+        />
+      </div>
+    </>
   );
 }

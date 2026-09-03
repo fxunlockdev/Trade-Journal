@@ -3,6 +3,7 @@ import {
   dueCadences,
   isCadenceDue,
   periodsToConsider,
+  nextRunFor,
   SCHEDULE,
 } from "@/lib/reports/schedule";
 import { zonedNow } from "@/lib/reports/periods-tz";
@@ -233,5 +234,42 @@ describe("the publishing window", () => {
     // The safe failure: a late report is a nuisance, an unexpected one in a
     // partner channel is not.
     expect(dueCadences(at("2026-07-15T22:00:00Z"), LONDON)).toEqual([]);
+  });
+});
+
+describe("nextRunFor", () => {
+  it("says today when the window is open", () => {
+    // 02:30Z is 06:30 Dubai, inside the daily window.
+    const n = nextRunFor("daily", at("2026-09-03T02:30:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-09-03", hour: 6, dueNow: true });
+  });
+
+  it("says tomorrow once the window has closed", () => {
+    // 10:00Z is 14:00 Dubai, well past it.
+    const n = nextRunFor("daily", at("2026-09-02T10:00:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-09-03", hour: 6, dueNow: false });
+  });
+
+  it("says today when the trigger has not arrived yet", () => {
+    // 00:00Z is 04:00 Dubai, before 06:00.
+    const n = nextRunFor("daily", at("2026-09-03T00:00:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-09-03", dueNow: false });
+  });
+
+  it("finds the next Saturday for the weekly", () => {
+    // 2026-09-02 is a Wednesday; the next Saturday is the 5th.
+    const n = nextRunFor("weekly", at("2026-09-02T10:00:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-09-05", hour: 6 });
+  });
+
+  it("finds the 1st of next month for the monthly, across a boundary", () => {
+    const n = nextRunFor("monthly", at("2026-09-02T10:00:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-10-01", hour: 9 });
+  });
+
+  it("handles the monthly on the 1st before its hour", () => {
+    // 02:00Z is 06:00 Dubai on the 1st; monthly runs at 09:00, so it is today.
+    const n = nextRunFor("monthly", at("2026-10-01T02:00:00Z"), "Asia/Dubai");
+    expect(n).toMatchObject({ date: "2026-10-01", hour: 9, dueNow: false });
   });
 });

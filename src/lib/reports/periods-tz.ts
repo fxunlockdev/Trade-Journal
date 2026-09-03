@@ -73,8 +73,12 @@ export function isoDate(d: { year: number; month: number; day: number }): string
  * Done in UTC deliberately: this is pure calendar arithmetic on a y/m/d triple
  * with no timezone attached, and UTC is the only zone guaranteed to have every
  * midnight. Converting to local first is what makes DST bugs.
+ *
+ * Exported so the scheduler can walk forward to the next run date using the
+ * same arithmetic that decides periods; two implementations of "the next day"
+ * would only have to disagree once.
  */
-function shiftDays(
+export function shiftDays(
   d: { year: number; month: number; day: number },
   days: number,
 ): { year: number; month: number; day: number } {
