@@ -338,3 +338,38 @@ describe("what the reviewers found", () => {
     expect(r?.text).toMatch(/Couldn't hold/);
   });
 });
+
+describe("edge cases in real typing", () => {
+  it("ignores a sticker or an uncaptioned photo, even mid-conversation", async () => {
+    const f = fake({}, { open: openDraft() });
+    expect(await handleTradeMessage(f.store, msg(""), NOW)).toBeNull();
+    expect(await handleTradeMessage(f.store, msg("   "), NOW)).toBeNull();
+    expect(f.saved).toHaveLength(0);
+  });
+
+  it("keeps a note whole when it happens to start with the word note", async () => {
+    const f = fake({}, {
+      open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), emotion: null, tags: [] } }),
+    });
+    await handleTradeMessage(f.store, msg("note to self: don't chase"), NOW);
+    expect(f.saved[0][1].answers.notes).toBe("note to self: don't chase");
+  });
+
+  it("still takes a named edit of another field at the notes question", async () => {
+    const f = fake({}, {
+      open: openDraft({ answers: { lots: 0.5, entry_time: NOW.toISOString(), emotion: null, tags: [] } }),
+    });
+    await handleTradeMessage(f.store, msg("size 1"), NOW);
+    expect(f.saved[0][1].answers.lots).toBe(1);
+  });
+
+  it("shows the answers already given when the result is corrected", async () => {
+    const f = fake({}, {
+      open: openDraft({ answers: { lots: 0.5, entry_time: "2026-08-28T12:00:00.000Z", date_label: null } }),
+    });
+    const r = await handleTradeMessage(f.store, msg("still open"), NOW);
+    expect(r?.text).toMatch(/still open/);
+    expect(r?.text).toMatch(/0\.5 lots/);
+    expect(r?.text).toMatch(/2026-08-28/);
+  });
+});

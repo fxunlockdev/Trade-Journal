@@ -9,12 +9,13 @@
  */
 
 import { parseCommand } from "@/lib/telegram/commands";
-import { parseTradeIntent, describeDraft, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { parseTradeIntent, type TradeDraft } from "@/lib/telegram/trade-intent";
 import { parseOutcome } from "@/lib/trades/outcome-parser";
 import {
   applyText,
   nextStage,
   parseFieldEdit,
+  describeConversation,
   EMPTY_CONVERSATION,
   PENDING_TTL_MINUTES,
   type Conversation,
@@ -136,14 +137,15 @@ export async function handleTradeMessage(
   now: Date,
 ): Promise<BotReply | null> {
   const text = msg.text.trim();
+  // A sticker, a photo with no caption, a voice note: nothing to read, and
+  // not an answer to anything either.
+  if (!text) return null;
   const first = text.split(/\s+/)[0]?.toLowerCase() ?? "";
   const isCommand = first.startsWith("/") || GREETING_RE.test(text);
   const intent = isCommand ? null : parseTradeIntent(text, now);
 
   // Plain chat with nothing waiting on it is not counted at all.
-  const open = intent?.kind === "not_a_trade" || isCommand || intent?.kind !== undefined
-    ? await store.openDraft(msg.telegramUserId)
-    : null;
+  const open = await store.openDraft(msg.telegramUserId);
   if (!isCommand && intent?.kind === "not_a_trade" && !open) return null;
 
   if (!(await store.allow(msg.telegramUserId))) return null;
@@ -202,8 +204,11 @@ export async function handleTradeMessage(
 
     // "date 28 aug", "size 0.5", "mood calm", "tags ...", "notes ...": an
     // answer to a NAMED question, at any point, including after the picker.
+    const quick = await store.isQuick(msg.telegramUserId);
+    const stage = nextStage(open.draft, open.conversation, quick);
     const edit = parseFieldEdit(text);
-    if (edit) {
+    // "note to self: ..." typed AT the notes question is the note, whole.
+    if (edit && !(edit.stage === "notes" && stage === "notes")) {
       const applied = applyText(edit.stage, edit.value, open.conversation, now);
       if (!applied.ok) return { text: escapeHtml(applied.hint) };
       if (!(await store.saveConversation(open.id, { answers: applied.conversation.answers }, lifeFrom(now)))) {
@@ -221,15 +226,18 @@ export async function handleTradeMessage(
     if (corrected) {
       if (!(await store.saveDraft(open.id, corrected))) return { text: "Couldn't hold that change. Send it again." };
       const updated = { ...open, draft: corrected, conversation: { ...open.conversation, ready: undefined } };
-      return continueDraft(store, updated, now, escapeHtml(describeDraft(corrected)));
+      return continueDraft(
+        store,
+        updated,
+        now,
+        escapeHtml(describeConversation(corrected, open.conversation.answers)),
+      );
     }
 
     if (open.conversation.ready) {
       return { text: `Pick a journal with the buttons on my last message, or /cancel. ${EDIT_HINT}` };
     }
 
-    const quick = await store.isQuick(msg.telegramUserId);
-    const stage = nextStage(open.draft, open.conversation, quick);
     const applied = applyText(stage, text, open.conversation, now);
     if (!applied.ok) {
       const again = await continueDraft(store, open, now);

@@ -47,7 +47,10 @@ const PER_ROW: Record<Stage, number> = {
   size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
 };
 
-const SKIP_WORDS = /^(?:skip|none|-|nothing|n\/a)$/i;
+/** A skip, on a question that can be skipped. "no", "thanks" and "ok" are
+ *  how people decline a question in chat; they are never a note or a tag. */
+const SKIP_WORDS =
+  /^(?:skip|none|no|nah|nope|-|nothing|n\/a|na|ok(?:ay)?|thanks?|thank you|thx|ty|cool|fine|nvm)[!. ]*$/i;
 const MAX_LOTS = 1000;
 const MAX_TAGS = 10;
 const MAX_TAG_LENGTH = 30;
@@ -213,13 +216,18 @@ function readLots(text: string): number | null {
 function readEmotion(text: string): EmotionState | null | undefined {
   const t = text.trim().toLowerCase();
   if (SKIP_WORDS.test(t)) return null;
-  return EMOTION_VALUES.find((e) => e === t);
+  // "calm", "felt calm", "a bit anxious tbh": the mood word anywhere in a
+  // short reply. The longest match first so "overconfident" beats "confident".
+  const byLength = [...EMOTION_VALUES].sort((a, b) => b.length - a.length);
+  return byLength.find((e) => new RegExp(`\\b${e}\\b`, "i").test(t));
 }
 
 function readTags(text: string): readonly string[] | null {
   const t = text.trim();
   if (SKIP_WORDS.test(t)) return [];
-  const tags = t.split(",").map((s) => s.trim()).filter(Boolean);
+  // "scalp, london" or "#scalp #london": commas, or hashtags on whitespace.
+  const parts = t.includes("#") ? t.split(/[\s,]+/) : t.split(",");
+  const tags = parts.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
   if (tags.length === 0 || tags.length > MAX_TAGS) return null;
   if (tags.some((s) => s.length > MAX_TAG_LENGTH)) return null;
   // "Scalp" and "scalp" are one tag, spelled the way it was typed first.
@@ -287,7 +295,7 @@ export function applyText(stage: Stage, text: string, c: Conversation, now: Date
         ? { ok: false, hint: `Notes can be ${MAX_NOTES_LENGTH} characters at most.` }
         : withAnswers(c, { notes: t });
     case "journal":
-      return { ok: false, hint: "Pick a journal with the buttons above." };
+      return { ok: false, hint: "Pick a journal with the buttons on my last message." };
   }
 }
 
