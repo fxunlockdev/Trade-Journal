@@ -9,7 +9,9 @@
  */
 
 import { parseCommand } from "@/lib/telegram/commands";
-import { parseTradeIntent, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { parseTradeIntent, type TradeIntent, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { looksLikeProseTrade, readExtraction } from "@/lib/telegram/prose";
+import type { Answers } from "@/lib/telegram/conversation";
 import { parseOutcome } from "@/lib/trades/outcome-parser";
 import {
   applyText,
@@ -49,6 +51,12 @@ export interface TradeDmStore extends FlowStore {
   /** The trade itself changed (an outcome correction). */
   saveDraft(id: string, draft: TradeDraft): Promise<boolean>;
   setQuick(telegramUserId: number, quick: boolean): Promise<void>;
+  /**
+   * The model's reading of a message written in plain words, or null when
+   * the model is unavailable or this person has used their allowance. Absent
+   * entirely when prose reading is not configured.
+   */
+  readProse?(telegramUserId: number, text: string): Promise<unknown | null>;
 }
 
 export interface DmMessage {
@@ -67,7 +75,7 @@ const EDIT_HINT = 'To change an earlier answer, type e.g. "date 28 aug" or "size
 
 function helpText(linked: boolean, quick: boolean): string {
   const how =
-    `Send me a trade in plain words, for example:\n<code>${EXAMPLE}</code>\n\n` +
+    `Send me a trade, for example:\n<code>${EXAMPLE}</code>\nor just describe it: "bought gold at 3340 this morning, stop 3335, out at 3348".\n\n` +
     `Say what happened: an exit price ("closed 3348"), "tp1 hit", "sl", "be", or "still open". ` +
     `Add a date like "28 aug" for a past trade and "0.5 lots" for the size, or I'll ask. ` +
     (quick
@@ -76,6 +84,26 @@ function helpText(linked: boolean, quick: boolean): string {
     ` ${EDIT_HINT} /cancel drops the trade I'm asking about.`;
   if (linked) return how;
   return `First, link this chat to your Trade Journal account: ${LINK_HINT}\n\n${how}`;
+}
+
+/**
+ * The grammar first; the model only for what it could not read and only
+ * when the message looks like a trade in words. A model reading that is not
+ * a trade falls back to the grammar's own verdict.
+ */
+async function readTrade(
+  store: TradeDmStore,
+  telegramUserId: number,
+  text: string,
+  now: Date,
+): Promise<{ intent: TradeIntent; prefill: Answers }> {
+  const strict = parseTradeIntent(text, now);
+  if (strict.kind === "ready" || !store.readProse || !looksLikeProseTrade(text)) {
+    return { intent: strict, prefill: {} };
+  }
+  const raw = await store.readProse(telegramUserId, text);
+  const read = raw === null ? null : readExtraction(raw, text, now);
+  return read ?? { intent: strict, prefill: {} };
 }
 
 function asOpenDraft(held: DraftToHold): OpenDraft {
@@ -142,13 +170,32 @@ export async function handleTradeMessage(
   if (!text) return null;
   const first = text.split(/\s+/)[0]?.toLowerCase() ?? "";
   const isCommand = first.startsWith("/") || GREETING_RE.test(text);
-  const intent = isCommand ? null : parseTradeIntent(text, now);
+  const strict = isCommand ? null : parseTradeIntent(text, now);
+  const mightBeProse = !isCommand && strict?.kind !== "ready" && looksLikeProseTrade(text);
 
   // Plain chat with nothing waiting on it is not counted at all.
   const open = await store.openDraft(msg.telegramUserId);
-  if (!isCommand && intent?.kind === "not_a_trade" && !open) return null;
+  if (!isCommand && strict?.kind === "not_a_trade" && !open && !mightBeProse) return null;
 
   if (!(await store.allow(msg.telegramUserId))) return null;
+
+  // The model is consulted only for a linked person: a stranger's words must
+  // not cost a call. Mid-conversation, a message that reads like a whole
+  // trade in words is a new trade, not an answer.
+  let intent = strict;
+  let prefill: Answers = {};
+  if (mightBeProse && (await store.linkedUser(msg.telegramUserId))) {
+    const read = await readTrade(store, msg.telegramUserId, text, now);
+    intent = read.intent;
+    prefill = read.prefill;
+    // It described a trade and nothing could read it: say so rather than
+    // stay silent, and show the short form that always works.
+    if (intent.kind === "not_a_trade" && !open) {
+      return {
+        text: `I couldn't read that one. Try the short form: <code>${EXAMPLE}</code>, or say the prices and what happened, e.g. "bought gold at 3340, stop 3335, closed at 3348".`,
+      };
+    }
+  }
 
   if (first === "/start" || first === "/help" || GREETING_RE.test(text)) {
     const userId = await store.linkedUser(msg.telegramUserId);
@@ -240,10 +287,18 @@ export async function handleTradeMessage(
 
     const applied = applyText(stage, text, open.conversation, now);
     if (!applied.ok) {
+      if (applied.cancel) {
+        await store.cancelDraft(open.id);
+        return { text: "Cancelled. Send it again with what I got wrong." };
+      }
       const again = await continueDraft(store, open, now);
       return { ...again, text: `${escapeHtml(applied.hint)} ${EDIT_HINT}\n\n${again.text}` };
     }
-    if (!(await store.saveConversation(open.id, { answers: applied.conversation.answers }, lifeFrom(now)))) {
+    const patch: Conversation = {
+      answers: applied.conversation.answers,
+      ...(applied.conversation.confirmed ? { confirmed: true } : {}),
+    };
+    if (!(await store.saveConversation(open.id, patch, lifeFrom(now)))) {
       return { text: "Couldn't hold that answer. Send it again." };
     }
     return continueDraft(store, { ...open, conversation: applied.conversation }, now);
@@ -280,14 +335,16 @@ export async function handleTradeMessage(
     chatId: msg.chatId,
     draft: intent.draft,
     journalIds: journals.map((j) => j.id),
-    conversation: EMPTY_CONVERSATION,
+    conversation: { ...EMPTY_CONVERSATION, answers: prefill },
     expiresAt: lifeFrom(now),
   };
   if (!(await store.holdDraft(held))) return { text: "Couldn't hold that trade. Try again." };
 
   // The first question comes with what was understood, so a person can see
-  // straight away if the trade itself was misread.
+  // straight away if the trade itself was misread. A reading from plain
+  // words says so, because it is the one most worth checking.
   const quick = await store.isQuick(msg.telegramUserId);
   const stage = nextStage(held.draft, held.conversation, quick);
-  return continueDraft(store, asOpenDraft(held), now, stage === "journal" ? undefined : escapeHtml(intent.summary));
+  const heading = intent.draft.read_from_prose ? "I read that as:\n" : "";
+  return continueDraft(store, asOpenDraft(held), now, stage === "journal" ? undefined : `${heading}${escapeHtml(intent.summary)}`);
 }

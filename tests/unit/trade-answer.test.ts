@@ -40,7 +40,7 @@ function fake(loaded: Loaded | null, o: Partial<TradeAnswerStore> = {}, quick = 
   return { store, saved };
 }
 
-const tap = (field: "s" | "d" | "e" | "t" | "k", value = "", o: Partial<{ tapperId: number; chatId: string }> = {}) => ({
+const tap = (field: "s" | "d" | "e" | "t" | "k" | "c", value = "", o: Partial<{ tapperId: number; chatId: string }> = {}) => ({
   pendingId: ID, field, value, tapperId: 111, chatId: "c1", ...o,
 });
 /** The Skip of a given question. */
@@ -151,5 +151,21 @@ describe("answers", () => {
     const r = await handleTradeAnswer(f.store, skip("notes"), NOW);
     expect(r.reply?.text).toMatch(/nowhere to go/);
     expect(cancelled).toEqual([ID]);
+  });
+});
+
+describe("confirming a prose reading by button", () => {
+  it("cancels on No and continues on Yes", async () => {
+    const cancelled: string[] = [];
+    const proseDraft = { ...draft(), read_from_prose: true };
+    const no = fake(open({ answers: {} }, { draft: proseDraft }), { cancelDraft: async (id) => { cancelled.push(id); } });
+    const r = await handleTradeAnswer(no.store, tap("c", "no"), NOW);
+    expect(cancelled).toEqual([ID]);
+    expect(r.reply?.text).toMatch(/Cancelled/);
+
+    const yes = fake(open({ answers: {} }, { draft: proseDraft }));
+    const r2 = await handleTradeAnswer(yes.store, tap("c", "yes"), NOW);
+    expect(yes.saved[0].confirmed).toBe(true);
+    expect(r2.reply?.text).toMatch(/Size in lots\?/);
   });
 });

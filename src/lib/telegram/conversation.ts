@@ -18,7 +18,7 @@ import { parseTradeDate } from "@/lib/trades/trade-date";
 import { describeDraft, type TradeDraft } from "@/lib/telegram/trade-intent";
 import type { InlineButton } from "@/lib/telegram/chat";
 
-export type Stage = "size" | "date" | "emotion" | "tags" | "notes" | "journal";
+export type Stage = "confirm" | "size" | "date" | "emotion" | "tags" | "notes" | "journal";
 
 /** What has been answered. `undefined` = not asked yet; `null`/`[]` = skipped. */
 export interface Answers {
@@ -38,14 +38,19 @@ export interface Conversation {
   /** Every question answered and the journal picker shown. Only then may a
    *  journal tap save; a picker from before the questions cannot. */
   readonly ready?: boolean;
+  /** A trade read from plain words was confirmed as right by its author. */
+  readonly confirmed?: boolean;
 }
 
 export const EMPTY_CONVERSATION: Conversation = { answers: {} };
 
 /** Buttons per row for each prompt; one per row is unreadable for twelve moods. */
 const PER_ROW: Record<Stage, number> = {
-  size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
+  confirm: 2, size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
 };
+
+const YES_RE = /^(?:yes|y|yep|yeah|yup|correct|right|ok(?:ay)?|confirm|sure|✅|👍)[!. ]*$/i;
+const NO_RE = /^(?:no|n|nope|wrong|cancel|incorrect|❌|👎)[!. ]*$/i;
 
 /** A skip, on a question that can be skipped. "no", "thanks" and "ok" are
  *  how people decline a question in chat; they are never a note or a tag. */
@@ -66,6 +71,9 @@ const DAY_MS = 24 * 3600 * 1000;
 /** The next question, or "journal" when there is nothing left to ask. */
 export function nextStage(draft: TradeDraft, c: Conversation, quick: boolean): Stage {
   const a = c.answers;
+  // A reading from plain words is the one most worth checking, so it is
+  // confirmed as a whole before any question about it.
+  if (draft.read_from_prose && !c.confirmed) return "confirm";
   if (draft.lots === null && a.lots === undefined) return "size";
   if (!draft.dated_from_text && a.entry_time === undefined) return "date";
   if (!quick) {
@@ -78,7 +86,7 @@ export function nextStage(draft: TradeDraft, c: Conversation, quick: boolean): S
 
 /* ────────────────────────── callback data ────────────────────────── */
 
-export type AnswerField = "s" | "d" | "e" | "t" | "k";
+export type AnswerField = "s" | "d" | "e" | "t" | "k" | "c";
 
 export interface AnswerTap {
   readonly pendingId: string;
@@ -102,7 +110,7 @@ export function decodeAnswer(data: string | undefined): AnswerTap | null {
   if (parts.length < 3 || parts.length > 4 || parts[0] !== "ans") return null;
   const [, pendingId, field, value = ""] = parts;
   if (!PENDING_ID_RE.test(pendingId)) return null;
-  if (!/^[sdetk]$/.test(field)) return null;
+  if (!/^[sdetkc]$/.test(field)) return null;
   if (!/^[A-Za-z0-9_.-]{0,20}$/.test(value)) return null;
   return { pendingId, field: field as AnswerField, value };
 }
@@ -137,6 +145,18 @@ export function promptFor(
   // and a Skip tapped on an earlier prompt must not skip the current question.
   const skip = { text: "Skip", callback_data: encodeAnswer(pendingId, "k", stage) };
   switch (stage) {
+    case "confirm":
+      return {
+        prompt: {
+          text: "Is that right?",
+          buttons: [
+            { text: "Yes, that's right", callback_data: encodeAnswer(pendingId, "c", "yes") },
+            { text: "No, cancel", callback_data: encodeAnswer(pendingId, "c", "no") },
+          ],
+          perRow: PER_ROW.confirm,
+        },
+        conversation: c,
+      };
     case "size": {
       const lots = ctx.recentLots.slice(0, 3);
       return {
@@ -202,7 +222,9 @@ export function promptFor(
 
 export type Applied =
   | { readonly ok: true; readonly conversation: Conversation }
-  | { readonly ok: false; readonly hint: string };
+  | { readonly ok: false; readonly hint: string; readonly cancel?: true };
+
+const CANCELLED: Applied = { ok: false, hint: "", cancel: true };
 
 function withAnswers(c: Conversation, patch: Answers): Applied {
   return { ok: true, conversation: { ...c, answers: { ...c.answers, ...patch } } };
@@ -264,6 +286,10 @@ export function parseFieldEdit(text: string): { stage: Exclude<Stage, "journal">
 export function applyText(stage: Stage, text: string, c: Conversation, now: Date): Applied {
   const t = text.trim();
   switch (stage) {
+    case "confirm":
+      if (YES_RE.test(t)) return { ok: true, conversation: { ...c, confirmed: true } };
+      if (NO_RE.test(t)) return CANCELLED;
+      return { ok: false, hint: "Yes or no? Or tell me what to change, e.g. \"size 0.5\", \"sl\", \"closed 3348\"." };
     case "size": {
       const lots = readLots(t);
       return lots === null
@@ -301,6 +327,12 @@ export function applyText(stage: Stage, text: string, c: Conversation, now: Date
 
 /** A tapped button on the open question. */
 export function applyButton(stage: Stage, tap: AnswerTap, c: Conversation, now: Date): Applied {
+  if (tap.field === "c") {
+    if (stage !== "confirm") return { ok: false, hint: "" };
+    if (tap.value === "yes") return { ok: true, conversation: { ...c, confirmed: true } };
+    if (tap.value === "no") return CANCELLED;
+    return { ok: false, hint: "Yes or no?" };
+  }
   if (tap.field === "k") {
     // Only the Skip of the question that is open. An older prompt's Skip is
     // a button from a question that has moved on.

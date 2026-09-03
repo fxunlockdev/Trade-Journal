@@ -373,3 +373,71 @@ describe("edge cases in real typing", () => {
     expect(r?.text).toMatch(/2026-08-28/);
   });
 });
+
+describe("a trade in plain words", () => {
+  const prose = {
+    is_trade: true, multiple_trades: false, instrument: "XAUUSD", direction: "buy",
+    entry: 3340, entry_high: null, stop: 3335, targets: [3350],
+    outcome: { kind: "closed_at", exit: 3348, tp_index: null },
+    date: "this morning", lots: 0.5,
+    pnl: { money: null, currency: null, pips: null, r: null },
+    emotion: "calm", notes: null,
+  };
+  const TEXT = "Bought gold this morning at 3340 with a stop at 3335, target 3350, closed it at 3348 on half a lot, felt calm";
+
+  it("asks the model only when the grammar cannot read it, and confirms before anything else", async () => {
+    const calls: string[] = [];
+    const f = fake({ readProse: async (_id, t) => { calls.push(t); return prose; } });
+    const r = await handleTradeMessage(f.store, msg(TEXT), NOW);
+    expect(calls).toEqual([TEXT]);
+    expect(f.held).toHaveLength(1);
+    expect(f.held[0].draft.read_from_prose).toBe(true);
+    expect(f.held[0].draft.message).toBe(TEXT);
+    expect(f.held[0].conversation.answers.emotion).toBe("calm");
+    expect(r?.text).toMatch(/I read that as:/);
+    expect(r?.text).toMatch(/0\.5 lots/);
+    expect(r?.text).toMatch(/Is that right\?/);
+    expect(r?.buttons?.map((b) => b.text)).toEqual(["Yes, that's right", "No, cancel"]);
+  });
+
+  it("does not ask the model for a trade the grammar already read", async () => {
+    const calls: string[] = [];
+    const f = fake({ readProse: async (_id, t) => { calls.push(t); return prose; } });
+    await handleTradeMessage(f.store, msg("XAUUSD buy 3340 sl 3335 closed 3348"), NOW);
+    expect(calls).toEqual([]);
+  });
+
+  it("does not ask the model for a stranger, or for chat", async () => {
+    const calls: string[] = [];
+    const f = fake({ readProse: async (_id, t) => { calls.push(t); return prose; } });
+    await handleTradeMessage(f.store, msg(TEXT, 999), NOW);
+    await handleTradeMessage(f.store, msg("thanks"), NOW);
+    expect(calls).toEqual([]);
+  });
+
+  it("says it could not read a trade when the model has nothing, instead of silence", async () => {
+    const f = fake({ readProse: async () => null });
+    const r = await handleTradeMessage(f.store, msg("bought gold this morning around 3340ish and closed it later"), NOW);
+    expect(r?.text).toMatch(/couldn't read that one/);
+    expect(f.held).toHaveLength(0);
+  });
+
+  it("goes on to the questions after yes, and drops the draft after no", async () => {
+    const yes = fake({}, { open: openDraft({ answers: {} }, { draft: draft({ read_from_prose: true }) }) });
+    const r1 = await handleTradeMessage(yes.store, msg("yes"), NOW);
+    expect(yes.saved[0][1].confirmed).toBe(true);
+    expect(r1?.text).toMatch(/Size in lots\?/);
+
+    const no = fake({}, { open: openDraft({ answers: {} }, { draft: draft({ read_from_prose: true }) }) });
+    const r2 = await handleTradeMessage(no.store, msg("no"), NOW);
+    expect(no.cancelled).toEqual(["aB3_x-9Q"]);
+    expect(r2?.text).toMatch(/Cancelled/);
+  });
+
+  it("reads a whole trade in words typed mid-conversation as a new trade", async () => {
+    const f = fake({ readProse: async () => prose }, { open: openDraft() });
+    await handleTradeMessage(f.store, msg(TEXT), NOW);
+    expect(f.cancelled).toEqual(["aB3_x-9Q"]);
+    expect(f.held).toHaveLength(1);
+  });
+});
