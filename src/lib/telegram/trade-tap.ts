@@ -18,6 +18,7 @@ import { outcomeFields } from "@/lib/trades/outcome-parser";
 import { escapeHtml } from "@/lib/reports/caption";
 import type { TradeChoice } from "@/lib/telegram/commands";
 import type { TradeDraft } from "@/lib/telegram/trade-intent";
+import { effectiveDraft, type Conversation } from "@/lib/telegram/conversation";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
 
 /**
@@ -37,6 +38,8 @@ export interface PendingTrade {
   readonly expiresAt: string;
   readonly consumedAt: string | null;
   readonly tradeId: string | null;
+  /** The questions asked and answered since the draft was held. */
+  readonly conversation: Conversation;
 }
 
 export interface LastSize {
@@ -128,6 +131,10 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
   const journalId = pending.journalIds[tap.choice.journalIndex];
   if (!journalId) return refuse("That option isn't valid.");
 
+  // A picker is only shown once every question is answered. Anything else
+  // carrying a journal index is stale or crafted.
+  if (!pending.conversation.ready) return refuse("Answer the question above first.");
+
   // Membership is checked NOW, against the database, not against the list
   // stored half an hour ago. Access can be revoked between the two.
   const m = await store.membership(journalId, userId);
@@ -150,7 +157,8 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
     };
   }
 
-  const d = pending.draft;
+  const answers = pending.conversation.answers;
+  const d = effectiveDraft(pending.draft, answers);
 
   // SIZE. The row's `quantity` is UNITS (P&L is price move x quantity); what a
   // person types is LOTS. The conversion is the instrument's contract size,
@@ -192,7 +200,13 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
       tp1: d.tp1, tp2: d.tp2, tp3: d.tp3, tp4: d.tp4, tp5: d.tp5, tp6: d.tp6, tp7: d.tp7,
       tp4_trailing: d.tp4_trailing,
       take_profit: d.tp1,
-      notes: `Logged from Telegram: ${d.message}`,
+      emotion: answers.emotion ?? null,
+      tags: answers.tags ?? [],
+      // The typed message stays with the row whatever else was said, so a
+      // wrong figure can be traced to what was typed.
+      notes: answers.notes
+        ? `${answers.notes}\n\nLogged from Telegram: ${d.message}`
+        : `Logged from Telegram: ${d.message}`,
       ...outcomeFields(d.outcome),
     },
     { userId, journalId },

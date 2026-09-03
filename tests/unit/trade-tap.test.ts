@@ -46,6 +46,7 @@ const pending = (o: Partial<PendingTrade> = {}): PendingTrade => ({
   expiresAt: "2026-09-03T14:30:00.000Z",
   consumedAt: null,
   tradeId: null,
+  conversation: { answers: {}, ready: true },
   ...o,
 });
 
@@ -250,6 +251,44 @@ describe("saving", () => {
     const r = await handleTradeTap(f.store, tap(null), NOW);
     expect(r.answer).toBe("Cancelled.");
     expect(r.clearPicker).toBe(true);
+    expect(f.inserts).toHaveLength(0);
+  });
+});
+
+describe("the answers to the bot's questions", () => {
+  it("are folded into the row", async () => {
+    const f = fake(
+      pending({
+        conversation: {
+          answers: {
+            lots: 0.5,
+            entry_time: "2026-08-28T12:00:00.000Z",
+            date_label: null,
+            emotion: "calm",
+            tags: ["scalp", "london"],
+            notes: "held through news",
+          },
+          ready: true,
+        },
+      }),
+    );
+    const r = await handleTradeTap(f.store, tap(), NOW);
+    expect(r.answer).toBe("Saved.");
+    const row = f.inserts[0];
+    expect(row.quantity).toBe(50);
+    expect(row.lot_size).toBe(0.5);
+    expect(row.entry_time).toBe("2026-08-28T12:00:00.000Z");
+    expect(row.emotion).toBe("calm");
+    expect(row.tags).toEqual(["scalp", "london"]);
+    expect(String(row.notes)).toContain("held through news");
+    expect(String(row.notes)).toContain("Logged from Telegram: XAUUSD buy 3340");
+  });
+
+  it("refuses a journal tap before the questions are answered, and writes nothing", async () => {
+    const f = fake(pending({ conversation: { answers: {} } }));
+    const r = await handleTradeTap(f.store, tap(), NOW);
+    expect(r.answer).toMatch(/Answer the question/);
+    expect(r.alert).toBe(true);
     expect(f.inserts).toHaveLength(0);
   });
 });
