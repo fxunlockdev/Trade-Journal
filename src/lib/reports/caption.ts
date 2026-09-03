@@ -75,13 +75,16 @@ export function buildCaption(input: CaptionInput): string {
     lines.push(`Net ${signed(input.metrics.netR, 1)}R${partial}`);
   }
 
-  // Money is omitted entirely rather than shown mixed. `metrics` already nulls
-  // it for a multi-currency period; this just declines to invent a total.
-  if (input.metrics.netPnl !== null && input.metrics.currency) {
-    lines.push(
-      `Net ${signed(input.metrics.netPnl, 2)} ${escapeHtml(input.metrics.currency)}`,
-    );
-  }
+  // MONEY IS NEVER PRINTED HERE.
+  //
+  // The posters show pips and R, never a cash figure, and the caption sat
+  // under them saying "Net +1123.45 USD". That is a different claim: pips are
+  // a result, absolute P&L implies an account size, and it went to a channel
+  // of business partners who were never meant to see it.
+  //
+  // Removed rather than made optional. A setting would mean someone has to
+  // know to turn it off, and the images already settled what these posts are
+  // about.
 
   const caption = lines.join("\n");
   // Truncating mid-tag would produce a malformed entity and a rejected send.
