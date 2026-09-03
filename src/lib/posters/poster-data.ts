@@ -89,6 +89,21 @@ export interface PosterStats {
   /** Wins / (wins + losses) as a percent. Breakevens excluded — see below. */
   readonly winRate: number;
   /** Mean REALIZED R across trades that carry one. Null when none do. */
+  /**
+   * Mean REALISED R: what the trades actually returned, in units of the risk
+   * taken. Computed from the EXIT price.
+   *
+   * Not to be confused with `risk_reward_ratio` on a trade, which is computed
+   * from the TARGET and is what was aimed for. Both are legitimate and they
+   * are different numbers: for one month here the realised average was 1.03
+   * and the planned average 1.61.
+   *
+   * The posters label this "Avg R" for that reason. They previously said
+   * "Avg R:R", which reads as the planned ratio, so a reader comparing a
+   * poster against the journal found two figures with the same name
+   * disagreeing by half. Every other figure on a poster is an outcome, so the
+   * realised number is the right one to show; only its name was wrong.
+   */
   readonly avgR: number | null;
   /** How many trades carried an r_multiple (i.e. had a stop loss). */
   readonly rCovered: number;
