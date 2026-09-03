@@ -382,12 +382,20 @@ export function TradeChat({ userId, userName, isFirstTime }: TradeChatProps) {
         const json = (await res.json()) as { data: ReadonlyArray<ChatMessage> };
         const loaded: readonly DisplayMessage[] = json.data
           .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            createdAt: m.created_at,
-          }));
+          .map((m) => {
+            // A trade that was never saved must still read as not saved after
+            // a reload; the error travels in the message's metadata.
+            const meta = (m.metadata ?? null) as { trade_error?: unknown } | null;
+            const tradeError =
+              typeof meta?.trade_error === "string" ? meta.trade_error : undefined;
+            return {
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              createdAt: m.created_at,
+              tradeError,
+            };
+          });
         setAllMessages(loaded);
 
         // Default to today's session if it exists, else most recent

@@ -8,6 +8,7 @@ import {
   CALLBACK_DATA_MAX,
   encodeTrade,
   decodeTrade,
+  MAX_JOURNAL_BUTTONS,
 } from "@/lib/telegram/commands";
 
 /**
@@ -198,5 +199,20 @@ describe("trade buttons", () => {
     // list offered, and whether the account may write to it, is decided by the
     // receiver against the stored draft and the database.
     expect(decodeTrade("trd:aB3_x-9Q:9")).toEqual({ pendingId: PENDING, journalIndex: 9 });
+  });
+});
+
+describe("the journal index and the cap agree", () => {
+  it("rejects what encodeTrade never emits", () => {
+    expect(decodeTrade("trd:aB3_x-9Q:07")).toBeNull();
+    expect(decodeTrade("trd:aB3_x-9Q:00")).toBeNull();
+  });
+
+  it("rejects an index past the picker cap", () => {
+    expect(decodeTrade(`trd:aB3_x-9Q:${MAX_JOURNAL_BUTTONS}`)).toBeNull();
+    expect(decodeTrade(`trd:aB3_x-9Q:${MAX_JOURNAL_BUTTONS - 1}`)).toEqual({
+      pendingId: "aB3_x-9Q",
+      journalIndex: MAX_JOURNAL_BUTTONS - 1,
+    });
   });
 });

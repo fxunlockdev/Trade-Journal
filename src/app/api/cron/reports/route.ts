@@ -145,6 +145,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       : outcome.reason;
   }
 
+  // The one-time codes and unconfirmed drafts behind the Telegram flows are
+  // never deleted by the flows themselves; this is the only sweep. Best
+  // effort, like the webhook check above.
+  await admin.rpc("prune_telegram_ephemera").then(
+    () => undefined,
+    () => undefined,
+  );
+
   try {
     // Every owner's desks in one pass. This runs with no user session, so RLS
     // does not apply and each desk's OWN owner_user_id is what resolves its

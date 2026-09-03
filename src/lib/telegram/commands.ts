@@ -96,8 +96,23 @@ export interface TradeChoice {
   readonly journalIndex: number | null;
 }
 
-/** 8 url-safe characters, no colon, so it survives the delimiter below. */
-const PENDING_ID_RE = /^[A-Za-z0-9_-]{8}$/;
+/**
+ * A pending id is this many random bytes, base64url-encoded. The encoded
+ * length follows from it (6 bytes -> 8 characters) and the regex is built from
+ * that, so the two cannot drift: change the bytes and every button would
+ * otherwise fail to decode.
+ */
+export const PENDING_ID_BYTES = 6;
+export const PENDING_ID_LENGTH = Math.ceil((PENDING_ID_BYTES * 4) / 3);
+/** url-safe characters only, no colon, so it survives the delimiter below. */
+const PENDING_ID_RE = new RegExp(`^[A-Za-z0-9_-]{${PENDING_ID_LENGTH}}$`);
+
+/**
+ * The most journals a picker offers. The decoder reads a two-digit index, the
+ * draft table's CHECK allows this many ids, and one button per row makes a
+ * longer list unusable anyway. The three agree through this constant.
+ */
+export const MAX_JOURNAL_BUTTONS = 20;
 
 /**
  * "trd:<pending>:<n>" or "trd:<pending>:x" to cancel.
@@ -120,6 +135,9 @@ export function decodeTrade(data: string | undefined): TradeChoice | null {
   if (prefix !== "trd") return null;
   if (!PENDING_ID_RE.test(pendingId)) return null;
   if (idx === "x") return { pendingId, journalIndex: null };
-  if (!/^\d{1,2}$/.test(idx)) return null;
-  return { pendingId, journalIndex: Number(idx) };
+  // Exactly what encodeTrade emits: no leading zero, and never past the cap.
+  if (!/^(?:0|[1-9]\d?)$/.test(idx)) return null;
+  const journalIndex = Number(idx);
+  if (journalIndex >= MAX_JOURNAL_BUTTONS) return null;
+  return { pendingId, journalIndex };
 }

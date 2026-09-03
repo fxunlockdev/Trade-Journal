@@ -61,4 +61,10 @@ export const LIMITS = {
   // A button that makes Telegram notify a room full of partners, so a stuck
   // finger must not become twenty notifications for everyone in it.
   telegramTest: { name: "telegram_test", max: 5, windowSeconds: 300 },
+  /** Minting a link code creates a credential; a page reload must not mint
+   *  another, and a script must not mint hundreds. */
+  telegramLink: { name: "telegram_link", max: 10, windowSeconds: 3600 },
+  /** A DM that looks like a trade costs a lookup, a reply and a stored draft.
+   *  Keyed on the Telegram user, so a flood from one account is contained. */
+  telegramDm: { name: "telegram_dm", max: 30, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;

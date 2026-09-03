@@ -7,19 +7,10 @@ import {
   decodePublish,
   encodePublish,
   decodeTrade,
-  encodeTrade,
   isAdminStatus,
   CADENCE_PROMPT,
   type Cadence,
 } from "@/lib/telegram/commands";
-import { randomBytes } from "node:crypto";
-import { parseTradeIntent, draftIsClosed, type TradeDraft } from "@/lib/telegram/trade-intent";
-import { outcomeFields } from "@/lib/trades/outcome-parser";
-import { createTradeSchema } from "@/lib/validators/trade";
-import { computeTradeFields } from "@/lib/trades/computations";
-import { tradeInsertPayload } from "@/lib/trades/insert-payload";
-import { canEditTrades } from "@/lib/journals/active-journal";
-import type { JournalRole } from "@/types/database";
 import {
   getChatMemberStatus,
   sendChatMessage,
@@ -28,23 +19,37 @@ import {
   type InlineButton,
 } from "@/lib/telegram/chat";
 import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
+import { secretMatches } from "@/lib/telegram/webhook-secret";
+import { linkAccountWithCode } from "@/lib/telegram/accounts";
+import { handleTradeMessage } from "@/lib/telegram/trade-dm";
+import { handleTradeTap } from "@/lib/telegram/trade-tap";
+import { dmStore, tapStore } from "@/lib/telegram/pending-store";
+import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { ensureSnapshot } from "@/lib/reports/ensure-snapshot";
 import { publishSnapshot } from "@/lib/reports/publish";
 import { escapeHtml } from "@/lib/reports/caption";
 import type { ReportDesk } from "@/types/database";
 
 /**
- * Telegram commands: /daily, /weekly, /monthly.
+ * Everything Telegram sends the bot arrives here. Three responsibilities:
  *
- * TWO INDEPENDENT QUESTIONS, ANSWERED BY TWO DIFFERENT AUTHORITIES.
+ *   reports   /daily, /weekly, /monthly in a connected GROUP, and the desk
+ *             button that follows. Two independent questions answered by two
+ *             different authorities -- "is the sender an admin of THIS chat?"
+ *             (Telegram, getChatMember) and "chat -> destination -> owner ->
+ *             desks" (our database). Partners in the group see the images
+ *             arrive; the buttons do nothing for them.
+ *   linking   a ME- code sent in a PRIVATE chat binds that Telegram account
+ *             to the app account that minted it. The proof is the sender.
+ *   trades    a trade typed in a PRIVATE chat by a linked account, shown back
+ *             as a summary with a journal picker, and written on the tap.
+ *             Identity is the person, resolved from the link, not the room.
  *
- *   who   Is the sender an admin of THIS chat?      Telegram (getChatMember)
- *   what  chat -> destination -> owner -> desks     our database
- *
- * Nothing in the request is trusted for either. `callback_data` is a string the
- * client chose, so a tap re-runs the whole chain server-side rather than
- * believing the desk id it carries. Partners in the group see the images
- * arrive; the buttons do nothing for them.
+ * Nothing in the request is trusted. `callback_data` is a string the client
+ * chose, so a tap re-runs the whole chain server-side rather than believing
+ * the id it carries. The trade and link handlers live in `src/lib/telegram/`
+ * behind small store interfaces so every refusal is a unit test; this file
+ * is the secret check, the parse, and the dispatch.
  *
  * This endpoint is PUBLIC and can cause a post to a partner group, so the
  * secret header is checked before anything else is read.
@@ -54,19 +59,13 @@ export const maxDuration = 300;
 
 const BUDGET_MS = 280_000;
 
-/** Length-guarded constant-time compare of Telegram's secret header. */
 function verifySecret(request: NextRequest): boolean {
   // The SAME derivation the setup route registered with. Both call one
   // function precisely so they cannot disagree about what the secret is.
-  const expected = telegramWebhookSecret();
-  if (!expected) return false;
-  const got = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
-  if (got.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < got.length; i += 1) {
-    diff |= got.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
+  return secretMatches(
+    request.headers.get("x-telegram-bot-api-secret-token"),
+    telegramWebhookSecret(),
+  );
 }
 
 interface TgUser {
@@ -81,6 +80,8 @@ interface TgChat {
 interface TgMessage {
   readonly message_id?: number;
   readonly text?: string;
+  /** A photo's caption. A screenshot with the trade written under it. */
+  readonly caption?: string;
   readonly chat?: TgChat;
   readonly from?: TgUser;
   /** Present when someone posts AS the group, hiding their user identity. */
@@ -178,149 +179,6 @@ async function claimChatIfCoded(
   return "Confirmed. This group is now available to connect on the Posters page.";
 }
 
-/**
- * Link a Telegram account to the app account that minted this code.
- *
- * The proof is that the message came FROM that Telegram account: only it can
- * send from itself. That is the whole mechanism, and it is why the code must be
- * single-use and short-lived -- otherwise a code seen once could link a
- * different account later.
- *
- * This is what makes "whose journals?" answerable. The chat-to-owner mapping is
- * one chat to one owner, so in a shared room it cannot tell two people apart.
- *
- * Returns a message for the sender, or null when there was no link code.
- */
-async function linkAccountIfCoded(
-  admin: ReturnType<typeof createAdminClient>,
-  msg: TgMessage,
-): Promise<string | null> {
-  const code = findLinkCode(msg.text);
-  if (!code) return null;
-
-  // An anonymous sender cannot be linked: there is no account to link TO.
-  const telegramUserId = msg.from?.id;
-  if (!telegramUserId) {
-    return "I can't tell which account sent that. Send the code from your own Telegram account, not as a channel or group.";
-  }
-
-  const { data: link } = await admin
-    .from("telegram_account_links")
-    .select("code, user_id")
-    .eq("code", code)
-    .is("claimed_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .maybeSingle();
-
-  if (!link) {
-    // Wrong, used and expired share one message. Distinguishing them would
-    // tell someone probing codes which ones exist.
-    return "That code is not valid any more. Open Settings in Trade Journal for a fresh one.";
-  }
-
-  // Conditional on still being unclaimed, so two messages racing one code
-  // cannot both win.
-  const { data: claimed } = await admin
-    .from("telegram_account_links")
-    .update({
-      telegram_user_id: telegramUserId,
-      claimed_at: new Date().toISOString(),
-    })
-    .eq("code", code)
-    .is("claimed_at", null)
-    .select("user_id")
-    .maybeSingle();
-
-  if (!claimed) return "That code has already been used.";
-
-  // One Telegram account per app account and vice versa, both enforced by
-  // unique indexes. Re-linking REPLACES rather than erroring: someone changing
-  // phone or Telegram account should not need support to fix it.
-  const { error } = await admin
-    .from("telegram_accounts")
-    .upsert(
-      {
-        telegram_user_id: telegramUserId,
-        user_id: claimed.user_id as string,
-        linked_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" },
-    );
-
-  if (error) {
-    return "Couldn't finish linking. Try a fresh code from Settings.";
-  }
-
-  return "Linked. You can log trades here now, and I'll ask which journal each time.";
-}
-
-/** The app account behind a Telegram user, or null if never linked. */
-async function linkedAccount(
-  admin: ReturnType<typeof createAdminClient>,
-  telegramUserId: number,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("telegram_accounts")
-    .select("user_id")
-    .eq("telegram_user_id", telegramUserId)
-    .maybeSingle();
-  if (!data) return null;
-  // Best-effort presence; never blocks the request it rides on.
-  void admin
-    .from("telegram_accounts")
-    .update({ last_seen_at: new Date().toISOString() })
-    .eq("telegram_user_id", telegramUserId);
-  return data.user_id as string;
-}
-
-/** Journals this account may write trades into, in a stable order. */
-async function editableJournals(
-  admin: ReturnType<typeof createAdminClient>,
-  userId: string,
-): Promise<{ id: string; name: string }[]> {
-  const { data } = await admin
-    .from("journal_members")
-    .select("role, journals!inner(id, name, is_archived, sort_order, created_at)")
-    .eq("user_id", userId)
-    .eq("journals.is_archived", false);
-  type Row = {
-    role: JournalRole;
-    journals: { id: string; name: string; sort_order: number; created_at: string };
-  };
-  return ((data ?? []) as unknown as Row[])
-    .filter((r) => canEditTrades(r.role))
-    .map((r) => r.journals)
-    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
-    .map((j) => ({ id: j.id, name: j.name }));
-}
-
-/**
- * A quantity for a trade the message never sized.
- *
- * Auto-sizing needs the journal's capital, and none of the journals in use
- * have one set, so it returns null for all of them. The honest fallback is
- * what this person last used for the same instrument in the same journal: it
- * continues their own convention rather than inventing one. Pips and R do
- * not depend on it, so the posters are unaffected either way; only the
- * journal's own cash P&L is, and the confirmation shows the number used.
- */
-async function defaultQuantity(
-  admin: ReturnType<typeof createAdminClient>,
-  journalId: string,
-  instrument: string,
-): Promise<number> {
-  const { data } = await admin
-    .from("trades")
-    .select("quantity")
-    .eq("journal_id", journalId)
-    .eq("instrument", instrument)
-    .order("entry_time", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const q = data?.quantity;
-  return typeof q === "number" && q > 0 ? q : 1;
-}
-
 /** The chat's owner and their connected destination, or null. */
 async function resolveChat(
   admin: ReturnType<typeof createAdminClient>,
@@ -377,6 +235,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // admins can post, so a code appearing there is stronger proof of
     // authority than the same code in a group, not weaker.
     const posted = update.message ?? update.channel_post;
+    if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
+      // Two different grants in one message. Branch order would silently pick
+      // one; saying so is better than guessing which was meant.
+      await sendChatMessage(
+        botToken,
+        String(posted.chat.id),
+        "That message has a group code and an account code in it. Send one at a time.",
+      );
+      return NextResponse.json({ ok: true });
+    }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply) {
@@ -386,101 +254,58 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     /* ── an account-link code ──────────────────────────────────────── */
-    // Only from a real message, never a channel post: a channel post carries
-    // no `from`, so there is no account to link. Handled before commands so a
-    // brand-new DM works with nothing else set up.
-    if (update.message?.chat?.id) {
-      const reply = await linkAccountIfCoded(admin, update.message);
-      if (reply) {
-        await sendChatMessage(botToken, String(update.message.chat.id), reply);
+    // Only in a PRIVATE chat from a real user. A code is a credential: a
+    // group is the wrong place to redeem one, and an anonymous-admin post
+    // (`sender_chat`) would bind GroupAnonymousBot's id to the account.
+    // Handled before commands so a brand-new DM works with nothing else set up.
+    if (update.message?.chat?.id && findLinkCode(update.message.text)) {
+      const msg = update.message;
+      const chatId = String(msg.chat!.id);
+      if (msg.chat!.type !== "private" || !msg.from?.id || msg.sender_chat) {
+        await sendChatMessage(
+          botToken,
+          chatId,
+          "Send your link code to me in a private chat, not in a group.",
+        );
         return NextResponse.json({ ok: true });
       }
+      // Guessing is the unmitigated half of a six-character code; this is the
+      // mitigation. Same allowance as trade messages, keyed on the sender.
+      if (!(await allowRequest(admin, LIMITS.telegramDm, String(msg.from.id)))) {
+        return NextResponse.json({ ok: true });
+      }
+      const outcome = await linkAccountWithCode(admin, findLinkCode(msg.text)!, msg.from.id);
+      const reply =
+        outcome === "linked"
+          ? "Linked. Send me a trade and I'll ask which journal to put it in. /help shows the format."
+          : outcome === "invalid"
+            // Wrong, used and expired share one message: distinguishing them
+            // would tell someone probing codes which ones exist.
+            ? "That code is not valid any more. Open <b>Settings → Telegram</b> in Trade Journal for a fresh one."
+            : "Couldn't finish linking. Try again in a moment.";
+      await sendChatMessage(botToken, chatId, reply);
+      return NextResponse.json({ ok: true });
     }
 
-    /* ── a trade typed in a DM ─────────────────────────────────────── */
-    // Only in a private chat. A trade is not a group announcement: the
-    // marketing channel has partners in it, and the journal picker below is a
-    // one-to-one conversation. Commands in groups are handled further down.
-    //
-    // Identity is the PERSON, resolved from the linked account, not the room.
+    /* ── anything else typed in a DM ───────────────────────────────── */
+    // A trade, /start, /help, or a report command that belongs in a group.
+    // The handler decides, and stays silent for chat. Identity is the PERSON,
+    // resolved from the linked account, not the room; an anonymous sender has
+    // no person behind it and is ignored.
     if (
       update.message?.chat?.type === "private" &&
       update.message.chat.id &&
       update.message.from?.id &&
-      !update.message.sender_chat &&
-      !parseCommand(update.message.text)
+      !update.message.sender_chat
     ) {
       const msg = update.message;
       const chatId = String(msg.chat!.id);
-      const telegramUserId = msg.from!.id!;
-      const intent = parseTradeIntent(msg.text ?? "", new Date());
-
-      // "thanks", "morning": stay silent rather than answer every DM with a
-      // parse error. Only something that looks like a trade gets a reply.
-      if (intent.kind === "not_a_trade") return NextResponse.json({ ok: true });
-
-      const userId = await linkedAccount(admin, telegramUserId);
-      if (!userId) {
-        await sendChatMessage(
-          botToken,
-          chatId,
-          "I don't know which Trade Journal account you are yet. Open <b>Settings</b> in the app, get a link code, and send it to me here.",
-        );
-        return NextResponse.json({ ok: true });
-      }
-
-      if (intent.kind === "incomplete") {
-        await sendChatMessage(
-          botToken,
-          chatId,
-          `Nearly. I still need:\n• ${intent.missing.map(escapeHtml).join("\n• ")}`,
-        );
-        return NextResponse.json({ ok: true });
-      }
-
-      const journals = await editableJournals(admin, userId);
-      if (journals.length === 0) {
-        await sendChatMessage(
-          botToken,
-          chatId,
-          "Your account can't write to any journal, so there's nowhere to put that trade.",
-        );
-        return NextResponse.json({ ok: true });
-      }
-
-      // The draft outlives this request: it has to survive until the tap, and
-      // callback data is 64 bytes. Stored with the journals offered, so the
-      // button only has to carry an index.
-      const pendingId = randomBytes(6).toString("base64url");
-      const { error: pendError } = await admin.from("telegram_pending_trades").insert({
-        id: pendingId,
-        telegram_user_id: telegramUserId,
-        user_id: userId,
-        chat_id: chatId,
-        draft: intent.draft,
-        journal_ids: journals.map((j) => j.id),
-      });
-      if (pendError) {
-        await sendChatMessage(botToken, chatId, "Couldn't hold that trade. Try again.");
-        return NextResponse.json({ ok: true });
-      }
-
-      const openNote = draftIsClosed(intent.draft)
-        ? ""
-        : "\n<i>Still open, so it won't appear on a poster until it's closed.</i>";
-
-      await sendChatMessage(
-        botToken,
-        chatId,
-        `${escapeHtml(intent.summary)}${openNote}\n\nWhich journal?`,
-        [
-          ...journals.map((j, i) => ({
-            text: j.name,
-            callback_data: encodeTrade(pendingId, i),
-          })),
-          { text: "Cancel", callback_data: encodeTrade(pendingId, null) },
-        ],
+      const reply = await handleTradeMessage(
+        dmStore(admin),
+        { text: msg.text ?? msg.caption ?? "", telegramUserId: msg.from!.id!, chatId },
+        new Date(),
       );
+      if (reply) await sendChatMessage(botToken, chatId, reply.text, reply.buttons);
       return NextResponse.json({ ok: true });
     }
 
@@ -490,10 +315,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // decide who asked. Rather than fall through to the group handler and emit
     // its "turn off Remain anonymous" advice, which is not a setting channels
     // have, say what actually works.
-    if (update.channel_post && parseCommand(update.channel_post.text)) {
+    if (update.channel_post?.chat?.id && parseCommand(update.channel_post.text)) {
       await sendChatMessage(
         botToken,
-        String(update.channel_post.chat?.id),
+        String(update.channel_post.chat.id),
         "Commands don't work in a channel, because a channel post doesn't say who wrote it. Use <b>Post to Telegram</b> on the Posters page instead. Scheduled reports still publish here automatically.",
       );
       return NextResponse.json({ ok: true });
@@ -576,157 +401,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ ok: true });
       }
 
-      // RE-VERIFIED, not trusted. Everything in callback data is client-chosen.
-      const { data: pending } = await admin
-        .from("telegram_pending_trades")
-        .select("id, telegram_user_id, user_id, draft, journal_ids, message_id")
-        .eq("id", choice.pendingId)
-        .is("consumed_at", null)
-        .gt("expires_at", new Date().toISOString())
-        .maybeSingle();
-
-      if (!pending) {
-        await answerCallback(botToken, cb.id, "That one has expired. Send the trade again.", true);
-        return NextResponse.json({ ok: true });
-      }
-
-      // The tapper must be the person who typed it. In a DM that is always
-      // true; it is enforced anyway so a forwarded picker cannot be used to
-      // write into somebody else's journal.
-      if (Number(pending.telegram_user_id) !== cb.from.id) {
-        await answerCallback(botToken, cb.id, "That isn't your trade to save.", true);
-        return NextResponse.json({ ok: true });
-      }
-
-      // And their link must still stand: unlinking is a revocation.
-      const userId = await linkedAccount(admin, cb.from.id);
-      if (!userId || userId !== pending.user_id) {
-        await answerCallback(botToken, cb.id, "Your account is no longer linked.", true);
-        return NextResponse.json({ ok: true });
-      }
-
-      const clearPicker = async (): Promise<void> => {
-        if (cb.message?.message_id) await clearButtons(botToken, chatId, cb.message.message_id);
-      };
-
-      if (choice.journalIndex === null) {
-        await admin
-          .from("telegram_pending_trades")
-          .update({ consumed_at: new Date().toISOString() })
-          .eq("id", pending.id);
-        await answerCallback(botToken, cb.id, "Cancelled.");
-        await clearPicker();
-        return NextResponse.json({ ok: true });
-      }
-
-      const journalIds = pending.journal_ids as string[];
-      const journalId = journalIds[choice.journalIndex];
-      if (!journalId) {
-        await answerCallback(botToken, cb.id, "That option isn't valid.", true);
-        return NextResponse.json({ ok: true });
-      }
-
-      // Membership is checked NOW, against the database, not against the list
-      // stored a minute ago. Access can be revoked between the two.
-      const { data: membership } = await admin
-        .from("journal_members")
-        .select("role, journals!inner(name, is_archived)")
-        .eq("journal_id", journalId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      type M = { role: JournalRole; journals: { name: string; is_archived: boolean } };
-      const m = membership as unknown as M | null;
-      if (!m || m.journals.is_archived || !canEditTrades(m.role)) {
-        await answerCallback(botToken, cb.id, "You can't write to that journal.", true);
-        return NextResponse.json({ ok: true });
-      }
-
-      // CONSUME FIRST, conditionally, so a double-tap cannot save twice. The
-      // second tap finds consumed_at set and stops here.
-      const { data: taken } = await admin
-        .from("telegram_pending_trades")
-        .update({ consumed_at: new Date().toISOString() })
-        .eq("id", pending.id)
-        .is("consumed_at", null)
-        .select("id")
-        .maybeSingle();
-      if (!taken) {
-        await answerCallback(botToken, cb.id, "Already saved.");
-        return NextResponse.json({ ok: true });
-      }
-
-      const draft = pending.draft as TradeDraft;
-      const quantity = await defaultQuantity(admin, journalId, draft.instrument);
-
-      const parsed = createTradeSchema.safeParse({
-        user_id: userId,
-        instrument: draft.instrument,
-        asset_type: draft.asset_type,
-        direction: draft.direction,
-        entry_price: draft.entry_price,
-        entry_price_high: draft.entry_price_high,
-        quantity,
-        entry_time: draft.entry_time,
-        stop_loss: draft.stop_loss,
-        tp1: draft.tp1, tp2: draft.tp2, tp3: draft.tp3, tp4: draft.tp4,
-        tp5: draft.tp5, tp6: draft.tp6, tp7: draft.tp7,
-        tp4_trailing: draft.tp4_trailing,
-        take_profit: draft.tp1,
-        notes: "Logged from Telegram.",
-        ...outcomeFields(draft.outcome),
-      });
-
-      if (!parsed.success) {
-        // Release the draft so they can fix the message and try again.
-        await admin
-          .from("telegram_pending_trades")
-          .update({ consumed_at: null })
-          .eq("id", pending.id);
-        const why = parsed.error.issues.map((i) => i.message).join("; ");
-        await answerCallback(botToken, cb.id);
-        await sendChatMessage(botToken, chatId, `Couldn't save that: ${escapeHtml(why)}`);
-        return NextResponse.json({ ok: true });
-      }
-
-      // Same normalisation as /api/trades: nullable fields are null, never
-      // undefined, so the computation and the row agree.
-      const normalised = Object.fromEntries(
-        Object.entries(parsed.data).map(([k, v]) => [k, v === undefined ? null : v]),
+      // RE-VERIFIED, not trusted: author, chat, link, membership, then a
+      // conditional consume and an idempotent insert. All in the handler.
+      const result = await handleTradeTap(
+        tapStore(admin),
+        { choice, tapperId: cb.from.id, chatId },
+        new Date(),
       );
-      // Through `unknown` because fromEntries erases the shape; the schema
-      // above is what guarantees it, exactly as /api/trades relies on it.
-      const computed = computeTradeFields(
-        normalised as unknown as Parameters<typeof computeTradeFields>[0],
-      );
-
-      const { data: saved, error: saveError } = await admin
-        .from("trades")
-        .insert(tradeInsertPayload(computed, { userId, journalId }))
-        .select("id")
-        .single();
-
-      if (saveError || !saved) {
-        await admin
-          .from("telegram_pending_trades")
-          .update({ consumed_at: null })
-          .eq("id", pending.id);
-        await answerCallback(botToken, cb.id);
-        await sendChatMessage(botToken, chatId, "Couldn't save that trade. Nothing was written.");
-        return NextResponse.json({ ok: true });
+      await answerCallback(botToken, cb.id, result.answer, result.alert);
+      if (result.clearPicker && cb.message?.message_id) {
+        await clearButtons(botToken, chatId, cb.message.message_id);
       }
-
-      await admin
-        .from("telegram_pending_trades")
-        .update({ trade_id: saved.id })
-        .eq("id", pending.id);
-
-      await answerCallback(botToken, cb.id, "Saved.");
-      await clearPicker();
-      await sendChatMessage(
-        botToken,
-        chatId,
-        `Saved to <b>${escapeHtml(m.journals.name)}</b>${quantity !== 1 ? ` (size ${quantity}, as last time)` : ""}.`,
-      );
+      if (result.message) await sendChatMessage(botToken, chatId, result.message);
       return NextResponse.json({ ok: true });
     }
 

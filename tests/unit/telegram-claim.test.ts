@@ -69,6 +69,18 @@ describe("findClaimCode", () => {
 
   it("rejects a short or long body", () => {
     expect(findClaimCode("TJ-ACDE")).toBeNull();
+    // Not truncated to a code that was never issued.
+    expect(findClaimCode("TJ-ACDEFGHJ")).toBeNull();
+    expect(findClaimCode("xxTJ-ACDEFGxx")).toBeNull();
+    expect(findClaimCode("code: TJ-ACDEFG.")).toBe("TJ-ACDEFG");
+  });
+
+  it("does not find a code inside an ordinary word", () => {
+    // Every digit 2-7 is in the alphabet, so "volume-234567" ends in what
+    // looks like ME-234567. The prefix must start a token.
+    expect(findLinkCode("volume-234567 today")).toBeNull();
+    expect(findLinkCode("time-234567")).toBeNull();
+    expect(findLinkCode("my code is me-234567")).toBe("ME-234567");
   });
 });
 

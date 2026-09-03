@@ -43,7 +43,7 @@ export const CLAIM_BODY_LENGTH = 6;
  * and expires in fifteen minutes, so the practical entropy is what matters:
  * 27^6, about 387 million, against a fifteen-minute window.
  */
-export function generateCode(prefix: string, randomBytes: Uint8Array): string {
+function generateCode(prefix: string, randomBytes: Uint8Array): string {
   let body = "";
   for (let i = 0; i < CLAIM_BODY_LENGTH; i += 1) {
     body += ALPHABET[randomBytes[i] % ALPHABET.length];
@@ -62,14 +62,20 @@ export function generateLinkCode(randomBytes: Uint8Array): string {
 }
 
 /**
- * Built per prefix, and ANCHORED at the start of the prefix.
+ * Built per prefix, and bounded at BOTH ends: a code is exactly the prefix
+ * plus the body, not a longer run of letters that happens to start with it.
+ * Without the trailing bound "TJ-ACDEFGHJ" was read as "TJ-ACDEFG".
  *
- * "ME-" is not a suffix of "TJ-" or the reverse, so an unanchored search cannot
- * confuse them today; the constraint is written down because the two prefixes
- * are the only thing keeping the two grants apart.
+ * "ME-" is not a suffix of "TJ-" or the reverse, so the two prefixes cannot be
+ * confused; the constraint is written down because they are the only thing
+ * keeping the two grants apart.
  */
 function codeRe(prefix: string): RegExp {
-  return new RegExp(`${prefix}[${ALPHABET}]{${CLAIM_BODY_LENGTH}}`, "i");
+  const safePrefix = prefix.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+  return new RegExp(
+    `(?<![A-Z0-9])${safePrefix}[${ALPHABET}]{${CLAIM_BODY_LENGTH}}(?![A-Z0-9])`,
+    "i",
+  );
 }
 
 const CLAIM_RE = codeRe(CLAIM_PREFIX);

@@ -42,7 +42,7 @@ describe("an explicit exit price", () => {
   });
 
   it("does not read the stop as an exit", () => {
-    expect(parseOutcome("buy 3340 sl 3335").kind).not.toBe("closed_at");
+    expect(parseOutcome("buy 3340 sl 3335").kind).toBe("unknown");
   });
 });
 
@@ -146,5 +146,93 @@ describe("isClosedOutcome", () => {
     expect(isClosedOutcome({ kind: "result", result: "sl" })).toBe(true);
     expect(isClosedOutcome({ kind: "still_open" })).toBe(false);
     expect(isClosedOutcome({ kind: "unknown" })).toBe(false);
+  });
+});
+
+describe("the ways a loss gets published as a win", () => {
+  // Every case here was produced by the adversarial review against the first
+  // version of this parser, which saved each one. They are the reason the
+  // matching is now strict about adjacency instead of loose about proximity.
+
+  it("does not credit a TP because its price sits near 'hit'", () => {
+    expect(parseOutcome("XAUUSD buy 3340 sl 3335 tp1 3350 sl hit")).toMatchObject({
+      kind: "result",
+      result: "sl",
+    });
+    expect(parseOutcome("tp2 3360 stop hit")).toMatchObject({ result: "sl" });
+    expect(parseOutcome("tp1 3350 hit sl")).toMatchObject({ result: "sl" });
+  });
+
+  it("credits the TP that was named, not the nearest price", () => {
+    expect(parseOutcome("tp1 3350 tp2 3360 tp1 hit")).toMatchObject({
+      result: "hit",
+      tpIndex: 1,
+    });
+    expect(parseOutcome("tp1 3350 tp2 3360 tp3 3370 tp2 hit")).toMatchObject({
+      tpIndex: 2,
+    });
+    expect(
+      parseOutcome("GBPUSD sell 1.2700 sl 1.2740 tp1 1.2650 tp2 1.2600 tp1 hit"),
+    ).toMatchObject({ tpIndex: 1 });
+  });
+
+  it("reads 'closed at be' as breakeven even after a TP list", () => {
+    expect(parseOutcome("tp1 3350 tp2 3360 closed at be")).toMatchObject({ result: "be" });
+  });
+
+  it("does not read the English word 'be' as breakeven", () => {
+    expect(
+      parseOutcome("XAUUSD buy 3340 sl 3335 tp1 3350 stopped, should be better next time"),
+    ).toMatchObject({ result: "sl" });
+    expect(
+      parseOutcome("XAUUSD buy 3340 sl 3335, will be closing tomorrow, still open").kind,
+    ).toBe("still_open");
+  });
+
+  it("does not read a moved or trailing stop as a stop-out", () => {
+    expect(
+      parseOutcome("XAUUSD buy 3340 sl 3335 tp1 3350, sl moved to 3345, still open").kind,
+    ).toBe("still_open");
+    expect(parseOutcome("trailing stop, still open").kind).toBe("still_open");
+  });
+
+  it("reads a bare 'sl' as the verdict only when it ends the message", () => {
+    expect(parseOutcome("XAUUSD buy 3340 sl 3335 tp1 3350 sl")).toMatchObject({ result: "sl" });
+    expect(parseOutcome("XAUUSD buy 3340 sl 3335 tp1 3350 sl.")).toMatchObject({ result: "sl" });
+  });
+
+  it("reads an explicit stop-out price as the exit", () => {
+    expect(parseOutcome("XAUUSD buy 3340 sl 3330 stopped at 3332")).toMatchObject({
+      kind: "closed_at",
+      exit_price: 3332,
+    });
+  });
+
+  it("does not take a pip count or a word count as the exit price", () => {
+    expect(parseOutcome("XAUUSD buy 3340 closed +80 pips").kind).toBe("unknown");
+    expect(parseOutcome("closed -50 pips").kind).toBe("unknown");
+    expect(parseOutcome("tp1 3350, out of 3 trades this was the best").kind).toBe("unknown");
+    expect(parseOutcome("closed at 10:30").kind).toBe("unknown");
+  });
+
+  it("reads a thousands separator as thousands, not as a decimal", () => {
+    expect(parseOutcome("BTCUSD buy 65000 closed 66,500")).toMatchObject({ exit_price: 66500 });
+    expect(parseOutcome("closed 1,234.5")).toMatchObject({ exit_price: 1234.5 });
+    expect(parseOutcome("EURUSD closed 1,0820")).toMatchObject({ exit_price: 1.082 });
+  });
+
+  it("does not drop the sign off a negative number", () => {
+    expect(parseOutcome("closed -5").kind).toBe("unknown");
+  });
+
+  it("asks rather than guesses when two outcomes are written", () => {
+    expect(parseOutcome("tp1 hit, stopped out").kind).toBe("unknown");
+    expect(parseOutcome("closed 3348, still open").kind).toBe("unknown");
+    expect(parseOutcome("be, still open").kind).toBe("unknown");
+  });
+
+  it("refuses a partial close, which one row cannot represent", () => {
+    expect(parseOutcome("closed half at 3348 rest running").kind).toBe("unknown");
+    expect(parseOutcome("partial at 3348").kind).toBe("unknown");
   });
 });
