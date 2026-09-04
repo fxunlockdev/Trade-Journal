@@ -30,6 +30,7 @@ function fake(loaded: Loaded | null, o: Partial<TradeAnswerStore> = {}, quick = 
     loadOpen: async () => loaded,
     linkedUser: async (id) => (id === 111 ? U : null),
     cancelDraft: async () => {},
+    saveDraft: async () => true,
     editableJournals: async () => [{ id: "j1", name: "TTC GOLD" }],
     saveConversation: async (_id, c) => { saved.push(c); return true; },
     recentLots: async () => [0.5],
@@ -40,7 +41,7 @@ function fake(loaded: Loaded | null, o: Partial<TradeAnswerStore> = {}, quick = 
   return { store, saved };
 }
 
-const tap = (field: "s" | "d" | "e" | "t" | "k" | "c", value = "", o: Partial<{ tapperId: number; chatId: string }> = {}) => ({
+const tap = (field: "s" | "d" | "e" | "t" | "k" | "c" | "o", value = "", o: Partial<{ tapperId: number; chatId: string }> = {}) => ({
   pendingId: ID, field, value, tapperId: 111, chatId: "c1", ...o,
 });
 /** The Skip of a given question. */
@@ -83,13 +84,33 @@ describe("refusals", () => {
 });
 
 describe("answers", () => {
-  it("takes an offered size and asks for the date", async () => {
+  it("takes an offered size and moves on to the next question", async () => {
     const f = fake(open({ answers: {}, offeredLots: [0.5] }));
     const r = await handleTradeAnswer(f.store, tap("s", "0.5"), NOW);
     expect(r.answer).toBe("");
     expect(r.clearPicker).toBe(true);
     expect(f.saved[0].answers.lots).toBe(0.5);
-    expect(r.reply?.text).toMatch(/When was it\?/);
+    expect(r.reply?.text).toMatch(/How did it feel/);
+  });
+
+  it("sets the result from a button and goes on", async () => {
+    const saves: TradeDraft[] = [];
+    const plan = { ...draft(), tp1: 4487, tp2: 4492, tp3: 4497, outcome: { kind: "unknown" as const } };
+    const f = fake(open({ answers: { lots: 1 } }, { draft: plan }), { saveDraft: async (_id, d) => { saves.push(d); return true; } }, true);
+    const r = await handleTradeAnswer(f.store, tap("o", "tp3"), NOW);
+    expect(saves[0]?.outcome).toEqual({ kind: "result", result: "hit", tpIndex: 3 });
+    expect(r.reply?.text).toMatch(/TP3 hit/);
+    expect(r.reply?.text).toMatch(/Which journal\?/);
+  });
+
+  it("refuses a result the trade cannot support, in words", async () => {
+    const plan = { ...draft(), stop_loss: null, outcome: { kind: "unknown" as const } };
+    const f = fake(open({ answers: { lots: 1 } }, { draft: plan }));
+    const r = await handleTradeAnswer(f.store, tap("o", "sl"), NOW);
+    expect(r.alert).toBe(true);
+    expect(r.answer).toMatch(/no stop/);
+    const tp = await handleTradeAnswer(f.store, tap("o", "tp5"), NOW);
+    expect(tp.answer).toMatch(/TP5 has no price/);
   });
 
   it("refuses a size that was never offered, out loud", async () => {
@@ -163,7 +184,7 @@ describe("confirming a prose reading by button", () => {
     expect(cancelled).toEqual([ID]);
     expect(r.reply?.text).toMatch(/Cancelled/);
 
-    const yes = fake(open({ answers: {} }, { draft: proseDraft }));
+    const yes = fake(open({ answers: {} }, { draft: proseDraft }), { recentLots: async () => [] });
     const r2 = await handleTradeAnswer(yes.store, tap("c", "yes"), NOW);
     expect(yes.saved[0].confirmed).toBe(true);
     expect(r2.reply?.text).toMatch(/Size in lots\?/);

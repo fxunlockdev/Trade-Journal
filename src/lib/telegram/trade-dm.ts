@@ -76,11 +76,12 @@ const EDIT_HINT = 'To change an earlier answer, type e.g. "date 28 aug" or "size
 function helpText(linked: boolean, quick: boolean): string {
   const how =
     `Send me a trade, for example:\n<code>${EXAMPLE}</code>\nor just describe it: "bought gold at 3340 this morning, stop 3335, out at 3348".\n\n` +
+    `Your usual signal format works too; if it has no result yet, I'll ask with buttons. ` +
     `Say what happened: an exit price ("closed 3348"), "tp1 hit", "sl", "be", or "still open". ` +
-    `Add a date like "28 aug" for a past trade and "0.5 lots" for the size, or I'll ask. ` +
+    `Add a date like "28 aug" for a past trade and "0.5 lots" for the size; otherwise it's today and your last size. ` +
     (quick
-      ? `Quick mode is on, so I only ask for size and date. /quick turns it off.`
-      : `I'll also ask how it felt, for tags and for notes; each can be skipped, and /quick turns those three off.`) +
+      ? `/more also asks how it felt, for tags and for notes.`
+      : `I also ask how it felt, for tags and for notes; each can be skipped, and /quick turns those off.`) +
     ` ${EDIT_HINT} /cancel drops the trade I'm asking about.`;
   if (linked) return how;
   return `First, link this chat to your Trade Journal account: ${LINK_HINT}\n\n${how}`;
@@ -209,15 +210,15 @@ export async function handleTradeMessage(
     return { text: "Cancelled. Send the trade again whenever you like." };
   }
 
-  if (first === "/quick") {
+  if (first === "/quick" || first === "/more") {
     const userId = await store.linkedUser(msg.telegramUserId);
     if (!userId) return { text: `I don't know which Trade Journal account you are yet: ${LINK_HINT}` };
-    const quick = !(await store.isQuick(msg.telegramUserId));
+    const quick = first === "/quick";
     await store.setQuick(msg.telegramUserId, quick);
     return {
       text: quick
-        ? "Quick mode on: I'll only ask for size and date. Send /quick again to turn it off."
-        : "Quick mode off: I'll ask how it felt, for tags and for notes again. Each can be skipped.",
+        ? "Quick mode: I'll only ask what I can't know, usually just the result. /more brings back the mood, tags and notes questions."
+        : "I'll also ask how it felt, for tags and for notes from now on. Each can be skipped. /quick turns that off.",
     };
   }
 

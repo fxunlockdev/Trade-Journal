@@ -70,10 +70,12 @@ describe("a complete message", () => {
 });
 
 describe("an incomplete message names what is missing", () => {
-  it("asks for the outcome when none was given", () => {
+  it("holds a plan with no result, and says the result is the open question", () => {
+    // A signal is a plan; the result comes in a follow-up, with buttons.
     const r = parseTradeIntent("XAUUSD buy 3340 sl 3335 tp1 3350", NOW);
-    expect(r.kind).toBe("incomplete");
-    expect(r.kind === "incomplete" && r.missing.join(" ")).toMatch(/what happened/);
+    expect(r.kind).toBe("ready");
+    expect(r.kind === "ready" && r.draft.outcome).toEqual({ kind: "unknown" });
+    expect(r.kind === "ready" && r.summary).toMatch(/what happened\?/);
   });
 
   it("asks for the TP price when a TP was hit but never stated", () => {
@@ -173,9 +175,8 @@ describe("what the adversarial review found", () => {
   });
 
   it("does not take a pip count as the exit", () => {
-    expect(parseTradeIntent("XAUUSD buy 3340 sl 3335 closed +80 pips", NOW).kind).toBe(
-      "incomplete",
-    );
+    const r = parseTradeIntent("XAUUSD buy 3340 sl 3335 closed +80 pips", NOW);
+    expect(r.kind === "ready" && r.draft.outcome).toEqual({ kind: "unknown" });
   });
 
   it("reads thousands separators as thousands", () => {
@@ -193,7 +194,8 @@ describe("what the adversarial review found", () => {
       "XAUUSD buy 3340 sl 3335 tp1 3350, out of 3 trades this was the best",
       NOW,
     );
-    expect(words.kind).toBe("incomplete");
+    // No result read from that: the plan is held and the result asked.
+    expect(words.kind === "ready" && words.draft.outcome).toEqual({ kind: "unknown" });
   });
 
   it("refuses a stop on the wrong side, in words rather than a validator message", () => {
@@ -331,5 +333,18 @@ describe("what the red team found in the rewrite", () => {
     expect(two.kind === "ready" && two.draft.outcome).toMatchObject({ exit_price: 3348 });
     const nl = parseTradeIntent("XAUUSD buy 3340 sl 3330\nclosed\n at 3348", NOW);
     expect(nl.kind === "ready" && nl.draft.entry_price).toBe(3340);
+  });
+});
+
+describe("punctuation between the parts", () => {
+  it("reads a comma-separated message", () => {
+    const r = parseTradeIntent("XAUUSD buy 3340, sl 3335, tp1 3350, closed 3348.", NOW);
+    expect(r.kind).toBe("ready");
+    expect(r.kind === "ready" && r.draft).toMatchObject({ entry_price: 3340, stop_loss: 3335, tp1: 3350, outcome: { exit_price: 3348 } });
+  });
+
+  it("never reads the digit of tp1 as a target", () => {
+    const r = parseTradeIntent("XAUUSD buy 3340 sl 3335 tp1 3350, out of 3 trades this was the best", NOW);
+    expect(r.kind === "ready" && r.draft.tp1).toBe(3350);
   });
 });

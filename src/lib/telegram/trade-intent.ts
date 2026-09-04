@@ -31,6 +31,8 @@ export interface TradeDraft {
   readonly direction: TradeDirection;
   readonly entry_price: number;
   readonly entry_price_high: number | null;
+  /** A signal's "Second entry": kept as a note, never the P&L basis. */
+  readonly entry_second?: number | null;
   readonly stop_loss: number | null;
   readonly tp1: number | null;
   readonly tp2: number | null;
@@ -92,7 +94,7 @@ export function describeDraft(d: TradeDraft): string {
   const parts: string[] = [
     d.instrument,
     d.direction.toUpperCase(),
-    `entry ${d.entry_price}${d.entry_price_high ? `-${d.entry_price_high}` : ""}`,
+    `entry ${d.entry_price}${d.entry_price_high ? `-${d.entry_price_high}` : ""}${d.entry_second ? ` (2nd ${d.entry_second})` : ""}`,
   ];
   if (d.stop_loss !== null) parts.push(`SL ${d.stop_loss}`);
 
@@ -112,6 +114,8 @@ export function describeDraft(d: TradeDraft): string {
     else parts.push("breakeven");
   } else if (o.kind === "still_open") {
     parts.push("still open");
+  } else {
+    parts.push("what happened?");
   }
 
   if (d.lots !== null) parts.push(`${d.lots} lots`);
@@ -197,12 +201,10 @@ export function parseTradeIntent(text: string, now: Date): TradeIntent {
   }
   if (plan.entry_price == null) missing.push("the entry price");
 
-  if (outcome.kind === "unknown") {
-    missing.push(
-      outcome.reason
-        ? `what happened: ${outcome.reason}`
-        : "what happened: an exit price (\"closed 3348\"), a result (\"tp1 hit\", \"sl\", \"be\"), or \"still open\"",
-    );
+  // No result at all is not a refusal: the plan is held and the result is
+  // asked for, with buttons. Two results, or a partial close, still are.
+  if (outcome.kind === "unknown" && outcome.reason) {
+    missing.push(`what happened: ${outcome.reason}`);
   }
 
   // A named result is derived from a price we must already have.
@@ -254,6 +256,7 @@ export function parseTradeIntent(text: string, now: Date): TradeIntent {
     direction: plan.direction!,
     entry_price: plan.entry_price!,
     entry_price_high: plan.entry_price_high ?? null,
+    entry_second: plan.entry_second ?? null,
     stop_loss: plan.stop_loss ?? null,
     tp1: plan.tp1 ?? null,
     tp2: plan.tp2 ?? null,

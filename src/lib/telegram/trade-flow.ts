@@ -74,10 +74,28 @@ export async function advance(store: FlowStore, d: OpenDraft, now: Date): Promis
   const stage = nextStage(d.draft, d.conversation, quick);
   const expiresAt = lifeFrom(now);
 
+  if (stage === "size") {
+    // Not asked when this person has a size for the instrument already: the
+    // last one is used and said, and "size 1" changes it.
+    const recent = await store.recentLots(d.userId, d.draft.instrument);
+    if (recent.length > 0) {
+      const conversation: Conversation = {
+        ...d.conversation,
+        answers: { ...d.conversation.answers, lots: recent[0] },
+        sized_from_history: true,
+      };
+      if (!(await store.saveConversation(d.id, { answers: { lots: recent[0] }, sized_from_history: true }, expiresAt))) {
+        return { text: COULD_NOT_HOLD };
+      }
+      return advance(store, { ...d, conversation }, now);
+    }
+  }
+
   if (stage !== "journal") {
     const ctx = {
-      recentLots: stage === "size" ? await store.recentLots(d.userId, d.draft.instrument) : [],
+      recentLots: [] as readonly number[],
       topTags: stage === "tags" ? await store.topTags(d.userId) : [],
+      tpPrices: [d.draft.tp1, d.draft.tp2, d.draft.tp3, d.draft.tp4, d.draft.tp5, d.draft.tp6, d.draft.tp7],
     };
     const { prompt, conversation } = promptFor(stage, d.id, d.conversation, ctx);
     // Only what this prompt offered is written; the answers travel separately.
@@ -113,7 +131,7 @@ export async function advance(store: FlowStore, d: OpenDraft, now: Date): Promis
     : "\n<i>Still open, so it won't appear on a poster until it's closed.</i>";
   return {
     text:
-      `${escapeHtml(describeConversation(d.draft, d.conversation.answers))}${openNote}` +
+      `${escapeHtml(describeConversation(d.draft, d.conversation.answers, d.conversation))}${openNote}` +
       `\n\nWhich journal? (To change something first, type e.g. "size 0.5" or "date 28 aug".)`,
     buttons,
     perRow: 1,

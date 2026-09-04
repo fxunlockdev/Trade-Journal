@@ -134,6 +134,7 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
   // carrying a journal index is stale, crafted, or from before the questions
   // existed; all three get the same advice.
   if (!pending.conversation.ready) return refuse("That picker is out of date. Send the trade again.");
+  if (pending.draft.outcome.kind === "unknown") return refuse("Say what happened first.");
 
   // Membership is checked NOW, against the database, not against the list
   // stored half an hour ago. Access can be revoked between the two.
@@ -204,8 +205,11 @@ export async function handleTradeTap(store: TradeTapStore, tap: Tap, now: Date):
       tags: answers.tags ?? [],
       // The typed message stays with the row whatever else was said, so a
       // wrong figure can be traced to what was typed.
-      notes: notesWithProvenance(answers.notes ?? null, d.message),
-      ...outcomeFields(d.outcome),
+      notes: notesWithProvenance(
+        [answers.notes ?? null, d.entry_second ? `Second entry: ${d.entry_second}` : null].filter(Boolean).join("\n") || null,
+        d.message,
+      ),
+      ...outcomeFields(d.outcome, [d.tp1, d.tp2, d.tp3, d.tp4, d.tp5, d.tp6, d.tp7]),
     },
     { userId, journalId },
   );

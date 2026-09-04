@@ -14,11 +14,12 @@
 
 import { EMOTION_VALUES, type EmotionState } from "@/lib/constants/emotions";
 import { parsePrice } from "@/lib/trades/parse-price";
+import type { ParsedOutcome } from "@/lib/trades/outcome-parser";
 import { parseTradeDate } from "@/lib/trades/trade-date";
 import { describeDraft, type TradeDraft } from "@/lib/telegram/trade-intent";
 import type { InlineButton } from "@/lib/telegram/chat";
 
-export type Stage = "confirm" | "size" | "date" | "emotion" | "tags" | "notes" | "journal";
+export type Stage = "confirm" | "outcome" | "size" | "date" | "emotion" | "tags" | "notes" | "journal";
 
 /** What has been answered. `undefined` = not asked yet; `null`/`[]` = skipped. */
 export interface Answers {
@@ -40,13 +41,15 @@ export interface Conversation {
   readonly ready?: boolean;
   /** A trade read from plain words was confirmed as right by its author. */
   readonly confirmed?: boolean;
+  /** The size was not asked: it is the one this person used last time. */
+  readonly sized_from_history?: boolean;
 }
 
 export const EMPTY_CONVERSATION: Conversation = { answers: {} };
 
 /** Buttons per row for each prompt; one per row is unreadable for twelve moods. */
 const PER_ROW: Record<Stage, number> = {
-  confirm: 2, size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
+  confirm: 2, outcome: 3, size: 3, date: 2, emotion: 3, tags: 2, notes: 1, journal: 1,
 };
 
 const YES_RE = /^(?:yes|y|yep|yeah|yup|correct|right|ok(?:ay)?|confirm|sure|✅|👍)[!. ]*$/i;
@@ -69,13 +72,21 @@ export const PENDING_TTL_MINUTES = 30;
 const DAY_MS = 24 * 3600 * 1000;
 
 /** The next question, or "journal" when there is nothing left to ask. */
+/**
+ * The next question, or "journal" when there is nothing left to ask.
+ *
+ * Only what the bot cannot know is asked: the result when the message was a
+ * plan, and the size when this person has never traded the instrument here.
+ * The date is today unless typed ("date 28 aug" changes it). Mood, tags and
+ * notes only for a person who asked for them with /more.
+ */
 export function nextStage(draft: TradeDraft, c: Conversation, quick: boolean): Stage {
   const a = c.answers;
   // A reading from plain words is the one most worth checking, so it is
   // confirmed as a whole before any question about it.
   if (draft.read_from_prose && !c.confirmed) return "confirm";
+  if (draft.outcome.kind === "unknown") return "outcome";
   if (draft.lots === null && a.lots === undefined) return "size";
-  if (!draft.dated_from_text && a.entry_time === undefined) return "date";
   if (!quick) {
     if (a.emotion === undefined) return "emotion";
     if (a.tags === undefined) return "tags";
@@ -86,7 +97,7 @@ export function nextStage(draft: TradeDraft, c: Conversation, quick: boolean): S
 
 /* ────────────────────────── callback data ────────────────────────── */
 
-export type AnswerField = "s" | "d" | "e" | "t" | "k" | "c";
+export type AnswerField = "s" | "d" | "e" | "t" | "k" | "c" | "o";
 
 export interface AnswerTap {
   readonly pendingId: string;
@@ -110,7 +121,7 @@ export function decodeAnswer(data: string | undefined): AnswerTap | null {
   if (parts.length < 3 || parts.length > 4 || parts[0] !== "ans") return null;
   const [, pendingId, field, value = ""] = parts;
   if (!PENDING_ID_RE.test(pendingId)) return null;
-  if (!/^[sdetkc]$/.test(field)) return null;
+  if (!/^[sdetkco]$/.test(field)) return null;
   if (!/^[A-Za-z0-9_.-]{0,20}$/.test(value)) return null;
   return { pendingId, field: field as AnswerField, value };
 }
@@ -128,6 +139,8 @@ export interface PromptContext {
   readonly recentLots: readonly number[];
   /** Tags this person uses most. */
   readonly topTags: readonly string[];
+  /** The draft's target prices, tp1..tp7, for the result buttons. */
+  readonly tpPrices?: readonly (number | null)[];
 }
 
 function cap(s: string): string {
@@ -145,6 +158,25 @@ export function promptFor(
   // and a Skip tapped on an earlier prompt must not skip the current question.
   const skip = { text: "Skip", callback_data: encodeAnswer(pendingId, "k", stage) };
   switch (stage) {
+    case "outcome": {
+      const tps = (ctx.tpPrices ?? [])
+        .map((p, i) => ({ p, i: i + 1 }))
+        .filter((x) => x.p !== null && x.p !== undefined)
+        .map((x) => ({ text: `TP${x.i} hit`, callback_data: encodeAnswer(pendingId, "o", `tp${x.i}`) }));
+      return {
+        prompt: {
+          text: "What happened? Tap, or type the exit price like \"closed 4497\".",
+          buttons: [
+            ...tps,
+            { text: "Stopped out", callback_data: encodeAnswer(pendingId, "o", "sl") },
+            { text: "Breakeven", callback_data: encodeAnswer(pendingId, "o", "be") },
+            { text: "Still open", callback_data: encodeAnswer(pendingId, "o", "open") },
+          ],
+          perRow: PER_ROW.outcome,
+        },
+        conversation: c,
+      };
+    }
     case "confirm":
       return {
         prompt: {
@@ -224,6 +256,27 @@ export type Applied =
   | { readonly ok: true; readonly conversation: Conversation }
   | { readonly ok: false; readonly hint: string; readonly cancel?: true };
 
+/**
+ * The result a tapped button means, checked against the draft: a target
+ * needs its price, a stop-out needs the stop. A reason in words otherwise.
+ */
+export function outcomeFromButton(value: string, draft: TradeDraft): ParsedOutcome | string {
+  const tp = /^tp([1-7])$/.exec(value);
+  if (tp) {
+    const i = Number(tp[1]);
+    const price = (draft as unknown as Record<string, unknown>)[`tp${i}`];
+    if (price == null) return `TP${i} has no price on this trade, so type the exit instead, e.g. "closed 4497"`;
+    return { kind: "result", result: "hit", tpIndex: i };
+  }
+  if (value === "sl") {
+    if (draft.stop_loss === null) return "there is no stop on this trade, so type the exit instead, e.g. \"closed 4470\"";
+    return { kind: "result", result: "sl" };
+  }
+  if (value === "be") return { kind: "result", result: "be" };
+  if (value === "open") return { kind: "still_open" };
+  return "Tap one of the buttons, or type the exit price.";
+}
+
 const CANCELLED: Applied = { ok: false, hint: "", cancel: true };
 
 function withAnswers(c: Conversation, patch: Answers): Applied {
@@ -286,6 +339,10 @@ export function parseFieldEdit(text: string): { stage: Exclude<Stage, "journal">
 export function applyText(stage: Stage, text: string, c: Conversation, now: Date): Applied {
   const t = text.trim();
   switch (stage) {
+    case "outcome":
+      // A valid result never reaches here: the DM handler applies it to the
+      // draft first. Anything else is not a result.
+      return { ok: false, hint: "Say what happened: \"tp1 hit\", \"sl\", \"be\", \"still open\", or the exit price like \"closed 4497\"." };
     case "confirm":
       if (YES_RE.test(t)) return { ok: true, conversation: { ...c, confirmed: true } };
       if (NO_RE.test(t)) return CANCELLED;
@@ -327,6 +384,8 @@ export function applyText(stage: Stage, text: string, c: Conversation, now: Date
 
 /** A tapped button on the open question. */
 export function applyButton(stage: Stage, tap: AnswerTap, c: Conversation, now: Date): Applied {
+  // "o" changes the draft, not the conversation; the answer handler does it.
+  if (tap.field === "o") return { ok: false, hint: "" };
   if (tap.field === "c") {
     if (stage !== "confirm") return { ok: false, hint: "" };
     if (tap.value === "yes") return { ok: true, conversation: { ...c, confirmed: true } };
@@ -386,8 +445,11 @@ export function effectiveDraft(draft: TradeDraft, a: Answers): TradeDraft {
 }
 
 /** The full summary a person confirms before picking a journal. */
-export function describeConversation(draft: TradeDraft, a: Answers): string {
+export function describeConversation(draft: TradeDraft, a: Answers, c?: Conversation): string {
   const lines = [describeDraft(effectiveDraft(draft, a))];
+  if (c?.sized_from_history && a.lots !== undefined) {
+    lines.push(`Size ${a.lots} lots, as last time. Type "size 1" to change it.`);
+  }
   if (a.emotion) lines.push(`Mood: ${a.emotion}`);
   if (a.tags && a.tags.length > 0) lines.push(`Tags: ${a.tags.join(", ")}`);
   if (a.notes) {

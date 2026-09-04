@@ -109,11 +109,11 @@ describe("first contact and commands", () => {
     expect(r?.text).toMatch(/connected group/);
   });
 
-  it("toggles quick mode per person", async () => {
+  it("sets quick or more per person", async () => {
     const f = fake();
-    expect((await handleTradeMessage(f.store, msg("/quick"), NOW))?.text).toMatch(/Quick mode on/);
+    expect((await handleTradeMessage(f.store, msg("/quick"), NOW))?.text).toMatch(/Quick mode/);
     expect(f.quickState()).toBe(true);
-    expect((await handleTradeMessage(f.store, msg("/quick"), NOW))?.text).toMatch(/Quick mode off/);
+    expect((await handleTradeMessage(f.store, msg("/more"), NOW))?.text).toMatch(/how it felt/);
     expect(f.quickState()).toBe(false);
   });
 
@@ -155,9 +155,9 @@ describe("a new trade", () => {
 
   it("lists what is missing", async () => {
     const f = fake();
-    const r = await handleTradeMessage(f.store, msg("XAUUSD buy 3340 sl 3335"), NOW);
+    const r = await handleTradeMessage(f.store, msg("XAUUSD buy sl 3335 closed 3348"), NOW);
     expect(r?.text).toMatch(/Not yet/);
-    expect(r?.text).toMatch(/what happened/);
+    expect(r?.text).toMatch(/entry price/);
     expect(f.held).toHaveLength(0);
   });
 
@@ -169,7 +169,7 @@ describe("a new trade", () => {
   });
 
   it("holds the draft and asks the first question, showing what it understood", async () => {
-    const f = fake();
+    const f = fake({ recentLots: async () => [] });
     const r = await handleTradeMessage(f.store, msg(TRADE), NOW);
     expect(f.held).toHaveLength(1);
     const d = f.held[0];
@@ -180,9 +180,15 @@ describe("a new trade", () => {
 
     expect(r?.text).toMatch(/\+80[.,]0 pips/);
     expect(r?.text).toMatch(/Size in lots\?/);
-    expect(decodeAnswer(r?.buttons?.[0].callback_data)).toEqual({ pendingId: "aB3_x-9Q", field: "s", value: "0.5" });
-    expect(f.saved.at(-1)?.[1].offeredLots).toEqual([0.5, 1]);
-    expect(r?.buttons?.map((b) => b.text)).toEqual(["0.5 lots", "1 lot"]);
+    expect(r?.buttons).toHaveLength(0);
+  });
+
+  it("uses the last size for the instrument without asking, and says so", async () => {
+    const f = fake({}, { quick: true });
+    const r = await handleTradeMessage(f.store, msg(TRADE), NOW);
+    expect(f.saved.some(([, c]) => c.sized_from_history && c.answers.lots === 0.5)).toBe(true);
+    expect(r?.text).toMatch(/Size 0\.5 lots, as last time/);
+    expect(r?.text).toMatch(/Which journal\?/);
   });
 
   it("goes straight to the journal picker when nothing is missing and quick mode is on", async () => {
@@ -222,11 +228,11 @@ describe("answering the open question by typing", () => {
     const f = fake({}, { open: openDraft() });
     const r = await handleTradeMessage(f.store, msg("0.5"), NOW);
     expect(f.saved[0][1].answers.lots).toBe(0.5);
-    expect(r?.text).toMatch(/When was it\?/);
+    expect(r?.text).toMatch(/How did it feel/);
   });
 
   it("repeats the question with a hint when the answer does not parse", async () => {
-    const f = fake({}, { open: openDraft() });
+    const f = fake({ recentLots: async () => [] }, { open: openDraft() });
     const r = await handleTradeMessage(f.store, msg("half a lot"), NOW);
     expect(r?.text).toMatch(/A number of lots/);
     expect(r?.text).toMatch(/Size in lots\?/);
@@ -242,7 +248,7 @@ describe("answering the open question by typing", () => {
   });
 
   it("replaces the draft when a new trade arrives mid-questions", async () => {
-    const f = fake({}, { open: openDraft() });
+    const f = fake({ recentLots: async () => [] }, { open: openDraft() });
     const r = await handleTradeMessage(f.store, msg("EURUSD sell 1.0850 sl 1.0880 closed 1.0820"), NOW);
     expect(f.cancelled).toEqual(["aB3_x-9Q"]);
     expect(f.held).toHaveLength(1);
@@ -321,7 +327,7 @@ describe("what the reviewers found", () => {
 
   it("reminds about the waiting draft when a half-typed trade arrives", async () => {
     const f = fake({}, { open: openDraft() });
-    const r = await handleTradeMessage(f.store, msg("EURUSD buy 1.0850"), NOW);
+    const r = await handleTradeMessage(f.store, msg("EURUSD buy sl 1.0880 closed 1.0820"), NOW);
     expect(r?.text).toMatch(/Not yet/);
     expect(r?.text).toMatch(/earlier XAUUSD trade is still waiting/);
     expect(f.cancelled).toHaveLength(0);
@@ -423,7 +429,7 @@ describe("a trade in plain words", () => {
   });
 
   it("goes on to the questions after yes, and drops the draft after no", async () => {
-    const yes = fake({}, { open: openDraft({ answers: {} }, { draft: draft({ read_from_prose: true }) }) });
+    const yes = fake({ recentLots: async () => [] }, { open: openDraft({ answers: {} }, { draft: draft({ read_from_prose: true }) }) });
     const r1 = await handleTradeMessage(yes.store, msg("yes"), NOW);
     expect(yes.saved[0][1].confirmed).toBe(true);
     expect(r1?.text).toMatch(/Size in lots\?/);
@@ -439,5 +445,51 @@ describe("a trade in plain words", () => {
     await handleTradeMessage(f.store, msg(TEXT), NOW);
     expect(f.cancelled).toEqual(["aB3_x-9Q"]);
     expect(f.held).toHaveLength(1);
+  });
+});
+
+describe("the signal format Pierre actually posts", () => {
+  const SIGNAL = "🔵BUY  XAUUSD\nENTRY: 4481\nSecond entry: 4476\n\nSL: 4473\nTP1: 4487\nTP2: 4492\nTP3: 4497\nTP4: open\n\nManage risk properly";
+
+  it("is held as a draft and the result is asked with buttons", async () => {
+    const f = fake({}, { quick: true });
+    const r = await handleTradeMessage(f.store, msg(SIGNAL), NOW);
+    expect(f.held).toHaveLength(1);
+    expect(f.held[0].draft).toMatchObject({
+      instrument: "XAUUSD",
+      direction: "buy",
+      entry_price: 4481,
+      entry_second: 4476,
+      stop_loss: 4473,
+      tp1: 4487, tp2: 4492, tp3: 4497,
+      tp4_trailing: true,
+      outcome: { kind: "unknown" },
+    });
+    expect(r?.text).toMatch(/entry 4481 \(2nd 4476\)/);
+    expect(r?.text).toMatch(/What happened\?/);
+    expect(r?.buttons?.map((b) => b.text)).toEqual(["TP1 hit", "TP2 hit", "TP3 hit", "Stopped out", "Breakeven", "Still open"]);
+  });
+
+  it("takes 'tp3 hit' typed afterwards, sizes from history, and offers the journals", async () => {
+    const saves: TradeDraft[] = [];
+    const plan = draft({ entry_price: 4481, stop_loss: 4473, tp1: 4487, tp2: 4492, tp3: 4497, tp4_trailing: true, outcome: { kind: "unknown" } });
+    const f = fake({ saveDraft: async (_id, d) => { saves.push(d); return true; } }, { quick: true, open: openDraft({ answers: {} }, { draft: plan }) });
+    const r = await handleTradeMessage(f.store, msg("tp3 hit"), NOW);
+    expect(saves[0]?.outcome).toEqual({ kind: "result", result: "hit", tpIndex: 3 });
+    expect(f.saved.some(([, c]) => c.sized_from_history && c.answers.lots === 0.5)).toBe(true);
+    expect(r?.text).toMatch(/TP3 hit/);
+    expect(r?.text).toMatch(/Size 0\.5 lots, as last time/);
+    expect(r?.text).toMatch(/Which journal\?/);
+  });
+
+  it("explains 'tp4 hit' when TP4 is open, and takes 'closed 4497 tp3 hit' as a close at 4497", async () => {
+    const plan = draft({ entry_price: 4481, stop_loss: 4473, tp1: 4487, tp2: 4492, tp3: 4497, tp4_trailing: true, outcome: { kind: "unknown" } });
+    const f = fake({}, { quick: true, open: openDraft({ answers: {} }, { draft: plan }) });
+    const r = await handleTradeMessage(f.store, msg("tp4 hit"), NOW);
+    expect(r?.text).toMatch(/TP4 price is missing/);
+    const saves: TradeDraft[] = [];
+    const g = fake({ saveDraft: async (_id, d) => { saves.push(d); return true; } }, { quick: true, open: openDraft({ answers: {} }, { draft: plan }) });
+    await handleTradeMessage(g.store, msg("closed 4497 tp3 hit"), NOW);
+    expect(saves[0]?.outcome).toEqual({ kind: "closed_at", exit_price: 4497 });
   });
 });
