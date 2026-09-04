@@ -212,10 +212,36 @@ export interface ProseReading {
  * two things only prose can do: describe two trades, and state a result
  * that cannot be turned into a price.
  */
+/**
+ * A result is only "stated" if the message contains the words for it. The
+ * model was told not to compute one, and still did (3348 - 3340 = "8 pips",
+ * then flagged against the real 80), so nothing it reports about the result
+ * survives without evidence in the text: pips need "pips" or "points", R
+ * needs an R, money needs a currency sign or a word like made/lost/profit.
+ */
+export function statedOnly(x: Extraction, text: string): Extraction {
+  const t = text.toLowerCase();
+  const saysPips = /\b(?:pips?|pts?|points?)\b/.test(t);
+  const saysR = /\b\d+(?:[.,]\d+)?\s*r\b|\br\s*multiple\b/i.test(text);
+  const currency = /[$€£]|\b(?:usd|eur|gbp|dollars?|bucks|quid|euros?|pounds?)\b/.test(t);
+  // "made 80 pips" is pips; "made 400" with no unit is money.
+  const verbNumber = /\b(?:made|lost|profit|loss|gain(?:ed)?|banked|took)\b\s*(?:a\s+|of\s+|about\s+|around\s+)?[$€£]?\d[\d.,]*(?![\d.,]*\s*(?:pips?|pts?|points?|r)\b)/.test(t);
+  const saysMoney = currency || verbNumber;
+  return {
+    ...x,
+    pnl: {
+      pips: saysPips ? x.pnl.pips : null,
+      r: saysR ? x.pnl.r : null,
+      money: saysMoney ? x.pnl.money : null,
+      currency: saysMoney ? x.pnl.currency : null,
+    },
+  };
+}
+
 export function readExtraction(raw: unknown, original: string, now: Date): ProseReading | null {
   const parsed = extractionSchema.safeParse(raw);
   if (!parsed.success) return null;
-  const x = parsed.data;
+  const x = statedOnly(parsed.data, original);
   if (!x.is_trade) return null;
   if (x.multiple_trades) {
     return { intent: { kind: "incomplete", missing: ["one trade per message: that reads like more than one"] }, prefill: {} };
