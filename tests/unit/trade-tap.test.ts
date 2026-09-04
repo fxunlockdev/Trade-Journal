@@ -308,3 +308,27 @@ describe("the answers to the bot's questions", () => {
     expect(notes).toContain("Logged from Telegram: XAUUSD buy 3340");
   });
 });
+
+describe("a signal's result", () => {
+  it("marks the targets up to the one hit and keeps the second entry as a note", async () => {
+    const f = fake(pending({
+      draft: draft({ entry_price: 4481, entry_second: 4476, stop_loss: 4473, tp1: 4487, tp2: 4492, tp3: 4497, tp4_trailing: true, outcome: { kind: "result", result: "hit", tpIndex: 3 } }),
+      conversation: { answers: { lots: 1 }, ready: true },
+    }));
+    const r = await handleTradeTap(f.store, tap(), NOW);
+    expect(r.answer).toBe("Saved.");
+    const row = f.inserts[0];
+    expect(row.tp1_result).toBe("hit");
+    expect(row.tp2_result).toBe("hit");
+    expect(row.tp3_result).toBe("hit");
+    expect(row.exit_price).toBe(4497);
+    expect(String(row.notes)).toContain("Second entry: 4476");
+  });
+
+  it("refuses to save a plan whose result was never given", async () => {
+    const f = fake(pending({ draft: draft({ outcome: { kind: "unknown" } }) }));
+    const r = await handleTradeTap(f.store, tap(), NOW);
+    expect(r.answer).toMatch(/what happened/);
+    expect(f.inserts).toHaveLength(0);
+  });
+});

@@ -128,14 +128,7 @@ export function dmStore(admin: Admin): TradeDmStore {
       return data ? toOpen(data as unknown as OpenRow) : null;
     },
     cancelDraft: (id) => cancelDraft(admin, id),
-    saveDraft: async (id, draft) => {
-      const { error } = await admin
-        .from("telegram_pending_trades")
-        .update({ draft })
-        .eq("id", id)
-        .is("consumed_at", null);
-      return !error;
-    },
+    saveDraft: (id, draft) => saveDraft(admin, id, draft),
     setQuick: async (telegramUserId, quick) => {
       await admin.from("telegram_accounts").update({ quick }).eq("telegram_user_id", telegramUserId);
     },
@@ -145,6 +138,15 @@ export function dmStore(admin: Admin): TradeDmStore {
       return extractTradeWithModel(text);
     },
   };
+}
+
+async function saveDraft(admin: Admin, id: string, draft: TradeDraft): Promise<boolean> {
+  const { error } = await admin
+    .from("telegram_pending_trades")
+    .update({ draft })
+    .eq("id", id)
+    .is("consumed_at", null);
+  return !error;
 }
 
 async function cancelDraft(admin: Admin, id: string): Promise<void> {
@@ -161,6 +163,7 @@ export function answerStore(admin: Admin): TradeAnswerStore {
     allow: (telegramUserId) => allowRequest(admin, LIMITS.telegramDm, String(telegramUserId)),
     linkedUser: (telegramUserId) => linkedUser(admin, telegramUserId),
     cancelDraft: (id) => cancelDraft(admin, id),
+    saveDraft: (id, draft) => saveDraft(admin, id, draft),
     loadOpen: async (id) => {
       const { data } = await admin.from("telegram_pending_trades").select(OPEN_COLUMNS).eq("id", id).maybeSingle();
       return data ? toOpen(data as unknown as OpenRow) : null;

@@ -159,15 +159,26 @@ export function parseOutcome(input: string): ParsedOutcome {
  */
 export function outcomeFields(
   outcome: ParsedOutcome,
+  tpPrices?: readonly (number | null)[],
 ): Record<string, number | string | null> {
   if (outcome.kind === "closed_at") {
     return { exit_price: outcome.exit_price };
   }
   if (outcome.kind === "result") {
+    if (outcome.result === "hit") {
+      // "TP3 hit" means TP1 and TP2 were reached on the way, so every priced
+      // target up to it is marked; the exit is the furthest one either way.
+      const slot = outcome.tpIndex ?? 1;
+      const out: Record<string, number | string | null> = {};
+      for (let i = 1; i <= slot; i += 1) {
+        const priced = tpPrices ? tpPrices[i - 1] != null : i === slot;
+        if (priced) out[`tp${i}_result`] = "hit";
+      }
+      return out;
+    }
     // A stop or a breakeven is recorded on tp1: it is the trade's verdict, not
     // a statement about the second target.
-    const slot = outcome.result === "hit" ? (outcome.tpIndex ?? 1) : 1;
-    return { [`tp${slot}_result`]: outcome.result };
+    return { tp1_result: outcome.result };
   }
   return {};
 }

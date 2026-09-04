@@ -9,6 +9,7 @@ import {
   effectiveDraft,
   describeConversation,
   parseFieldEdit,
+  outcomeFromButton,
   EMPTY_CONVERSATION,
   type Conversation,
 } from "@/lib/telegram/conversation";
@@ -38,26 +39,40 @@ const draft = (o: Partial<TradeDraft> = {}): TradeDraft => ({
 const ctx = { recentLots: [0.5, 1, 0.1], topTags: ["scalp", "london"] };
 
 describe("which question comes next", () => {
-  it("asks for size, then date, then the optional three, then the journal", () => {
+  it("asks for the result, then size, then the optional three, then the journal; never the date", () => {
     const c: Conversation = { answers: {} };
+    expect(nextStage(draft({ outcome: { kind: "unknown" } }), c, false)).toBe("outcome");
     expect(nextStage(draft(), c, false)).toBe("size");
-    expect(nextStage(draft(), { answers: { lots: 0.5 } }, false)).toBe("date");
-    expect(nextStage(draft(), { answers: { lots: 0.5, entry_time: "x" } }, false)).toBe("emotion");
-    expect(nextStage(draft(), { answers: { lots: 0.5, entry_time: "x", emotion: null } }, false)).toBe("tags");
-    expect(nextStage(draft(), { answers: { lots: 0.5, entry_time: "x", emotion: null, tags: [] } }, false)).toBe("notes");
-    expect(
-      nextStage(draft(), { answers: { lots: 0.5, entry_time: "x", emotion: null, tags: [], notes: null } }, false),
-    ).toBe("journal");
+    expect(nextStage(draft(), { answers: { lots: 0.5 } }, false)).toBe("emotion");
+    expect(nextStage(draft(), { answers: { lots: 0.5, emotion: null } }, false)).toBe("tags");
+    expect(nextStage(draft(), { answers: { lots: 0.5, emotion: null, tags: [] } }, false)).toBe("notes");
+    expect(nextStage(draft(), { answers: { lots: 0.5, emotion: null, tags: [], notes: null } }, false)).toBe("journal");
   });
 
   it("skips what the message already carried", () => {
-    expect(nextStage(draft({ lots: 0.5 }), EMPTY_CONVERSATION, false)).toBe("date");
-    expect(nextStage(draft({ lots: 0.5, dated_from_text: true }), EMPTY_CONVERSATION, false)).toBe("emotion");
+    expect(nextStage(draft({ lots: 0.5 }), EMPTY_CONVERSATION, false)).toBe("emotion");
   });
 
-  it("in quick mode only the required two are asked", () => {
+  it("in quick mode only the size is asked, and only when unknown", () => {
     expect(nextStage(draft(), EMPTY_CONVERSATION, true)).toBe("size");
-    expect(nextStage(draft({ lots: 0.5, dated_from_text: true }), EMPTY_CONVERSATION, true)).toBe("journal");
+    expect(nextStage(draft({ lots: 0.5 }), EMPTY_CONVERSATION, true)).toBe("journal");
+  });
+
+  it("offers the result buttons for the targets that have prices", () => {
+    const { prompt } = promptFor("outcome", ID, EMPTY_CONVERSATION, { ...ctx, tpPrices: [4487, 4492, 4497, null, null, null, null] });
+    expect(prompt.buttons.map((b) => b.text)).toEqual(["TP1 hit", "TP2 hit", "TP3 hit", "Stopped out", "Breakeven", "Still open"]);
+    expect(decodeAnswer(prompt.buttons[2].callback_data)).toEqual({ pendingId: ID, field: "o", value: "tp3" });
+  });
+
+  it("turns a result button into an outcome the trade can support", () => {
+    const plan = draft({ tp1: 4487, tp2: 4492, tp3: 4497, stop_loss: 4473 });
+    expect(outcomeFromButton("tp3", plan)).toEqual({ kind: "result", result: "hit", tpIndex: 3 });
+    expect(outcomeFromButton("sl", plan)).toEqual({ kind: "result", result: "sl" });
+    expect(outcomeFromButton("be", plan)).toEqual({ kind: "result", result: "be" });
+    expect(outcomeFromButton("open", plan)).toEqual({ kind: "still_open" });
+    expect(outcomeFromButton("tp4", plan)).toMatch(/TP4 has no price/);
+    expect(outcomeFromButton("sl", draft({ stop_loss: null }))).toMatch(/no stop/);
+    expect(outcomeFromButton("zzz", plan)).toMatch(/Tap one/);
   });
 });
 
@@ -266,7 +281,7 @@ describe("how people actually answer", () => {
 
 describe("confirming a trade read from plain words", () => {
   it("comes before every other question, and only for prose", () => {
-    expect(nextStage(draft({ read_from_prose: true, lots: 0.5, dated_from_text: true }), EMPTY_CONVERSATION, true)).toBe("confirm");
+    expect(nextStage(draft({ read_from_prose: true, lots: 0.5 }), EMPTY_CONVERSATION, true)).toBe("confirm");
     expect(nextStage(draft({ read_from_prose: true }), { answers: {}, confirmed: true }, false)).toBe("size");
     expect(nextStage(draft(), EMPTY_CONVERSATION, false)).toBe("size");
   });

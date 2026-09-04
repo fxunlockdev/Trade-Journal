@@ -6,7 +6,8 @@
  * picker) follows. Pure over the same store interfaces as the DM handler.
  */
 
-import { applyButton, nextStage, type AnswerTap } from "@/lib/telegram/conversation";
+import { applyButton, nextStage, outcomeFromButton, type AnswerTap } from "@/lib/telegram/conversation";
+import type { TradeDraft } from "@/lib/telegram/trade-intent";
 import { advance, refuseTap, lifeFrom, type FlowStore, type OpenDraft, type FlowReply } from "@/lib/telegram/trade-flow";
 
 /** Telegram's cap on the text of an answerCallbackQuery. */
@@ -18,6 +19,8 @@ export interface TradeAnswerStore extends FlowStore {
   loadOpen(id: string): Promise<(OpenDraft & { readonly consumedAt: string | null }) | null>;
   linkedUser(telegramUserId: number): Promise<string | null>;
   cancelDraft(id: string): Promise<void>;
+  /** The trade itself changed (the result was chosen). */
+  saveDraft(id: string, draft: TradeDraft): Promise<boolean>;
 }
 
 export interface AnswerResult {
@@ -49,6 +52,23 @@ export async function handleTradeAnswer(
 
   const quick = await store.isQuick(tap.tapperId);
   const stage = nextStage(d.draft, d.conversation, quick);
+
+  if (tap.field === "o") {
+    if (stage !== "outcome") {
+      const reply = await advance(store, d, now);
+      return { answer: "", alert: false, clearPicker: true, reply };
+    }
+    const outcome = outcomeFromButton(tap.value, d.draft);
+    if (typeof outcome === "string") return { answer: outcome.slice(0, CALLBACK_TEXT_MAX), alert: true, clearPicker: false };
+    const draft: TradeDraft = { ...d.draft, outcome };
+    if (!(await store.saveDraft(d.id, draft))) {
+      return { answer: "Couldn't hold that. Tap again.", alert: true, clearPicker: false };
+    }
+    const reply = await advance(store, { ...d, draft }, now);
+    if (reply.dropped) await store.cancelDraft(d.id);
+    return { answer: "", alert: false, clearPicker: true, reply };
+  }
+
   const applied = applyButton(stage, tap, d.conversation, now);
   if (!applied.ok) {
     if (applied.cancel) {

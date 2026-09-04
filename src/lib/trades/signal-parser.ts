@@ -40,6 +40,8 @@ export interface ParsedSignal {
   readonly direction_conflict?: true;
   readonly entry_price?: number;
   readonly entry_price_high?: number;
+  /** "Second entry: 4476" in a signal: a scale-in level, kept as a note. */
+  readonly entry_second?: number;
   readonly stop_loss?: number;
   readonly tp1?: number;
   readonly tp2?: number;
@@ -209,6 +211,12 @@ function findStop(text: string): number | undefined {
   return parsePrice(m[1]) ?? undefined;
 }
 
+function findSecondEntry(text: string): number | undefined {
+  const m = text.match(new RegExp(`\\b(?:second|2nd)\\s+entry\\s*:?\\s*(?:at\\s+|@\\s*)?${PRICE_G}`, "i"));
+  if (!m) return undefined;
+  return parsePrice(m[1]) ?? undefined;
+}
+
 function findLotSize(text: string): number | undefined {
   const m = text.match(new RegExp(`(${PRICE})\\s*lots?\\b`, "i"));
   if (!m) return undefined;
@@ -245,7 +253,8 @@ function findTps(text: string): {
   let match: RegExpExecArray | null;
   while ((match = numberedRe.exec(text)) !== null) {
     const idx = Number(match[1]);
-    const raw = match[2];
+    // "tp1 3350," in a comma-separated message: the comma is punctuation.
+    const raw = match[2].replace(/[.,;:]+$/, "");
     // Historically tp4 had trailing semantics; keep that flag wired up for
     // back-compat even though the form now supports tp5/6/7 too.
     if (idx === 4 && /open|running|runner|trail/i.test(raw)) {
@@ -262,8 +271,9 @@ function findTps(text: string): {
   // If no numbered TPs found, try slashed or comma-separated list after TP/target.
   const anyFound = Object.values(tps).some((v) => v != null);
   if (!anyFound) {
+    // A whole word: "tp 4830/4840", never the "1" of "tp1".
     const listRe = new RegExp(
-      `(?:tp|take\\s*profit|target|targets)\\s*:?\\s*((?:${PRICE})(?:\\s*[/,]\\s*(?:${PRICE}|open|running))*)`,
+      `\\b(?:tp|take\\s*profit|target|targets)\\b\\s*:?\\s*((?:${PRICE})(?:\\s*[/,]\\s*(?:${PRICE}|open|running))*)`,
       "i",
     );
     const list = text.match(listRe);
@@ -332,6 +342,7 @@ export function parseSignalText(input: string): ParsedSignal {
     direction_conflict: dir.conflict,
     entry_price,
     entry_price_high,
+    entry_second: findSecondEntry(text),
     stop_loss,
     tp1: tps.tp1,
     tp2: tps.tp2,

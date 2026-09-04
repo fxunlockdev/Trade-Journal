@@ -124,6 +124,17 @@ describe("outcomeFields", () => {
     });
   });
 
+  it("marks every priced target up to the one hit, given the prices", () => {
+    expect(outcomeFields({ kind: "result", result: "hit", tpIndex: 3 }, [4487, 4492, 4497, null, null, null, null])).toEqual({
+      tp1_result: "hit",
+      tp2_result: "hit",
+      tp3_result: "hit",
+    });
+    expect(outcomeFields({ kind: "result", result: "hit", tpIndex: 2 }, [4487, null, 4497, null, null, null, null])).toEqual({
+      tp1_result: "hit",
+    });
+  });
+
   it("records a stop and a breakeven on tp1", () => {
     // The trade's verdict, not a statement about the second target.
     expect(outcomeFields({ kind: "result", result: "sl" })).toEqual({
