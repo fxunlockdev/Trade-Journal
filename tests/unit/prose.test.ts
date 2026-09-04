@@ -6,6 +6,7 @@ import {
   deriveExit,
   pnlWarnings,
   quoteCurrency,
+  statedOnly,
   type Extraction,
 } from "@/lib/telegram/prose";
 import { parseTradeIntent } from "@/lib/telegram/trade-intent";
@@ -207,5 +208,30 @@ describe("the model's reply as text", () => {
     expect(parseModelJson("no json here")).toBeNull();
     expect(parseModelJson("")).toBeNull();
     expect(parseModelJson("{broken")).toBeNull();
+  });
+});
+
+describe("a result the model made up", () => {
+  const live = "bought gold at 3340 this morning, stop 3335, closed at 3348 on half a lot";
+
+  it("is discarded when the message never stated one, so no warning appears", () => {
+    // The production case: the model reported pips: 8 (3348 - 3340) for a
+    // message with no result in words, and the check flagged it against 80.
+    const r = readExtraction({ ...base, lots: 0.5, pnl: { ...base.pnl, pips: 8 } }, live, NOW);
+    expect(r?.intent.kind).toBe("ready");
+    expect(r?.intent.kind === "ready" && r.intent.draft.warnings).toEqual([]);
+    expect(r?.intent.kind === "ready" && r.intent.summary).not.toMatch(/⚠/);
+  });
+
+  it("is kept when the words are there", () => {
+    expect(statedOnly({ ...base, pnl: { ...base.pnl, pips: 80 } }, "gold 3340 to 3348, made 80 pips").pnl.pips).toBe(80);
+    expect(statedOnly({ ...base, pnl: { ...base.pnl, r: 2 } }, "banked 2R on gold").pnl.r).toBe(2);
+    expect(statedOnly({ ...base, pnl: { ...base.pnl, money: 400, currency: "USD" } }, "made $400 on gold").pnl.money).toBe(400);
+    expect(statedOnly({ ...base, pnl: { ...base.pnl, money: -150 } }, "lost 150 on gold").pnl.money).toBe(-150);
+  });
+
+  it("is dropped field by field", () => {
+    const g = statedOnly({ ...base, pnl: { pips: 80, r: 1.6, money: 400, currency: "USD" } }, "made 80 pips on gold");
+    expect(g.pnl).toEqual({ pips: 80, r: null, money: null, currency: null });
   });
 });

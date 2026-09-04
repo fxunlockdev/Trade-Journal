@@ -18,7 +18,7 @@ Rules:
 - entry: the fill price. entry_high only for a stated range.
 - stop: the stop loss price. targets: take-profit prices in order.
 - outcome.kind: closed_at when an exit price is given (put it in exit); tp_hit when a target was hit (tp_index); stopped when stopped out; breakeven when closed flat; open when still running; unknown otherwise.
-- pnl: a stated result. pips (signed, negative for a loss), r (signed), money (signed) with currency when said. Do not convert between them.
+- pnl: ONLY a result the writer states in words ("made 80 pips", "+2R", "lost $150"). pips (signed, negative for a loss), r (signed), money (signed) with currency when said. NEVER compute a result from the prices: if the message gives an exit price and no result in words, every pnl field is null. Do not convert between them.
 - date: the day as written ("28 aug", "yesterday", "this morning", "3/9"); null if not said.
 - lots: the size in lots if said. emotion: one of calm, confident, disciplined, neutral, excited, overconfident, anxious, fearful, greedy, fomo, revenge, frustrated if the message says how it felt; else null.
 - notes: a short reason or comment worth keeping, in the writer's words; else null.
