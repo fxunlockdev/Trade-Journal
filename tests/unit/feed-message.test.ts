@@ -14,7 +14,8 @@ describe("feedMessageFromUpdate", () => {
     });
     expect(r).toEqual({
       chatId: "-100999", chatType: "supergroup", messageId: 23, threadId: 42, replyToMessageId: 21,
-      text: "🎯 TP1 HIT +10 pips", sender: "Yohan Morel", postedAt: "2025-09-04T14:00:00.000Z", edited: false,
+      text: "🎯 TP1 HIT +10 pips", sender: "Yohan Morel",
+      senderId: 1, postedAt: "2025-09-04T14:00:00.000Z", edited: false,
     });
   });
 
@@ -22,7 +23,7 @@ describe("feedMessageFromUpdate", () => {
     const r = feedMessageFromUpdate({
       channel_post: { message_id: 6065, date: 1756994400, chat: { id: -100555, type: "channel", title: "TIG master channel" }, caption: "🔵BUY  XAUUSD\nENTRY: 4374", author_signature: "TIG" },
     });
-    expect(r).toMatchObject({ chatType: "channel", sender: "TIG", text: "🔵BUY  XAUUSD\nENTRY: 4374" });
+    expect(r).toMatchObject({ chatType: "channel", sender: "TIG", senderId: null, text: "🔵BUY  XAUUSD\nENTRY: 4374" });
     const noSig = feedMessageFromUpdate({ channel_post: { message_id: 1, date: 1, chat: { id: -100555, type: "channel", title: "TIG master channel" }, text: "x" } });
     expect(noSig?.sender).toBe("TIG master channel");
   });

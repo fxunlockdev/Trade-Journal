@@ -52,6 +52,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const admin = createAdminClient();
+    // A room that is somebody else's publishing destination is theirs to
+    // manage; listening to it would take the bot's commands away from them.
+    const { data: destination } = await admin
+      .from("telegram_destinations")
+      .select("owner_user_id")
+      .eq("chat_id", chatId)
+      .eq("status", "connected")
+      .maybeSingle();
+    if (destination && destination.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "That room is connected to another account's posters." }, { status: 409 });
+    }
     const { data, error: insertError } = await admin
       .from("telegram_feeds")
       .insert({ chat_id: chatId, thread_id: threadId, title, journal_id: journalId, user_id: user.id, default_lots: defaultLots })

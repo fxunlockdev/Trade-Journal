@@ -42,6 +42,8 @@ export interface FeedMessageInput {
   readonly replyToMessageId: number | null;
   readonly text: string;
   readonly sender: string | null;
+  /** Telegram user id of the poster; null for a channel post. */
+  readonly senderId: number | null;
   readonly postedAt: string;
   readonly edited: boolean;
 }
@@ -75,6 +77,7 @@ export function feedMessageFromUpdate(update: RawUpdate): FeedMessageInput | nul
     replyToMessageId,
     text: (msg.text ?? msg.caption ?? "").trim(),
     sender,
+    senderId: msg.from?.id ?? null,
     postedAt: new Date((msg.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString(),
     edited,
   };

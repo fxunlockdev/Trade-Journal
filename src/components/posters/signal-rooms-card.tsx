@@ -123,12 +123,18 @@ export function SignalRoomsCard({ journals }: Props) {
     } catch { toast.error("Couldn't reach the server."); } finally { setBusy(null); }
   };
 
-  const ignore = async (item: ReviewItem): Promise<void> => {
+  const act = async (item: ReviewItem, action: "ignore" | "retry"): Promise<void> => {
     setBusy(`${item.chatId}:${item.messageId}`);
     try {
-      const res = await fetch("/api/telegram/feeds/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chatId: item.chatId, messageId: item.messageId, action: "ignore" }) });
-      if (!res.ok) { toast.error("Couldn't update."); return; }
-      setReview((r) => r.filter((x) => !(x.chatId === item.chatId && x.messageId === item.messageId)));
+      const res = await fetch("/api/telegram/feeds/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chatId: item.chatId, messageId: item.messageId, action }) });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error ?? "Couldn't update."); return; }
+      if (action === "retry") {
+        const outcome = json.data?.outcome?.action as string | undefined;
+        if (outcome === "review") { toast.message(`Still needs a look: ${json.data.outcome.reason}`); return; }
+        toast.success(outcome === "noise" || outcome === "skipped" ? "Nothing to apply from that message." : "Applied.");
+      }
+      await refresh();
     } catch { toast.error("Couldn't reach the server."); } finally { setBusy(null); }
   };
 
@@ -224,12 +230,13 @@ export function SignalRoomsCard({ journals }: Props) {
                   <p className="whitespace-pre-wrap break-words">{item.text}</p>
                   <div className="flex items-center gap-2">
                     <p className="flex-1 text-xs text-warn">{item.reason}</p>
-                    <Button type="button" size="sm" variant="ghost" disabled={busy === `${item.chatId}:${item.messageId}`} onClick={() => void ignore(item)}>Ignore</Button>
+                    <Button type="button" size="sm" variant="outline" disabled={busy === `${item.chatId}:${item.messageId}`} onClick={() => void act(item, "retry")}>Retry</Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={busy === `${item.chatId}:${item.messageId}`} onClick={() => void act(item, "ignore")}>Ignore</Button>
                   </div>
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-muted-foreground">Log these by hand if they are real; ignoring keeps them out of the journal.</p>
+            <p className="text-xs text-muted-foreground">Retry once the missing piece has arrived; ignore keeps it out of the journal; log by hand if it is real and the bot cannot read it.</p>
           </div>
         )}
       </CardContent>

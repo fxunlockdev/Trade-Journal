@@ -42,6 +42,7 @@ export async function sourcesFor(supabase: SupabaseClient, userId: string): Prom
     .from("telegram_chat_claims")
     .select("chat_id, chat_title")
     .eq("user_id", userId)
+    .eq("purpose", "feed")
     .not("chat_id", "is", null)
     .not("claimed_at", "is", null);
   const chatIds = [...new Set((claims ?? []).map((c) => c.chat_id as string))];

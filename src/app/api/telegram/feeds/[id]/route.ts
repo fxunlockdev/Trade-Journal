@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mayWriteJournal } from "@/lib/telegram/feed-api";
 
 export const runtime = "nodejs";
 
@@ -24,11 +23,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
     if (typeof body.defaultLots === "number" && body.defaultLots > 0 && body.defaultLots <= 1000) patch.default_lots = body.defaultLots;
+    // The journal is fixed for a feed's life: its trades and their replies
+    // are found by it. Disconnect and connect again to point elsewhere.
     if (typeof body.journalId === "string") {
-      if (!(await mayWriteJournal(supabase, user.id, body.journalId))) {
-        return NextResponse.json({ error: "You can't write to that journal." }, { status: 403 });
-      }
-      patch.journal_id = body.journalId;
+      return NextResponse.json({ error: "Disconnect the room and connect it to the other journal." }, { status: 400 });
     }
     const { error: updateError } = await admin.from("telegram_feeds").update(patch).eq("id", id);
     if (updateError) return NextResponse.json({ error: "Couldn't update the room." }, { status: 503 });
