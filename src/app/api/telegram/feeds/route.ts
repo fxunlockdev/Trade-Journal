@@ -60,8 +60,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .eq("chat_id", chatId)
       .eq("status", "connected")
       .maybeSingle();
-    if (destination && destination.owner_user_id !== user.id) {
-      return NextResponse.json({ error: "That room is connected to another account's posters." }, { status: 409 });
+    if (destination) {
+      return NextResponse.json({ error: "That group receives posters. A signal room has to be a group the bot never posts in." }, { status: 409 });
+    }
+    // One feed per room, whoever connected it: a message exists once and
+    // belongs to one journal. Said here as well as by the unique index, so
+    // the answer is the same whichever account asks second.
+    let taken = admin.from("telegram_feeds").select("id").eq("chat_id", chatId);
+    taken = threadId === null ? taken.is("thread_id", null) : taken.eq("thread_id", threadId);
+    const { data: existing } = await taken.limit(1);
+    if ((existing ?? []).length > 0) {
+      return NextResponse.json({ error: "That room is already connected, by this account or another." }, { status: 409 });
     }
     const { data, error: insertError } = await admin
       .from("telegram_feeds")
@@ -69,7 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .select("id")
       .single();
     if (insertError) {
-      if (insertError.code === "23505") return NextResponse.json({ error: "That room is already connected." }, { status: 409 });
+      if (insertError.code === "23505") return NextResponse.json({ error: "That room is already connected, by this account or another." }, { status: 409 });
       return NextResponse.json({ error: "Couldn't connect the room." }, { status: 503 });
     }
     return NextResponse.json({ data: { id: data.id } }, { status: 201 });

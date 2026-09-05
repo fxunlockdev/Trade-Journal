@@ -63,12 +63,12 @@ export function feedStore(admin: Admin): FeedStore {
     seen: async (chatId, messageId) => {
       const { data } = await admin
         .from("telegram_feed_messages")
-        .select("kind, status, trade_id")
+        .select("kind, status, trade_id, text")
         .eq("chat_id", chatId)
         .eq("message_id", messageId)
         .maybeSingle();
       if (!data) return null;
-      return { kind: data.kind as MessageRecord["kind"], status: data.status as MessageRecord["status"], tradeId: (data.trade_id as string | null) ?? null };
+      return { kind: data.kind as MessageRecord["kind"], status: data.status as MessageRecord["status"], tradeId: (data.trade_id as string | null) ?? null, text: (data.text as string | null) ?? "" };
     },
     record: async (r) => {
       await admin.from("telegram_feed_messages").upsert(
@@ -102,7 +102,7 @@ export function feedStore(admin: Admin): FeedStore {
         .maybeSingle();
       return (data as TradeRow | null) ?? null;
     },
-    recentTrades: async (feed, instrument, since, limit) => {
+    recentTrades: async (feed, instrument, since, until, limit) => {
       let q = admin
         .from("trades")
         .select("*")
@@ -110,6 +110,7 @@ export function feedStore(admin: Admin): FeedStore {
         .eq("user_id", feed.userId)
         .eq("source", "telegram")
         .gte("entry_time", since)
+        .lte("entry_time", until)
         .order("entry_time", { ascending: false })
         .limit(limit);
       if (instrument) q = q.eq("instrument", instrument);

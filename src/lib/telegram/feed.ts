@@ -90,7 +90,7 @@ export interface FeedStore {
   allowWrite(feed: Feed): Promise<boolean>;
   /** Whether this Telegram user has posted a signal the feed accepted. */
   isKnownSender(feed: Feed, senderId: number): Promise<boolean>;
-  seen(chatId: string, messageId: number): Promise<Pick<MessageRecord, "kind" | "status" | "tradeId"> | null>;
+  seen(chatId: string, messageId: number): Promise<Pick<MessageRecord, "kind" | "status" | "tradeId" | "text"> | null>;
   record(rec: MessageRecord): Promise<void>;
   /**
    * The trade a signal message became, IN THIS FEED'S JOURNAL AND OWNER. A
@@ -99,8 +99,8 @@ export interface FeedStore {
    */
   tradeByMessage(feed: Feed, messageId: number): Promise<TradeRow | null>;
   tradeById(feed: Feed, id: string): Promise<TradeRow | null>;
-  /** Recent trades from this feed's journal, newest first, for this instrument if given. */
-  recentTrades(feed: Feed, instrument: string | null, since: string, limit: number): Promise<readonly TradeRow[]>;
+  /** Trades this feed logged between two instants, newest first, for this instrument if given. */
+  recentTrades(feed: Feed, instrument: string | null, since: string, until: string, limit: number): Promise<readonly TradeRow[]>;
   insertTrade(row: Record<string, unknown>): Promise<{ id: string } | { duplicate: true } | { error: string }>;
   /** Scoped to the feed's journal as well as the id, so a wrong id cannot cross tenants. */
   updateTrade(feed: Feed, id: string, patch: Record<string, unknown>): Promise<boolean>;
@@ -117,21 +117,27 @@ export type IngestOutcome =
 export interface IngestOptions {
   /** Process again even though the message was seen: a person asked for a retry. */
   readonly force?: boolean;
+  /** The feed the message belongs to, when the caller already knows it (a retry). */
+  readonly feed?: Feed;
 }
 
 /** How far back a result with no reply link may attach to a running trade: a weekend and then some. */
 export const ATTACH_WINDOW_HOURS = 120;
-/** How many recent trades to consider for a result with no reply link. */
-const ATTACH_CANDIDATES = 10;
+/**
+ * How many trades in the window a result with no reply link may look
+ * through. A room posts a handful a day; reaching this many means the
+ * window is not a usable guide and the result waits for a person.
+ */
+export const ATTACH_CANDIDATES = 200;
 
 type Slot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 const SLOTS: readonly Slot[] = [1, 2, 3, 4, 5, 6, 7];
 
 function tpPrice(t: TradeRow, i: Slot): number | null {
-  return (t as unknown as Record<string, number | null>)[`tp${i}`] ?? null;
+  return t[`tp${i}`] ?? null;
 }
 function tpResult(t: TradeRow, i: Slot): TPResult | null {
-  return (t as unknown as Record<string, TPResult | null>)[`tp${i}_result`] ?? null;
+  return t[`tp${i}_result`] ?? null;
 }
 
 /** Whether anything at all has been recorded against the trade. */
@@ -210,14 +216,25 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   const prices: (number | null)[] = SLOTS.map((i) => tpPrice(trade, i));
   const priced = prices.map((p, i) => ({ p, i: i + 1 })).filter((x): x is { p: number; i: number } => x.p !== null);
 
-  // A target named by price must sit closer to one target than to any
-  // other: a quarter of the smallest gap between targets, or 0.2% when
-  // there is only one. Relative tolerance alone was wider than a whole
-  // ladder of 10-pip targets.
-  const gaps = priced.slice(1).map((x, k) => Math.abs(x.p - priced[k].p));
-  const tolerance = gaps.length > 0 ? Math.min(...gaps) / 4 : (priced[0]?.p ?? trade.entry_price) * 0.002;
+  // A target named by price must sit within a quarter of the smallest gap
+  // between the plan's levels, entry included: with one target that is the
+  // distance to entry, not a percentage that on bitcoin spans a whole
+  // hundred dollars.
+  const levels = [trade.entry_price, ...priced.map((x) => x.p)].sort((a, b) => a - b);
+  const gaps = levels.slice(1).map((x, k) => x - levels[k]).filter((g) => g > 0);
+  const tolerance = gaps.length > 0 ? Math.min(...gaps) / 4 : 0;
 
   const problems: string[] = [];
+  const facts = u.hits.length + u.hitPrices.length + u.pricedHits.length > 0 || u.stopped || u.breakeven || u.closedAt !== null;
+
+  // A trade closed at a stated price, with no target results, is finished:
+  // the same close again is nothing new, anything else needs a look.
+  if (trade.exit_price !== null && !hasVerdict({ ...trade, exit_price: null } as TradeRow)) {
+    const sameClose = u.closedAt !== null && Math.abs(u.closedAt - trade.exit_price) <= tolerance
+      && u.hits.length + u.hitPrices.length + u.pricedHits.length === 0 && !u.stopped && !u.breakeven;
+    if (sameClose || !facts) return { reason: "nothing new in that update", review: false };
+    return { reason: `already closed at ${trade.exit_price}; a later update needs a look`, review: true };
+  }
   const slotByPrice = (price: number): number | null => {
     const near = priced.filter((x) => Math.abs(x.p - price) <= tolerance);
     if (near.length === 1) return near[0].i;
@@ -266,6 +283,15 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   if (newHit && u.pips !== null && u.pips < 0) {
     problems.push(`says ${u.pips} pips but reports a target hit`);
   }
+  // A stop or breakeven with a close price is the runner filled away from
+  // the plan; a part closed while the rest runs is not a verdict on the
+  // position. Both are for a person.
+  if ((u.stopped || u.breakeven) && u.closedAt !== null) {
+    problems.push(`${u.stopped ? "stopped" : "breakeven"} with a close at ${u.closedAt}; check the exit`);
+  }
+  if ((u.stopped || u.breakeven) && u.running && !anyHitNow) {
+    problems.push("part of the position closed while the rest runs");
+  }
 
   if (problems.length > 0) return { reason: problems.join("; "), review: true };
 
@@ -283,8 +309,8 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
     }
     return true;
   };
-  if (u.stopped) runnerVerdict("sl");
-  if (u.breakeven && !u.stopped) runnerVerdict("be");
+  if (u.stopped && !runnerVerdict("sl")) return { reason: "a stop reported where a breakeven is recorded", review: true };
+  if (u.breakeven && !u.stopped && !runnerVerdict("be")) return { reason: "a breakeven reported where a stop is recorded", review: true };
 
   const patch: Record<string, unknown> = {};
   SLOTS.forEach((i) => { patch[`tp${i}_result`] = results[i - 1]; });
@@ -318,14 +344,13 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   };
 }
 
-/** Which instrument a result mentions, if exactly one, for attaching without a reply link. */
-function mentionedInstrument(text: string): string | null {
-  const found = findInstruments(expandAliases(text));
-  return found.length === 1 ? found[0] : null;
+/** Which instruments a result names, for attaching without a reply link. */
+function mentionedInstruments(text: string): readonly string[] {
+  return findInstruments(expandAliases(text));
 }
 
-export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, now: Date, opts: IngestOptions = {}): Promise<IngestOutcome> {
-  const feed = (await store.feedFor(msg.chatId, msg.threadId)) ?? (await store.feedFor(msg.chatId, null));
+export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts: IngestOptions = {}): Promise<IngestOutcome> {
+  const feed = opts.feed ?? (await store.feedFor(msg.chatId, msg.threadId)) ?? (await store.feedFor(msg.chatId, null));
   if (!feed) return { action: "skipped", why: "no_feed" };
   if (!feed.enabled) return { action: "skipped", why: "disabled" };
 
@@ -420,10 +445,25 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, now:
     }
     if (!trade) {
       // No reply link: the one trade still running for the instrument named,
-      // or the one trade running at all. Two candidates is a question.
-      const since = new Date(now.getTime() - ATTACH_WINDOW_HOURS * 3600_000).toISOString();
-      const instrument = mentionedInstrument(text);
-      const running = (await store.recentTrades(feed, instrument, since, ATTACH_CANDIDATES)).filter(stillRunning);
+      // or the one trade running at all, among those logged in the window
+      // before the message. Two candidates is a question; so is a window too
+      // full to have looked through.
+      const posted = new Date(msg.postedAt);
+      const since = new Date(posted.getTime() - ATTACH_WINDOW_HOURS * 3600_000).toISOString();
+      const named = mentionedInstruments(text);
+      if (named.length > 1) {
+        const reason = `more than one instrument named (${named.join(", ")})`;
+        await store.record(record(feed, msg, "result", "review", reason, null));
+        return { action: "review", reason };
+      }
+      const instrument = named[0] ?? null;
+      const recent = await store.recentTrades(feed, instrument, since, msg.postedAt, ATTACH_CANDIDATES);
+      if (recent.length >= ATTACH_CANDIDATES) {
+        const reason = "too many trades in the window to pick one";
+        await store.record(record(feed, msg, "result", "review", reason, null));
+        return { action: "review", reason };
+      }
+      const running = recent.filter(stillRunning);
       if (running.length === 1) trade = running[0];
       else if (running.length > 1) {
         const reason = instrument
@@ -447,8 +487,10 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, now:
       return { action: "review", reason };
     }
 
-    // An edited result cannot be undone by a machine: if it changed, ask.
+    // An edited result cannot be undone by a machine: unchanged text is a
+    // redelivery, changed text is a question.
     if (msg.edited && seen?.status === "applied") {
+      if (seen.text === msg.text) return { action: "skipped", why: "seen" };
       const reason = "a result was edited after it was applied; check the trade";
       await store.record(record(feed, msg, "result", "review", reason, trade.id));
       return { action: "review", reason };

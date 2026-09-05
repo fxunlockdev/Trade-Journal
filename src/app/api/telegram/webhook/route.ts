@@ -291,28 +291,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // room and a redelivery fall through to the branches below.
     const roomMessage = feedMessageFromUpdate(update);
     if (roomMessage && !findClaimCode(roomMessage.text) && !parseCommand(roomMessage.text)) {
-      const outcome = await ingestFeedMessage(feedStore(admin), roomMessage, new Date());
+      const outcome = await ingestFeedMessage(feedStore(admin), roomMessage);
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }
     // In a room somebody listens to, the bot says nothing whatever is posted:
-    // not to an invalid code, not to a valid one, not to a stray link code.
-    // Nine characters must not be enough to make it break that promise.
-    const listened = roomMessage ? await anyFeedIn(admin, roomMessage.chatId) : false;
-    const say = async (chatId: string, text: string): Promise<void> => {
-      if (!listened) await sendChatMessage(botToken, chatId, text);
-    };
-
+    // not to a code, not to a command, not to a stray link code. A claim is
+    // still recorded, silently, so another topic of the room can be connected.
     const posted = update.message ?? update.channel_post;
+    if (roomMessage && (await anyFeedIn(admin, roomMessage.chatId))) {
+      if (posted?.chat?.id && !findLinkCode(posted.text)) await claimChatIfCoded(admin, posted);
+      return NextResponse.json({ ok: true });
+    }
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
       // Two different grants in one message. Branch order would silently pick
       // one; saying so is better than guessing which was meant.
-      await say(String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
+      await sendChatMessage(botToken, String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
       return NextResponse.json({ ok: true });
     }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply !== null) {
-        if (reply) await say(String(posted.chat.id), reply);
+        if (reply) await sendChatMessage(botToken, String(posted.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
     }
@@ -326,7 +325,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const msg = update.message;
       const chatId = String(msg.chat!.id);
       if (msg.chat!.type !== "private" || !msg.from?.id || msg.sender_chat) {
-        await say(chatId, "Send your link code to me in a private chat, not in a group.");
+        await sendChatMessage(botToken, chatId, "Send your link code to me in a private chat, not in a group.");
         return NextResponse.json({ ok: true });
       }
       // Guessing is the unmitigated half of a six-character code; this is the

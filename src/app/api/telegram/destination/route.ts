@@ -64,16 +64,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // name any chat id the bot is in and publish their results into someone
     // else's group. The claim is the evidence: a code this user generated,
     // posted inside that chat, where only a member could put it.
-    // A room another account listens to is theirs to keep silent; posting
-    // reports into it would break that.
+    // A room the bot listens to, for anyone, is one it keeps silent in;
+    // posting reports there would break that.
     const { data: listeners } = await createAdminClient()
       .from("telegram_feeds")
       .select("user_id")
       .eq("chat_id", parsed.data.chat_id)
-      .neq("user_id", user.id)
       .limit(1);
     if ((listeners ?? []).length > 0) {
-      return NextResponse.json({ error: "That group is a signal room for another account." }, { status: 409 });
+      return NextResponse.json({ error: "That group is a signal room, where the bot stays silent. Use a different group for posters." }, { status: 409 });
     }
 
     // The newest DESTINATION claim: a person can also hold a feed claim for

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ingestFeedMessage } from "@/lib/telegram/feed";
+import { ingestFeedMessage, type Feed } from "@/lib/telegram/feed";
 import { feedStore } from "@/lib/telegram/feed-store";
 
 /**
@@ -51,15 +51,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Ownership: the row must be visible through the policy before it is touched.
     const { data: mine } = await supabase
       .from("telegram_feed_messages")
-      .select("chat_id, message_id, thread_id, reply_to_message_id, sender, sender_id, text, posted_at, edited")
+      .select("chat_id, message_id, thread_id, feed_id, status, reply_to_message_id, sender, sender_id, text, posted_at, edited")
       .eq("chat_id", chatId)
       .eq("message_id", messageId)
       .maybeSingle();
     if (!mine) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const admin = createAdminClient();
     if (action === "retry") {
-      // The same message through the listener again: the trade it needed may
-      // have arrived since, or the write that failed may succeed now.
+      // The same message through the listener again, for the feed it was
+      // recorded against and only while it is waiting: the trade it needed
+      // may have arrived since, or the write that failed may succeed now.
+      if (mine.status !== "review") {
+        return NextResponse.json({ error: "Only a message waiting for review can be retried." }, { status: 409 });
+      }
+      const { data: feedRow } = await admin
+        .from("telegram_feeds")
+        .select("*")
+        .eq("id", mine.feed_id as string)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!feedRow) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const feed: Feed = {
+        id: feedRow.id as string, chatId: feedRow.chat_id as string, threadId: (feedRow.thread_id as number | null) ?? null,
+        journalId: feedRow.journal_id as string, userId: feedRow.user_id as string, defaultLots: Number(feedRow.default_lots),
+        enabled: feedRow.enabled === true, react: feedRow.react === true,
+      };
       const outcome = await ingestFeedMessage(
         feedStore(admin),
         {
@@ -68,8 +84,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           text: (mine.text as string | null) ?? "", sender: (mine.sender as string | null) ?? null,
           senderId: (mine.sender_id as number | null) ?? null, postedAt: mine.posted_at as string, edited: false,
         },
-        new Date(),
-        { force: true },
+        { force: true, feed },
       );
       return NextResponse.json({ data: { chatId, messageId, outcome } });
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ingestFeedMessage, applyResult, consumedByFeed, stillRunning, ATTACH_WINDOW_HOURS,
+  ingestFeedMessage, applyResult, consumedByFeed, stillRunning, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
   type Feed, type FeedMessage, type FeedStore, type MessageRecord, type TradeRow,
 } from "@/lib/telegram/feed";
 import { parseResultUpdate } from "@/lib/telegram/result-update";
@@ -12,7 +12,6 @@ import { parseResultUpdate } from "@/lib/telegram/result-update";
  * person instead. Every finding of the adversarial review is a case.
  */
 
-const NOW = new Date("2026-09-05T10:00:00Z");
 const U = "11111111-2222-4333-8444-555555555555";
 const J = "aaaaaaaa-0000-4000-8000-000000000001";
 
@@ -37,12 +36,16 @@ function fake(o: Partial<FeedStore> = {}, f: Feed | null = feed): Fake {
     allowWrite: async () => true,
     // A trader is someone whose signal the feed accepted.
     isKnownSender: async (fd, senderId) => records.some((r) => r.feedId === fd.id && r.kind === "signal" && r.status === "applied" && r.senderId === senderId),
-    seen: async (_c, id) => { const r = records.find((x) => x.messageId === id); return r ? { kind: r.kind, status: r.status, tradeId: r.tradeId } : null; },
+    seen: async (_c, id) => { const r = records.find((x) => x.messageId === id); return r ? { kind: r.kind, status: r.status, tradeId: r.tradeId, text: r.text } : null; },
     record: async (r) => { const i = records.findIndex((x) => x.messageId === r.messageId); if (i >= 0) records[i] = r; else records.push(r); },
     tradeByMessage: async (fd, id) => { const t = byMessage.get(id); const tr = t ? trades.get(t) : null; return tr && inJournal(fd, tr) ? tr : null; },
     tradeById: async (fd, id) => { const tr = trades.get(id); return tr && inJournal(fd, tr) ? tr : null; },
-    recentTrades: async (fd, instrument, _since, limit) =>
-      [...trades.values()].filter((t) => inJournal(fd, t) && (!instrument || t.instrument === instrument)).reverse().slice(0, limit),
+    // The real query: this journal, this instrument if named, logged inside the window, newest first, capped.
+    recentTrades: async (fd, instrument, since, until, limit) =>
+      [...trades.values()]
+        .filter((t) => inJournal(fd, t) && (!instrument || t.instrument === instrument) && t.entry_time >= since && t.entry_time <= until)
+        .sort((a, b) => b.entry_time.localeCompare(a.entry_time))
+        .slice(0, limit),
     insertTrade: async (row) => {
       n += 1;
       const id = `t${n}`;
@@ -66,14 +69,14 @@ const TIG = "🔵BUY  XAUUSD\nENTRY: 4374\nSecond entry: 4369\n\nSL: 4360\nTP1: 
 const CHRIS = "🔴 SELL: BTC/USD\n\n📍 ENTRY ZONE: 64300-64400$\n\n🎯 TP1: 64000 (+400)\n🎯 TP2: 63600 (+800)\n🎯 TP3: 63300 (+1100)\n🎯 FINAL TP: Open\n\n🛑 SL: 65000 (-600)";
 
 async function withSignal(text = YOHAN, id = 21, f = fake()) {
-  await ingestFeedMessage(f.store, msg({ text, messageId: id }), NOW);
+  await ingestFeedMessage(f.store, msg({ text, messageId: id }));
   return f;
 }
 
 describe("a signal", () => {
   it("becomes an open trade in the feed's journal, sized by the feed, dated by the message", async () => {
     const f = fake();
-    const r = await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
     expect(r).toEqual({ action: "signal_logged", tradeId: "t1" });
     const t = f.trades.get("t1") as unknown as Record<string, unknown>;
     expect(t).toMatchObject({
@@ -89,7 +92,7 @@ describe("a signal", () => {
 
   it("is logged once however often Telegram delivers it", async () => {
     const f = await withSignal(TIG, 5);
-    expect(await ingestFeedMessage(f.store, msg({ text: TIG, messageId: 5 }), NOW)).toEqual({ action: "skipped", why: "seen" });
+    expect(await ingestFeedMessage(f.store, msg({ text: TIG, messageId: 5 }))).toEqual({ action: "skipped", why: "seen" });
     expect(f.trades.size).toBe(1);
   });
 
@@ -104,7 +107,7 @@ describe("a signal", () => {
   it("keeps a signal the grammar refuses for a person, with the reason", async () => {
     const broken = "🔴 SELL: BTC/USD\n\n📍 ENTRY ZONE: 64500-64600\n\n🎯 TP1: 64200 (+400)\n🎯 TP2: 63800 (+800)\n🎯 TP3: 63500 (+1100)\n🎯 FINAL TP: Open\n\n🛑 SL: 64100 (-500)";
     const f = fake();
-    const r = await ingestFeedMessage(f.store, msg({ text: broken, messageId: 9 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: broken, messageId: 9 }));
     expect(r.action).toBe("review");
     expect(f.records[0]).toMatchObject({ kind: "unreadable", status: "review" });
     expect(f.trades.size).toBe(0);
@@ -112,38 +115,38 @@ describe("a signal", () => {
 
   it("updates the plan when the signal is edited before any result", async () => {
     const f = await withSignal(TIG, 5);
-    const r = await ingestFeedMessage(f.store, msg({ text: TIG.replace("SL: 4360", "SL: 4362"), messageId: 5, edited: true }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: TIG.replace("SL: 4360", "SL: 4362"), messageId: 5, edited: true }));
     expect(r).toEqual({ action: "signal_updated", tradeId: "t1" });
     expect(f.trades.get("t1")?.stop_loss).toBe(4362);
   });
 
   it("keeps a signal edited into a cancellation for a person, and the trade stays", async () => {
     const f = await withSignal(TIG, 5);
-    const r = await ingestFeedMessage(f.store, msg({ text: "❌ CANCELLED — do not take this one", messageId: 5, edited: true }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "❌ CANCELLED — do not take this one", messageId: 5, edited: true }));
     expect(r).toMatchObject({ action: "review" });
     expect(f.records.at(-1)?.reason).toMatch(/edited into something else/);
     expect(f.trades.size).toBe(1);
   });
 
   it("does nothing in a room with no feed, or a paused one", async () => {
-    expect(await ingestFeedMessage(fake({}, null).store, msg({ text: YOHAN }), NOW)).toEqual({ action: "skipped", why: "no_feed" });
-    expect(await ingestFeedMessage(fake({}, { ...feed, enabled: false }).store, msg({ text: YOHAN }), NOW)).toEqual({ action: "skipped", why: "disabled" });
+    expect(await ingestFeedMessage(fake({}, null).store, msg({ text: YOHAN }))).toEqual({ action: "skipped", why: "no_feed" });
+    expect(await ingestFeedMessage(fake({}, { ...feed, enabled: false }).store, msg({ text: YOHAN }))).toEqual({ action: "skipped", why: "disabled" });
   });
 
   it("finds a topic's feed, and falls back to the whole chat's", async () => {
     const topicFeed = { ...feed, threadId: 42 };
     const f = fake({}, topicFeed);
-    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, threadId: 42 }), NOW)).action).toBe("signal_logged");
-    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, threadId: 43, messageId: 2 }), NOW)).action).toBe("skipped");
+    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, threadId: 42 }))).action).toBe("signal_logged");
+    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, threadId: 43, messageId: 2 }))).action).toBe("skipped");
     const whole = fake({}, feed);
-    expect((await ingestFeedMessage(whole.store, msg({ text: YOHAN, threadId: 43 }), NOW)).action).toBe("signal_logged");
+    expect((await ingestFeedMessage(whole.store, msg({ text: YOHAN, threadId: 43 }))).action).toBe("signal_logged");
   });
 });
 
 describe("results", () => {
   it("marks the target hit on the trade the reply answers, closes it there, with the currency", async () => {
     const f = await withSignal();
-    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips\nYou can protect at BE", messageId: 23, replyToMessageId: 21, postedAt: "2026-09-04T15:00:00.000Z" }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips\nYou can protect at BE", messageId: 23, replyToMessageId: 21, postedAt: "2026-09-04T15:00:00.000Z" }));
     expect(r).toEqual({ action: "result_applied", tradeId: "t1", closed: true });
     const t = f.trades.get("t1")!;
     expect(t.tp1_result).toBe("hit");
@@ -156,8 +159,8 @@ describe("results", () => {
 
   it("banks targets in order, closes at the furthest, and moves the close time with it", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21, postedAt: "2026-09-04T15:00:00.000Z" }), NOW);
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 HIT +30 pips", messageId: 24, replyToMessageId: 21, postedAt: "2026-09-04T22:00:00.000Z" }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21, postedAt: "2026-09-04T15:00:00.000Z" }));
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 HIT +30 pips", messageId: 24, replyToMessageId: 21, postedAt: "2026-09-04T22:00:00.000Z" }));
     const t = f.trades.get("t1")!;
     expect([t.tp1_result, t.tp2_result, t.tp3_result]).toEqual(["hit", "hit", "hit"]);
     expect(t.exit_price).toBe(163.43);
@@ -166,8 +169,8 @@ describe("results", () => {
 
   it("puts a stop after a hit on the runner, and the banked exit stands", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
-    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 24, replyToMessageId: 21 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 24, replyToMessageId: 21 }));
     const t = f.trades.get("t1")!;
     expect(t.tp1_result).toBe("hit");
     expect(t.tp2_result).toBe("sl");
@@ -176,7 +179,7 @@ describe("results", () => {
 
   it("a stop with nothing banked closes the trade at the stop", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21 }));
     const t = f.trades.get("t1")!;
     expect(t.tp1_result).toBe("sl");
     expect(t.exit_price).toBe(163.83);
@@ -185,25 +188,65 @@ describe("results", () => {
 
   it("never turns a recorded loss into a win: a later hit goes to review", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21 }), NOW);
-    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP2 HIT +20 pips", messageId: 24, replyToMessageId: 21 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21 }));
+    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP2 HIT +20 pips", messageId: 24, replyToMessageId: 21 }));
     expect(r.action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/contradicts the stop/);
     expect(f.trades.get("t1")?.tp1_result).toBe("sl");
   });
 
-  it("reads TIG's 'close first entry at BE' then the hit that follows", async () => {
+  it("keeps TIG's 'close first entry at BE' while the second runs for a person, then takes the hit", async () => {
     const f = await withSignal(TIG, 5);
-    await ingestFeedMessage(f.store, msg({ text: "Second entry is currently running with +70 pips, Book partial 🤑✅\n\nMove SL to 4336✅\n\nClose first entry at BE✅", messageId: 6, replyToMessageId: 5 }), NOW);
+    const part = await ingestFeedMessage(f.store, msg({ text: "Second entry is currently running with +70 pips, Book partial 🤑✅\n\nMove SL to 4336✅\n\nClose first entry at BE✅", messageId: 6, replyToMessageId: 5 }));
+    expect(part.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/part of the position/);
+    expect(f.trades.get("t1")?.tp1_result).toBeNull();
+    const hit = await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅\n\nMake trade risk free if you want🤝", messageId: 7, replyToMessageId: 5 }));
+    expect(hit.action).toBe("result_applied");
+    expect(f.trades.get("t1")?.tp1_result).toBe("hit");
+  });
+
+  it("never turns a recorded breakeven into a loss, or a loss into a breakeven", async () => {
+    const f = await withSignal();
+    await ingestFeedMessage(f.store, msg({ text: "Closed at BE ✅", messageId: 23, replyToMessageId: 21 }));
     expect(f.trades.get("t1")?.tp1_result).toBe("be");
-    // A hit on a slot that holds a breakeven is a contradiction, not an upgrade.
-    const r = await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅\n\nMake trade risk free if you want🤝", messageId: 7, replyToMessageId: 5 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 24, replyToMessageId: 21 }));
     expect(r.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/stop reported where a breakeven/);
+    expect(f.trades.get("t1")?.tp1_result).toBe("be");
+  });
+
+  it("keeps a stop that comes with its own close price for a person", async () => {
+    const f = await withSignal();
+    const r = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT, closed at 163.85", messageId: 23, replyToMessageId: 21 }));
+    expect(r.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/stopped with a close at 163.85/);
+  });
+
+  it("treats a trade closed at a stated price as finished", async () => {
+    const f = await withSignal(TIG, 5);
+    expect((await ingestFeedMessage(f.store, msg({ text: "Closed at 4371 ✅", messageId: 6, replyToMessageId: 5 }))).action).toBe("result_applied");
+    expect(f.trades.get("t1")?.exit_price).toBe(4371);
+    expect((await ingestFeedMessage(f.store, msg({ text: "Closed at 4371 ✅", messageId: 7, replyToMessageId: 5 }))).action).toBe("noise");
+    const later = await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅", messageId: 8, replyToMessageId: 5 }));
+    expect(later.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/already closed at 4371/);
+    expect(f.trades.get("t1")?.exit_price).toBe(4371);
+    expect(f.trades.get("t1")?.tp1_result).toBeNull();
+  });
+
+  it("measures a single target's tolerance from the distance to entry, not a percentage", async () => {
+    const one = "🔴 SELL: BTC/USD\n\n📍 ENTRY ZONE: 64350\n\n🎯 TP1: 64000\n\n🛑 SL: 64600";
+    const f = await withSignal(one, 50);
+    expect(f.trades.get("t1")?.tp1).toBe(64000);
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP 63900 HIT", messageId: 51, replyToMessageId: 50 }))).action).toBe("review");
+    expect(f.trades.get("t1")?.tp1_result).toBeNull();
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP 63990 HIT", messageId: 52, replyToMessageId: 50 }))).action).toBe("result_applied");
   });
 
   it("matches Chris's price-named targets to the trade's slots", async () => {
     const f = await withSignal(CHRIS, 31);
-    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP 63600 HIT (+800)", messageId: 34, replyToMessageId: 31 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP 63600 HIT (+800)", messageId: 34, replyToMessageId: 31 }));
     expect(r.action).toBe("result_applied");
     const t = f.trades.get("t1")!;
     expect([t.tp1_result, t.tp2_result, t.tp3_result]).toEqual(["hit", "hit", null]);
@@ -212,58 +255,58 @@ describe("results", () => {
 
   it("reads a target line whose only verb is the positive result", async () => {
     const f = await withSignal(CHRIS, 31);
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 63300 ( +1100 pips )", messageId: 35, replyToMessageId: 31 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 63300 ( +1100 pips )", messageId: 35, replyToMessageId: 31 }));
     expect(f.trades.get("t1")?.exit_price).toBe(63300);
   });
 
   it("keeps a price that matches no target, the entry price, or a price between targets, for a person", async () => {
     const f = await withSignal(CHRIS, 31);
-    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP 61000 HIT (+3300)", messageId: 36, replyToMessageId: 31 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP 61000 HIT (+3300)", messageId: 36, replyToMessageId: 31 }))).action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/no target at 61000/);
     const y = await withSignal();
-    expect((await ingestFeedMessage(y.store, msg({ text: "🎯 TP 163.730 HIT", messageId: 40, replyToMessageId: 21 }), NOW)).action).toBe("review");
-    expect((await ingestFeedMessage(y.store, msg({ text: "🎯 TP 163.58 HIT", messageId: 41, replyToMessageId: 21 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(y.store, msg({ text: "🎯 TP 163.730 HIT", messageId: 40, replyToMessageId: 21 }))).action).toBe("review");
+    expect((await ingestFeedMessage(y.store, msg({ text: "🎯 TP 163.58 HIT", messageId: 41, replyToMessageId: 21 }))).action).toBe("review");
     expect(y.records.at(-1)?.reason).toMatch(/between targets/);
     expect(y.trades.get("t1")?.tp1_result).toBeNull();
   });
 
   it("keeps an index whose stated price disagrees with the trade for a person", async () => {
     const f = await withSignal(CHRIS, 31);
-    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 61000 HIT (+3300 PIPS)", messageId: 36, replyToMessageId: 31 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 61000 HIT (+3300 PIPS)", messageId: 36, replyToMessageId: 31 }));
     expect(r.action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/TP1 was reported at 61000 but the trade's TP1 is 64000/);
   });
 
   it("keeps a hit reported with a negative pips figure for a person", async () => {
     const f = await withSignal(TIG, 5);
-    const r = await ingestFeedMessage(f.store, msg({ text: "TP1 HIT -900 pips", messageId: 6, replyToMessageId: 5 }), NOW);
+    const r = await ingestFeedMessage(f.store, msg({ text: "TP1 HIT -900 pips", messageId: 6, replyToMessageId: 5 }));
     expect(r.action).toBe("review");
     expect(f.trades.get("t1")?.tp1_result).toBeNull();
   });
 
   it("keeps an explicit close after targets were hit for a person", async () => {
     const f = await withSignal(TIG, 5);
-    await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅", messageId: 6, replyToMessageId: 5 }), NOW);
-    const r = await ingestFeedMessage(f.store, msg({ text: "Closed at 4371 ✅", messageId: 7, replyToMessageId: 5 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅", messageId: 6, replyToMessageId: 5 }));
+    const r = await ingestFeedMessage(f.store, msg({ text: "Closed at 4371 ✅", messageId: 7, replyToMessageId: 5 }));
     expect(r.action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/closed at 4371 after targets were hit/);
   });
 
   it("follows a reply to a reply, and a reply through chat, back to the trade", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
-    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP2 HIT +20 pips", messageId: 25, replyToMessageId: 23 }), NOW)).action).toBe("result_applied");
-    expect((await ingestFeedMessage(f.store, msg({ text: "nice one boss 🙏", messageId: 26, replyToMessageId: 21 }), NOW)).action).toBe("noise");
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP2 HIT +20 pips", messageId: 25, replyToMessageId: 23 }))).action).toBe("result_applied");
+    expect((await ingestFeedMessage(f.store, msg({ text: "nice one boss 🙏", messageId: 26, replyToMessageId: 21 }))).action).toBe("noise");
     expect(f.records.find((r) => r.messageId === 26)).toMatchObject({ kind: "noise", status: "ignored", tradeId: "t1" });
-    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 HIT +30 pips", messageId: 27, replyToMessageId: 26 }), NOW)).action).toBe("result_applied");
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP3 HIT +30 pips", messageId: 27, replyToMessageId: 26 }))).action).toBe("result_applied");
     expect(f.trades.get("t1")?.tp3_result).toBe("hit");
   });
 
   it("attaches an unlinked result to the one running trade for its instrument, even when partly banked", async () => {
     const f = await withSignal(TIG, 5);
-    await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅", messageId: 6, replyToMessageId: 5 }), NOW);
-    await ingestFeedMessage(f.store, msg({ text: CHRIS, messageId: 40 }), NOW);
-    const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD TP2 hit ✅ +110 pips", messageId: 41 }), NOW);
+    await ingestFeedMessage(f.store, msg({ text: "Tp1 hits with +60pips✅", messageId: 6, replyToMessageId: 5 }));
+    await ingestFeedMessage(f.store, msg({ text: CHRIS, messageId: 40 }));
+    const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD TP2 hit ✅ +110 pips", messageId: 41 }));
     expect(r).toMatchObject({ action: "result_applied", tradeId: "t1" });
     expect(f.trades.get("t1")?.tp2_result).toBe("hit");
     expect(f.trades.get("t2")?.tp1_result).toBeNull();
@@ -271,55 +314,84 @@ describe("results", () => {
 
   it("asks when more than one trade is running, and when none is named and several run", async () => {
     const f = await withSignal(TIG, 5);
-    await ingestFeedMessage(f.store, msg({ text: TIG.replace("4374", "4372"), messageId: 8 }), NOW);
-    expect((await ingestFeedMessage(f.store, msg({ text: "XAUUSD TP1 hit", messageId: 9 }), NOW)).action).toBe("review");
+    await ingestFeedMessage(f.store, msg({ text: TIG.replace("4374", "4372"), messageId: 8 }));
+    expect((await ingestFeedMessage(f.store, msg({ text: "XAUUSD TP1 hit", messageId: 9 }))).action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/more than one XAUUSD trade/);
-    expect((await ingestFeedMessage(f.store, msg({ text: "SL HIT ❌", messageId: 10 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(f.store, msg({ text: "SL HIT ❌", messageId: 10 }))).action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/no instrument named/);
     const one = await withSignal(TIG, 5);
-    expect((await ingestFeedMessage(one.store, msg({ text: "SL HIT ❌", messageId: 10 }), NOW)).action).toBe("result_applied");
+    expect((await ingestFeedMessage(one.store, msg({ text: "SL HIT ❌", messageId: 10 }))).action).toBe("result_applied");
   });
 
   it("keeps a result with nothing open for a person, and retries it once the signal is there", async () => {
     const f = fake();
     const early = msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 });
-    expect(await ingestFeedMessage(f.store, early, NOW)).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
-    await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }), NOW);
-    expect(await ingestFeedMessage(f.store, early, NOW)).toEqual({ action: "skipped", why: "seen" });
-    expect((await ingestFeedMessage(f.store, early, NOW, { force: true })).action).toBe("result_applied");
+    expect(await ingestFeedMessage(f.store, early)).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
+    expect(await ingestFeedMessage(f.store, early)).toEqual({ action: "skipped", why: "seen" });
+    expect((await ingestFeedMessage(f.store, early, { force: true })).action).toBe("result_applied");
   });
 
   it("takes results only from a trader of the room, or from the channel itself", async () => {
     const f = await withSignal();
-    const stranger = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21, sender: "Random Member", senderId: 777 }), NOW);
+    const stranger = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21, sender: "Random Member", senderId: 777 }));
     expect(stranger.action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/has not posted a signal/);
     expect(f.trades.get("t1")?.tp1_result).toBeNull();
-    const channel = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 24, replyToMessageId: 21, sender: "TIG master channel", senderId: null }), NOW);
+    const channel = await ingestFeedMessage(f.store, msg({ text: "🛑 SL HIT (-10pips)", messageId: 24, replyToMessageId: 21, sender: "TIG master channel", senderId: null }));
     expect(channel.action).toBe("result_applied");
   });
 
   it("ignores a repeated update that changes nothing, and advice that is not a result", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
-    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 24, replyToMessageId: 21 }), NOW)).action).toBe("noise");
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 24, replyToMessageId: 21 }))).action).toBe("noise");
     expect(f.records.at(-1)).toMatchObject({ status: "ignored" });
-    expect((await ingestFeedMessage(f.store, msg({ text: "Make trade risk free if you want🤝", messageId: 26, replyToMessageId: 21 }), NOW)).action).toBe("noise");
-    expect((await ingestFeedMessage(f.store, msg({ text: "Ready", messageId: 27 }), NOW)).action).toBe("noise");
+    expect((await ingestFeedMessage(f.store, msg({ text: "Make trade risk free if you want🤝", messageId: 26, replyToMessageId: 21 }))).action).toBe("noise");
+    expect((await ingestFeedMessage(f.store, msg({ text: "Ready", messageId: 27 }))).action).toBe("noise");
   });
 
   it("leaves an applied result alone when re-edited unchanged, and asks when it changed", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
-    const before = f.records.find((r) => r.messageId === 23);
-    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21, edited: true }), NOW)).action).toBe("review");
-    expect(before?.status).toBe("applied");
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    expect(await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21, edited: true }))).toEqual({ action: "skipped", why: "seen" });
+    expect(f.records.find((r) => r.messageId === 23)?.status).toBe("applied");
+    expect((await ingestFeedMessage(f.store, msg({ text: "🎯 TP2 HIT +20 pips", messageId: 23, replyToMessageId: 21, edited: true }))).action).toBe("review");
+    expect(f.records.find((r) => r.messageId === 23)?.status).toBe("review");
+    expect(f.trades.get("t1")?.tp2_result).toBeNull();
+  });
+
+  it("asks when a result names more than one instrument", async () => {
+    const f = await withSignal(TIG, 5);
+    const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD TP1 hit ✅ EURUSD TP1 hit ✅", messageId: 9 }));
+    expect(r.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/more than one instrument named/);
+    expect(f.trades.get("t1")?.tp1_result).toBeNull();
+  });
+
+  it("asks rather than pick from a window too full to have looked through", async () => {
+    const f = await withSignal(TIG, 5);
+    const crowd = Array.from({ length: ATTACH_CANDIDATES }, () => f.trades.get("t1")!);
+    f.store.recentTrades = async () => crowd;
+    const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD SL HIT ❌", messageId: 9 }));
+    expect(r.action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/too many trades/);
+  });
+
+  it("looks back from the message's own time, not forever", async () => {
+    const f = fake();
+    await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21, postedAt: "2026-08-28T14:00:00.000Z" }));
+    const r = await ingestFeedMessage(f.store, msg({ text: "USDJPY 🛑 SL HIT", messageId: 30, postedAt: "2026-09-04T14:00:00.000Z" }));
+    expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    const g = fake();
+    await ingestFeedMessage(g.store, msg({ text: YOHAN, messageId: 21, postedAt: "2026-09-01T14:00:00.000Z" }));
+    expect((await ingestFeedMessage(g.store, msg({ text: "USDJPY 🛑 SL HIT", messageId: 30, postedAt: "2026-09-04T14:00:00.000Z" }))).action).toBe("result_applied");
   });
 
   it("keeps an edit to a signal that already has results for a person", async () => {
     const f = await withSignal();
-    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
-    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN.replace("163.730", "163.700"), messageId: 21, edited: true }), NOW)).action).toBe("review");
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN.replace("163.730", "163.700"), messageId: 21, edited: true }))).action).toBe("review");
   });
 });
 
@@ -330,23 +402,23 @@ describe("guards", () => {
     const g = fake({}, other);
     g.trades.set("t1", f.trades.get("t1")!);
     g.byMessage.set(21, "t1");
-    const r = await ingestFeedMessage(g.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }), NOW);
+    const r = await ingestFeedMessage(g.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
     expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
     expect(g.updates).toHaveLength(0);
   });
 
   it("keeps the message when its owner can no longer write, or the check could not be made", async () => {
     const no = fake({ mayWrite: async () => false });
-    expect((await ingestFeedMessage(no.store, msg({ text: YOHAN, messageId: 21 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(no.store, msg({ text: YOHAN, messageId: 21 }))).action).toBe("review");
     expect(no.trades.size).toBe(0);
     const blip = fake({ mayWrite: async () => null });
-    expect((await ingestFeedMessage(blip.store, msg({ text: YOHAN, messageId: 21 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(blip.store, msg({ text: YOHAN, messageId: 21 }))).action).toBe("review");
     expect(blip.records.at(-1)?.reason).toMatch(/couldn't check/);
   });
 
   it("keeps a message over the room's allowance for a person, without pausing the room", async () => {
     const f = fake({ allowWrite: async () => false });
-    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }), NOW)).action).toBe("review");
+    expect((await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }))).action).toBe("review");
     expect(f.trades.size).toBe(0);
     expect(f.records.at(-1)?.reason).toMatch(/too many/);
   });
