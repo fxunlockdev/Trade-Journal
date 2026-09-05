@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ingestFeedMessage, type Feed } from "@/lib/telegram/feed";
+import { ingestFeedMessage, wantsMark, type Feed } from "@/lib/telegram/feed";
+import { reactToMessage } from "@/lib/telegram/chat";
+import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
 import { feedStore } from "@/lib/telegram/feed-store";
 
 /**
@@ -86,6 +88,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         { force: true, feed },
       );
+      // A retry that landed gets the same mark a first pass would have.
+      const botToken = telegramBotToken();
+      if (botToken && wantsMark(outcome)) await reactToMessage(botToken, chatId, messageId);
       return NextResponse.json({ data: { chatId, messageId, outcome } });
     }
     const { error: updateError } = await admin

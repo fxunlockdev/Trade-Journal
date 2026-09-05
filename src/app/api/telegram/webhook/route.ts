@@ -15,6 +15,7 @@ import {
   getChatMemberStatus,
   sendChatMessage,
   answerCallback,
+  reactToMessage,
   clearButtons,
   type InlineButton,
 } from "@/lib/telegram/chat";
@@ -22,7 +23,7 @@ import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
 import { secretMatches } from "@/lib/telegram/webhook-secret";
 import { topicOf } from "@/lib/telegram/topics";
 import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
-import { ingestFeedMessage, consumedByFeed } from "@/lib/telegram/feed";
+import { ingestFeedMessage, consumedByFeed, wantsMark } from "@/lib/telegram/feed";
 import { feedStore, anyFeedIn } from "@/lib/telegram/feed-store";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
@@ -292,6 +293,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const roomMessage = feedMessageFromUpdate(update);
     if (roomMessage && !findClaimCode(roomMessage.text) && !parseCommand(roomMessage.text)) {
       const outcome = await ingestFeedMessage(feedStore(admin), roomMessage);
+      // The one thing the bot does in a room it hears: a reaction on a
+      // message it logged, if the room asked for one. Best effort; a chat
+      // with reactions off simply shows nothing.
+      if (wantsMark(outcome)) await reactToMessage(botToken, roomMessage.chatId, roomMessage.messageId);
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }
     // In a room somebody listens to, the bot does nothing else at all: no

@@ -38,6 +38,7 @@ export interface Feed {
   readonly userId: string;
   readonly defaultLots: number;
   readonly enabled: boolean;
+  /** Leave a reaction on each message logged, so the room can see it landed. */
   readonly react: boolean;
 }
 
@@ -109,9 +110,10 @@ export interface FeedStore {
 export type IngestOutcome =
   | { readonly action: "skipped"; readonly why: "no_feed" | "disabled" | "seen" | "empty" }
   | { readonly action: "noise" }
-  | { readonly action: "signal_logged"; readonly tradeId: string }
+  /** `react`: the room asked for a mark on messages it logged. */
+  | { readonly action: "signal_logged"; readonly tradeId: string; readonly react: boolean }
   | { readonly action: "signal_updated"; readonly tradeId: string }
-  | { readonly action: "result_applied"; readonly tradeId: string; readonly closed: boolean }
+  | { readonly action: "result_applied"; readonly tradeId: string; readonly closed: boolean; readonly react: boolean }
   | { readonly action: "review"; readonly reason: string };
 
 export interface IngestOptions {
@@ -422,7 +424,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       return { action: "review", reason: inserted.error };
     }
     await store.record(record(feed, msg, "signal", "applied", null, inserted.id));
-    return { action: "signal_logged", tradeId: inserted.id };
+    return { action: "signal_logged", tradeId: inserted.id, react: feed.react };
   }
 
   // The message used to be a signal and is not one any more: a trader
@@ -512,7 +514,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       ...(applied.closed ? { exit_time: msg.postedAt } : {}),
     });
     await store.record(record(feed, msg, "result", ok ? "applied" : "review", ok ? null : "could not update the trade", trade.id));
-    return ok ? { action: "result_applied", tradeId: trade.id, closed: applied.closed } : { action: "review", reason: "could not update the trade" };
+    return ok ? { action: "result_applied", tradeId: trade.id, closed: applied.closed, react: feed.react } : { action: "review", reason: "could not update the trade" };
   }
 
   /* ── a broken signal, or chat ─────────────────────────────────────── */
@@ -528,6 +530,11 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     if (parent) await store.record(record(feed, msg, "noise", "ignored", null, parent));
   }
   return { action: "noise" };
+}
+
+/** Whether the outcome is one the room asked to see marked. */
+export function wantsMark(outcome: IngestOutcome): boolean {
+  return (outcome.action === "signal_logged" || outcome.action === "result_applied") && outcome.react;
 }
 
 /**

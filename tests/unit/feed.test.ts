@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ingestFeedMessage, applyResult, consumedByFeed, stillRunning, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
+  ingestFeedMessage, applyResult, consumedByFeed, wantsMark, stillRunning, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
   type Feed, type FeedMessage, type FeedStore, type MessageRecord, type TradeRow,
 } from "@/lib/telegram/feed";
 import { parseResultUpdate } from "@/lib/telegram/result-update";
@@ -79,7 +79,7 @@ describe("a signal", () => {
   it("becomes an open trade in the feed's journal, sized by the feed, dated by the message", async () => {
     const f = fake();
     const r = await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
-    expect(r).toEqual({ action: "signal_logged", tradeId: "t1" });
+    expect(r).toEqual({ action: "signal_logged", tradeId: "t1", react: false });
     const t = f.trades.get("t1") as unknown as Record<string, unknown>;
     expect(t).toMatchObject({
       user_id: U, journal_id: J, source: "telegram",
@@ -149,7 +149,7 @@ describe("results", () => {
   it("marks the target hit on the trade the reply answers, closes it there, with the currency", async () => {
     const f = await withSignal();
     const r = await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips\nYou can protect at BE", messageId: 23, replyToMessageId: 21, postedAt: "2026-09-04T15:00:00.000Z" }));
-    expect(r).toEqual({ action: "result_applied", tradeId: "t1", closed: true });
+    expect(r).toEqual({ action: "result_applied", tradeId: "t1", closed: true, react: false });
     const t = f.trades.get("t1")!;
     expect(t.tp1_result).toBe("hit");
     expect(t.exit_price).toBe(163.63);
@@ -446,10 +446,23 @@ describe("guards", () => {
   });
 
   it("only takes a message the feed actually used, so the room keeps its commands", () => {
-    expect(consumedByFeed({ action: "signal_logged", tradeId: "t" })).toBe(true);
+    expect(consumedByFeed({ action: "signal_logged", tradeId: "t", react: false })).toBe(true);
     expect(consumedByFeed({ action: "review", reason: "x" })).toBe(true);
     expect(consumedByFeed({ action: "noise" })).toBe(false);
     expect(consumedByFeed({ action: "skipped", why: "disabled" })).toBe(false);
+  });
+
+  it("asks for a mark only on what it logged, and only when the room wants one", async () => {
+    const marking = fake({}, { ...feed, react: true });
+    const logged = await ingestFeedMessage(marking.store, msg({ text: YOHAN, messageId: 21 }));
+    expect(logged).toEqual({ action: "signal_logged", tradeId: "t1", react: true });
+    expect(wantsMark(logged)).toBe(true);
+    const applied = await ingestFeedMessage(marking.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    expect(wantsMark(applied)).toBe(true);
+    expect(wantsMark(await ingestFeedMessage(marking.store, msg({ text: "nice one boss", messageId: 24, replyToMessageId: 21 })))).toBe(false);
+    expect(wantsMark(await ingestFeedMessage(marking.store, msg({ text: "🎯 TP 61000 HIT", messageId: 25, replyToMessageId: 21 })))).toBe(false);
+    const quiet = await withSignal();
+    expect(wantsMark(await ingestFeedMessage(quiet.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 })))).toBe(false);
   });
 
   it("covers a weekend", () => {

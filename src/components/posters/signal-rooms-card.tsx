@@ -20,7 +20,7 @@ interface SourceTopic { readonly threadId: number; readonly name: string | null;
 interface Source { readonly chatId: string; readonly chatType: string; readonly title: string; readonly topics: readonly SourceTopic[] }
 interface FeedView {
   readonly id: string; readonly chatId: string; readonly threadId: number | null; readonly title: string | null;
-  readonly journalId: string; readonly defaultLots: number; readonly enabled: boolean; readonly connectedAt: string;
+  readonly journalId: string; readonly defaultLots: number; readonly enabled: boolean; readonly react: boolean; readonly connectedAt: string;
   readonly counts: { readonly applied: number; readonly review: number };
 }
 interface ReviewItem {
@@ -152,7 +152,7 @@ export function SignalRoomsCard({ journals }: Props) {
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Signal rooms</p>
           <p className="text-sm text-muted-foreground">
             The bot listens in a room and logs its signals and results into a journal, silently. Traders post as they
-            always have; nothing is asked and nothing is posted back.
+            always have; nothing is asked and nothing is posted back, only a ✍ reaction on each message it logged.
           </p>
         </div>
 
@@ -167,6 +167,9 @@ export function SignalRoomsCard({ journals }: Props) {
                     {f.counts.review > 0 ? ` · ${f.counts.review} to review` : ""} · since {formatWhen(f.connectedAt)}
                   </p>
                 </div>
+                <Button type="button" size="sm" variant="outline" disabled={busy === f.id} onClick={() => void patch(f.id, { react: !f.react })} title="React with ✍ on each message the bot logs">
+                  {f.react ? "Marking ✍" : "Not marking"}
+                </Button>
                 <Button type="button" size="sm" variant="outline" disabled={busy === f.id} onClick={() => void patch(f.id, { enabled: !f.enabled })}>
                   {f.enabled ? "Pause" : "Resume"}
                 </Button>
