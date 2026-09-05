@@ -130,7 +130,7 @@ const DIR = "(?:buy|bought|sell|long|short|shorted)";
  * verb: "out at 66000", "closed at 3348" and "stopped at 3332" are exits, and
  * reading them as entries publishes a trade with its result as its start.
  */
-const MARKER = "(?:entry|@|(?<!\\b(?:closed?|exit(?:ed)?|out|stopped|hit|took)\\s+)at)";
+const MARKER = "(?:entry(?:\\s+zone|\\s+price)?|@|(?<!\\b(?:closed?|exit(?:ed)?|out|stopped|hit|took)\\s+)at)";
 /** "0.5 lots" between the direction and the price is a size, not the price. */
 const LOT_SKIP = `(?:${PRICE}\\s*lots?\\s+)?`;
 
@@ -169,7 +169,8 @@ function findEntry(
     // carry ("BTC/USDT"). Match the canonical symbol loosely rather than the
     // one spelling.
     const sym = looseSymbol(instrument);
-    for (const head of [`${sym}\\s+${DIR}`, `${DIR}\\s+${sym}`]) {
+    // "SELL: USD/JPY" and "XAUUSD: buy" carry a colon between the two.
+    for (const head of [`${sym}\\s*:?\\s+${DIR}`, `${DIR}\\s*:?\\s+${sym}`]) {
       const lead = `${head}\\s+${LOT_SKIP}(?:${MARKER}\\s*:?\\s*)?`;
       const range = readRange(text.match(new RegExp(`${lead}${RANGE_G}`, "i")));
       if (range) return range;
@@ -267,6 +268,10 @@ function findTps(text: string): {
       tps[key] = n;
     }
   }
+
+  // "FINAL TP: Open" is the runner in the Yohan/Chris template: three priced
+  // targets and an open fourth, the same shape as "TP4: open".
+  if (/\bfinal\s+tp\s*:?\s*(?:open|running|runner|trail)/i.test(text)) tp4Trailing = true;
 
   // If no numbered TPs found, try slashed or comma-separated list after TP/target.
   const anyFound = Object.values(tps).some((v) => v != null);
