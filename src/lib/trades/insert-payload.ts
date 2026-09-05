@@ -17,6 +17,13 @@ export interface TradeOwnership {
   readonly userId: string;
   /** Resolved and membership-checked by the caller, never from the body. */
   readonly journalId: string;
+  /**
+   * How the trade entered the system. "manual" for everything a person typed
+   * (the form, the chat, the bot's DM); "telegram" only for the feed listener,
+   * which is server code reading a room, so a caller cannot claim it from a
+   * request body. Broker provenance ("csv", "mt5_webhook") is never set here.
+   */
+  readonly source?: "manual" | "telegram";
 }
 
 /**
@@ -33,11 +40,11 @@ export interface TradeOwnership {
 export function tradeInsertPayload<T extends object>(
   computed: T,
   ownership: TradeOwnership,
-): T & { user_id: string; journal_id: string; source: "manual" } {
+): T & { user_id: string; journal_id: string; source: "manual" | "telegram" } {
   return {
     ...computed,
     user_id: ownership.userId,
     journal_id: ownership.journalId,
-    source: "manual" as const,
+    source: ownership.source ?? "manual",
   };
 }

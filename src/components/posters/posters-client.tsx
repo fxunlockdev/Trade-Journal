@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SignalRoomsCard } from "@/components/posters/signal-rooms-card";
 import { useRouter } from "next/navigation";
 import { Copy, Download, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
@@ -772,6 +773,7 @@ export function PostersClient({
           </Card>
 
           <TelegramDestinationCard destination={destination} />
+          <SignalRoomsCard journals={journals} />
 
           <Card className="border-border bg-card">
             <CardContent className="space-y-2 pt-6 text-xs">

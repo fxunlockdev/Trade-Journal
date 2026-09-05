@@ -9,7 +9,7 @@ const assetTypes = [
   "index",
 ] as const;
 const directions = ["buy", "sell"] as const;
-const sources = ["manual", "csv", "mt5_webhook"] as const;
+const sources = ["manual", "csv", "mt5_webhook", "telegram"] as const;
 const orderTypes = ["market", "limit", "stop"] as const;
 const tpResults = ["hit", "be", "sl"] as const;
 

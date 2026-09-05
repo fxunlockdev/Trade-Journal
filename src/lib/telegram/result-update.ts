@@ -19,6 +19,8 @@ import { PRICE, NOT_A_PRICE_AFTER, parsePrice } from "@/lib/trades/parse-price";
 export interface ResultUpdate {
   /** Targets named as hit by index: "TP1 HIT", "Tp1 hits", "hit tp2". */
   readonly hits: readonly number[];
+  /** "TP1 64000 HIT": the index AND the price the writer put beside it. */
+  readonly indexedHits: readonly { readonly index: number; readonly price: number }[];
   /** Targets named as hit by PRICE with no index: "TP 65200 HIT", "TP HIT (4105)". */
   readonly hitPrices: readonly number[];
   /** "TP3 64000 ( +1000 pips )": a target line with a positive result and no verb. */
@@ -39,7 +41,7 @@ const HIT_VERB = String.raw`(?:hits?|reached|done|taken|filled|achieved|smashed)
 
 /** "TP1 HIT", "Tp 1 hits", "TP1 64000 HIT", "TP1: HIT", "TP1 ✅ HIT" (index required). */
 const HIT_BY_INDEX_RE = new RegExp(
-  String.raw`\btp\s*([1-7])\b\s*:?\s*(?:${PRICE}\s*)?(?:[^\w\n]{0,3}\s*)?${HIT_VERB}\b`,
+  String.raw`\btp\s*([1-7])\b\s*:?\s*(?:(${PRICE})\s*)?(?:[^\w\n]{0,3}\s*)?${HIT_VERB}\b`,
   "gi",
 );
 /** "hit tp2", "took tp1", "reached tp3". */
@@ -77,7 +79,13 @@ function all(re: RegExp, text: string): RegExpExecArray[] {
 export function parseResultUpdate(input: string): ResultUpdate {
   const text = (input ?? "").replace(/\s+/g, " ").trim();
   const hits = new Set<number>();
-  for (const m of all(HIT_BY_INDEX_RE, text)) hits.add(Number(m[1]));
+  const indexedHits: { index: number; price: number }[] = [];
+  for (const m of all(HIT_BY_INDEX_RE, text)) {
+    const index = Number(m[1]);
+    hits.add(index);
+    const price = m[2] ? parsePrice(m[2]) : null;
+    if (price !== null) indexedHits.push({ index, price });
+  }
   for (const m of all(HIT_REVERSED_RE, text)) hits.add(Number(m[1]));
 
   const hitPrices: number[] = [];
@@ -108,6 +116,7 @@ export function parseResultUpdate(input: string): ResultUpdate {
 
   return {
     hits: [...hits].sort((a, b) => a - b),
+    indexedHits,
     hitPrices,
     pricedHits,
     stopped: STOP_RE.test(text),

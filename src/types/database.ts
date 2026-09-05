@@ -11,7 +11,7 @@ export type AssetType =
   | "commodity"
   | "index";
 export type TradeDirection = "buy" | "sell";
-export type TradeSource = "manual" | "csv" | "mt5_webhook";
+export type TradeSource = "manual" | "csv" | "mt5_webhook" | "telegram";
 export type OrderType = "market" | "limit" | "stop";
 /**
  * Per-TP outcome. Mirrors Postgres enum `tp_result`.

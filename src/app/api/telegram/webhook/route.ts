@@ -21,6 +21,9 @@ import {
 import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
 import { secretMatches } from "@/lib/telegram/webhook-secret";
 import { topicOf } from "@/lib/telegram/topics";
+import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
+import { ingestFeedMessage, consumedByFeed } from "@/lib/telegram/feed";
+import { feedStore, anyFeedIn } from "@/lib/telegram/feed-store";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
@@ -103,6 +106,9 @@ interface TgUpdate {
   readonly message?: TgMessage;
   /** A post in a CHANNEL. Telegram never delivers these as `message`. */
   readonly channel_post?: TgMessage;
+  /** Edits, which the feed listener reads and nothing else does. */
+  readonly edited_message?: TgMessage;
+  readonly edited_channel_post?: TgMessage;
   readonly my_chat_member?: { readonly chat?: TgChat & { readonly title?: string } };
   readonly callback_query?: {
     readonly id?: string;
@@ -188,7 +194,7 @@ async function claimChatIfCoded(
 
   const { data: claim } = await admin
     .from("telegram_chat_claims")
-    .select("code")
+    .select("code, purpose")
     .eq("code", code)
     .is("claimed_at", null)
     .gt("expires_at", new Date().toISOString())
@@ -199,6 +205,9 @@ async function claimChatIfCoded(
     // tell someone probing codes which ones exist.
     return "That code is not valid any more. Open the Posters page again for a fresh one.";
   }
+  // A code minted to LISTEN to a room is confirmed silently: the bot must
+  // never announce itself in a signals room. The Posters page shows the result.
+  const silent = claim.purpose === "feed";
 
   // Conditional on still being unclaimed, so two messages racing the same code
   // cannot both win.
@@ -214,8 +223,8 @@ async function claimChatIfCoded(
     .select("code")
     .maybeSingle();
 
-  if (!updated) return "That code has already been used.";
-  return "Confirmed. This group is now available to connect on the Posters page.";
+  if (!updated) return silent ? "" : "That code has already been used.";
+  return silent ? "" : "Confirmed. This group is now available to connect on the Posters page.";
 }
 
 /** The chat's owner and their connected destination, or null. */
@@ -274,21 +283,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Accepts a CHANNEL post as readily as a group message. In a channel only
     // admins can post, so a code appearing there is stronger proof of
     // authority than the same code in a group, not weaker.
+    /* ── a signal room the bot listens in ──────────────────────────── */
+    // Before anything that could reply: a listened room never hears from the
+    // bot. Edits arrive here too, and only here.
+    // A claim code or a report command is never a signal, and a room being
+    // listened to keeps every other thing the bot does there: chat, a paused
+    // room and a redelivery fall through to the branches below.
+    const roomMessage = feedMessageFromUpdate(update);
+    if (roomMessage && !findClaimCode(roomMessage.text) && !parseCommand(roomMessage.text)) {
+      const outcome = await ingestFeedMessage(feedStore(admin), roomMessage);
+      if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
+    }
+    // In a room somebody listens to, the bot does nothing else at all: no
+    // reply to a code or a command, and no code consumed either, so a posters
+    // code pasted there by mistake is not burned. The room's topics are
+    // already known from the claim that connected it.
     const posted = update.message ?? update.channel_post;
+    if (roomMessage && (await anyFeedIn(admin, roomMessage.chatId))) {
+      return NextResponse.json({ ok: true });
+    }
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
       // Two different grants in one message. Branch order would silently pick
       // one; saying so is better than guessing which was meant.
-      await sendChatMessage(
-        botToken,
-        String(posted.chat.id),
-        "That message has a group code and an account code in it. Send one at a time.",
-      );
+      await sendChatMessage(botToken, String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
       return NextResponse.json({ ok: true });
     }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
-      if (reply) {
-        await sendChatMessage(botToken, String(posted.chat.id), reply);
+      if (reply !== null) {
+        if (reply) await sendChatMessage(botToken, String(posted.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
     }
@@ -302,11 +325,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const msg = update.message;
       const chatId = String(msg.chat!.id);
       if (msg.chat!.type !== "private" || !msg.from?.id || msg.sender_chat) {
-        await sendChatMessage(
-          botToken,
-          chatId,
-          "Send your link code to me in a private chat, not in a group.",
-        );
+        await sendChatMessage(botToken, chatId, "Send your link code to me in a private chat, not in a group.");
         return NextResponse.json({ ok: true });
       }
       // Guessing is the unmitigated half of a six-character code; this is the
