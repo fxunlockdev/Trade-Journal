@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { TourOverlay } from "@/components/tour/tour-overlay";
+import { SignalRoomsSetup } from "@/components/posters/signal-rooms-setup";
 import { BOT_HANDLE } from "@/lib/telegram/bot";
+import { visibleSteps, type TourStep } from "@/lib/tour/steps";
+import { hasSeenSignalRoomsTour, markSignalRoomsTourSeen, setupStage, signalRoomsTourSteps } from "@/lib/tour/signal-rooms-steps";
 import type { JournalWithRole } from "@/types/database";
 
 /**
@@ -47,6 +51,8 @@ export function SignalRoomsCard({ journals }: Props) {
   const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ chatId: string; threadId: number | null; journalId: string; lots: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [tour, setTour] = useState<readonly TourStep[] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -55,12 +61,30 @@ export function SignalRoomsCard({ journals }: Props) {
       const jb = await b.json();
       if (a.ok) { setFeeds(ja.data.feeds); setSources(ja.data.sources); }
       if (b.ok) setReview(jb.data);
+      if (a.ok) setLoaded(true);
     } catch {
       // Neutral state rather than a wrong one.
     }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // The tour points at the card's own parts, so it waits a frame for them to
+  // be laid out and drops any step whose target is not on the page.
+  const startTour = useCallback(() => {
+    requestAnimationFrame(() => {
+      const usable = visibleSteps(signalRoomsTourSteps(BOT_HANDLE), (t) => Boolean(document.querySelector(`[data-tour="${t}"]`)));
+      setTour(usable.length >= 2 ? usable : null);
+    });
+  }, []);
+  const finishTour = useCallback(() => { markSignalRoomsTourSeen(window.localStorage); setTour(null); }, []);
+
+  // Offered once, to someone with nothing connected yet; never again unless asked.
+  useEffect(() => {
+    if (!loaded || feeds.length > 0) return;
+    if (hasSeenSignalRoomsTour(window.localStorage)) return;
+    startTour();
+  }, [loaded, feeds.length, startTour]);
 
   // While a code is out, watch for the room to appear; stop when it expires.
   useEffect(() => {
@@ -145,19 +169,28 @@ export function SignalRoomsCard({ journals }: Props) {
     ...s.topics.map((t) => ({ chatId: s.chatId, threadId: t.threadId as number | null, label: `${s.title} › ${t.name ?? `topic ${t.threadId}`}`, sample: t.sample })),
   ]).filter((c) => !isConnected(c.chatId, c.threadId));
 
+  const stage = setupStage({ hasFeeds: feeds.length > 0, codeOut: code !== null, hasCandidates: candidates.length > 0, drafting: draft !== null });
+
   return (
-    <Card className="border-border bg-card" data-testid="signal-rooms-card">
+    <Card className="border-border bg-card" data-testid="signal-rooms-card" data-tour="signal-rooms">
       <CardContent className="space-y-5 pt-6">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Signal rooms</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Signal rooms</p>
+            <button type="button" onClick={startTour} data-testid="signal-rooms-tour" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              Take the tour
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground">
             The bot listens in a room and logs its signals and results into a journal, silently. Traders post as they
             always have; nothing is asked and nothing is posted back, only a ✍ reaction on each message it logged.
           </p>
         </div>
 
+        <SignalRoomsSetup stage={stage} botHandle={BOT_HANDLE} />
+
         {feeds.length > 0 && (
-          <ul className="divide-y divide-border rounded-md border border-border" data-testid="signal-rooms-list">
+          <ul className="divide-y divide-border rounded-md border border-border" data-testid="signal-rooms-list" data-tour="signal-rooms-list">
             {feeds.map((f) => (
               <li key={f.id} className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
                 <div className="min-w-0 flex-1">
@@ -209,19 +242,21 @@ export function SignalRoomsCard({ journals }: Props) {
           </div>
         ) : null}
 
-        {code ? (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Post this code in the room (an admin can delete the message afterwards). The bot confirms silently; the room appears above.
-            </p>
-            <code className="block select-all rounded-md border border-border bg-muted/40 px-2 py-2 text-center text-lg font-semibold tracking-widest">{code.code}</code>
-            <p className="text-xs text-muted-foreground">{BOT_HANDLE} must be in the room as an admin.</p>
-          </div>
-        ) : (
-          <Button type="button" variant="outline" size="sm" disabled={busy === "code"} onClick={() => void getCode()} data-testid="signal-rooms-code">
-            {busy === "code" ? "Getting a code..." : "Connect a room"}
-          </Button>
-        )}
+        <div data-tour="signal-rooms-connect">
+          {code ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Post this code in the room (an admin can delete the message afterwards). The bot confirms silently; the room appears above.
+              </p>
+              <code className="block select-all rounded-md border border-border bg-muted/40 px-2 py-2 text-center text-lg font-semibold tracking-widest">{code.code}</code>
+              <p className="text-xs text-muted-foreground">{BOT_HANDLE} must be in the room as an admin.</p>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" size="sm" disabled={busy === "code"} onClick={() => void getCode()} data-testid="signal-rooms-code">
+              {busy === "code" ? "Getting a code..." : "Connect a room"}
+            </Button>
+          )}
+        </div>
 
         {review.length > 0 && (
           <div className="space-y-2">
@@ -243,6 +278,7 @@ export function SignalRoomsCard({ journals }: Props) {
           </div>
         )}
       </CardContent>
+      {tour ? <TourOverlay steps={tour} onFinish={finishTour} /> : null}
     </Card>
   );
 }
