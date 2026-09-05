@@ -14,6 +14,8 @@
 --                         (SECURITY DEFINER) touches them. Granting any policy
 --                         would let a client read or reset its own limit, which
 --                         defeats it.
+--   telegram_seen_topics — forum topics the bot has seen messages in; same
+--     posture as telegram_seen_chats, read only through a server route.
 --   telegram_seen_chats — chats the bot has been added to. It briefly HAD a
 --                         `using (true)` select policy so the connect picker
 --                         could list groups, and that was a cross-tenant leak:
@@ -58,7 +60,7 @@ begin
           and c.relname <> all (
             array[
               'trades', 'api_rate_limits',
-              'telegram_seen_chats', 'telegram_webhook_state'
+              'telegram_seen_chats', 'telegram_seen_topics', 'telegram_webhook_state'
             ]
           )  -- documented deny-all, see header
         )
