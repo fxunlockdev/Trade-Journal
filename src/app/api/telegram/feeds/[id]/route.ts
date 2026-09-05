@@ -22,6 +22,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+    if (typeof body.react === "boolean") patch.react = body.react;
     if (typeof body.defaultLots === "number" && body.defaultLots > 0 && body.defaultLots <= 1000) patch.default_lots = body.defaultLots;
     // The journal is fixed for a feed's life: its trades and their replies
     // are found by it. Disconnect and connect again to point elsewhere.

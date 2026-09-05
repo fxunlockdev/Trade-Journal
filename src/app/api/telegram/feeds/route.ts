@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const { data, error: insertError } = await admin
       .from("telegram_feeds")
-      .insert({ chat_id: chatId, thread_id: threadId, title, journal_id: journalId, user_id: user.id, default_lots: defaultLots })
+      .insert({ chat_id: chatId, thread_id: threadId, title, journal_id: journalId, user_id: user.id, default_lots: defaultLots, react: body.react !== false })
       .select("id")
       .single();
     if (insertError) {

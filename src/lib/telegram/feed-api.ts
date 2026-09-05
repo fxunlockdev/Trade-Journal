@@ -31,6 +31,7 @@ export interface FeedView {
   readonly journalId: string;
   readonly defaultLots: number;
   readonly enabled: boolean;
+  readonly react: boolean;
   readonly connectedAt: string;
   readonly counts: { readonly applied: number; readonly review: number };
 }
@@ -81,7 +82,7 @@ export async function mayWriteJournal(supabase: SupabaseClient, userId: string, 
 export async function feedsFor(supabase: SupabaseClient, userId: string): Promise<FeedView[]> {
   const { data: feeds } = await supabase
     .from("telegram_feeds")
-    .select("id, chat_id, thread_id, title, journal_id, default_lots, enabled, connected_at")
+    .select("id, chat_id, thread_id, title, journal_id, default_lots, enabled, react, connected_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
   if (!feeds || feeds.length === 0) return [];
@@ -99,6 +100,7 @@ export async function feedsFor(supabase: SupabaseClient, userId: string): Promis
     journalId: f.journal_id as string,
     defaultLots: Number(f.default_lots),
     enabled: f.enabled === true,
+    react: f.react === true,
     connectedAt: f.connected_at as string,
     counts: {
       applied: (msgs ?? []).filter((m) => m.feed_id === f.id && m.status === "applied").length,

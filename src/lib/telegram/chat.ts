@@ -143,3 +143,29 @@ export async function clearButtons(
     reply_markup: { inline_keyboard: [] },
   });
 }
+
+/**
+ * The mark the listener leaves on a room message it logged. Telegram lets a
+ * bot react only with its own fixed set, which has no plain tick; the
+ * writing hand is the nearest thing to "written down".
+ */
+export const LOGGED_REACTION = "\u270D";
+
+/**
+ * React to a message. The listener's only word in a room it hears: one
+ * reaction on a message it logged, and nothing when reactions are off in
+ * the chat, when the bot lacks the right, or when Telegram is down.
+ */
+export async function reactToMessage(
+  botToken: string,
+  chatId: string,
+  messageId: number,
+  emoji: string = LOGGED_REACTION,
+): Promise<boolean> {
+  const ok = await call<boolean>(botToken, "setMessageReaction", {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [{ type: "emoji", emoji }],
+  });
+  return ok === true;
+}
