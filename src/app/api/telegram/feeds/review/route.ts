@@ -89,7 +89,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { force: true, feed },
       );
       // A retry that landed gets the same mark a first pass would have.
-      if (wantsMark(outcome)) await reactToMessage(telegramBotToken(), chatId, messageId);
+      const botToken = telegramBotToken();
+      if (botToken && wantsMark(outcome)) await reactToMessage(botToken, chatId, messageId);
       return NextResponse.json({ data: { chatId, messageId, outcome } });
     }
     const { error: updateError } = await admin
