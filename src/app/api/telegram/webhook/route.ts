@@ -20,6 +20,7 @@ import {
 } from "@/lib/telegram/chat";
 import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
 import { secretMatches } from "@/lib/telegram/webhook-secret";
+import { topicOf } from "@/lib/telegram/topics";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
@@ -88,6 +89,15 @@ interface TgMessage {
   readonly from?: TgUser;
   /** Present when someone posts AS the group, hiding their user identity. */
   readonly sender_chat?: TgChat;
+  /** The forum topic, in a supergroup with topics. */
+  readonly message_thread_id?: number;
+  readonly is_topic_message?: boolean;
+  readonly forum_topic_created?: { readonly name?: string };
+  readonly reply_to_message?: {
+    readonly message_id?: number;
+    readonly message_thread_id?: number;
+    readonly forum_topic_created?: { readonly name?: string };
+  };
 }
 interface TgUpdate {
   readonly message?: TgMessage;
@@ -126,6 +136,33 @@ async function rememberChat(
       },
       { onConflict: "chat_id" },
     );
+  } catch {
+    // Ignored by design; see above.
+  }
+}
+
+/**
+ * Remember which topic a group message arrived in.
+ *
+ * The signals group is a forum with one topic per trader; mapping a topic to
+ * a journal needs to know the topics exist and what they are called. Silent
+ * and best-effort, like rememberChat: nothing is posted, and a failure here
+ * must never stop whatever else the message was.
+ */
+async function rememberTopic(
+  admin: ReturnType<typeof createAdminClient>,
+  msg: TgMessage | undefined,
+): Promise<void> {
+  if (!msg?.chat?.id) return;
+  const topic = topicOf(msg);
+  if (!topic) return;
+  try {
+    await admin.rpc("touch_seen_topic", {
+      p_chat_id: String(msg.chat.id),
+      p_thread_id: topic.threadId,
+      p_name: topic.name,
+      p_sample: topic.sample,
+    });
   } catch {
     // Ignored by design; see above.
   }
@@ -228,6 +265,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         update.channel_post?.chat ??
         update.my_chat_member?.chat,
     );
+    await rememberTopic(admin, update.message);
 
     /* ── a claim code ──────────────────────────────────────────────── */
     // Checked BEFORE commands: this is how a chat becomes connectable at all,
