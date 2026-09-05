@@ -72,4 +72,6 @@ export const LIMITS = {
   /** A model call per message the grammar could not read. Costs money and
    *  seconds, so it is its own, tighter allowance. */
   telegramProse: { name: "telegram_prose", max: 40, windowSeconds: 3600 },
+  /** Minting a code to listen to a room. */
+  telegramFeedCode: { name: "telegram_feed_code", max: 10, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;

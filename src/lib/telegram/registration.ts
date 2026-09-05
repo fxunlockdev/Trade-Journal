@@ -29,6 +29,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const WEBHOOK_UPDATES: readonly string[] = [
   "callback_query",
   "channel_post",
+  // Traders edit a signal to add "TP1 hit ✅" to it. Without these the edit
+  // never arrives and the result is silently missed.
+  "edited_channel_post",
+  "edited_message",
   "message",
   "my_chat_member",
 ];

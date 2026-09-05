@@ -21,6 +21,9 @@ import {
 import { findClaimCode, findLinkCode } from "@/lib/telegram/claim";
 import { secretMatches } from "@/lib/telegram/webhook-secret";
 import { topicOf } from "@/lib/telegram/topics";
+import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
+import { ingestFeedMessage } from "@/lib/telegram/feed";
+import { feedStore } from "@/lib/telegram/feed-store";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
@@ -103,6 +106,9 @@ interface TgUpdate {
   readonly message?: TgMessage;
   /** A post in a CHANNEL. Telegram never delivers these as `message`. */
   readonly channel_post?: TgMessage;
+  /** Edits, which the feed listener reads and nothing else does. */
+  readonly edited_message?: TgMessage;
+  readonly edited_channel_post?: TgMessage;
   readonly my_chat_member?: { readonly chat?: TgChat & { readonly title?: string } };
   readonly callback_query?: {
     readonly id?: string;
@@ -188,7 +194,7 @@ async function claimChatIfCoded(
 
   const { data: claim } = await admin
     .from("telegram_chat_claims")
-    .select("code")
+    .select("code, purpose")
     .eq("code", code)
     .is("claimed_at", null)
     .gt("expires_at", new Date().toISOString())
@@ -199,6 +205,9 @@ async function claimChatIfCoded(
     // tell someone probing codes which ones exist.
     return "That code is not valid any more. Open the Posters page again for a fresh one.";
   }
+  // A code minted to LISTEN to a room is confirmed silently: the bot must
+  // never announce itself in a signals room. The Posters page shows the result.
+  const silent = claim.purpose === "feed";
 
   // Conditional on still being unclaimed, so two messages racing the same code
   // cannot both win.
@@ -214,8 +223,8 @@ async function claimChatIfCoded(
     .select("code")
     .maybeSingle();
 
-  if (!updated) return "That code has already been used.";
-  return "Confirmed. This group is now available to connect on the Posters page.";
+  if (!updated) return silent ? "" : "That code has already been used.";
+  return silent ? "" : "Confirmed. This group is now available to connect on the Posters page.";
 }
 
 /** The chat's owner and their connected destination, or null. */
@@ -274,6 +283,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Accepts a CHANNEL post as readily as a group message. In a channel only
     // admins can post, so a code appearing there is stronger proof of
     // authority than the same code in a group, not weaker.
+    /* ── a signal room the bot listens in ──────────────────────────── */
+    // Before anything that could reply: a listened room never hears from the
+    // bot. Edits arrive here too, and only here.
+    const roomMessage = feedMessageFromUpdate(update);
+    if (roomMessage && !findClaimCode(roomMessage.text)) {
+      const outcome = await ingestFeedMessage(feedStore(admin), roomMessage, new Date());
+      if (outcome.action !== "skipped" || outcome.why !== "no_feed") {
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     const posted = update.message ?? update.channel_post;
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
       // Two different grants in one message. Branch order would silently pick
@@ -287,8 +307,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
-      if (reply) {
-        await sendChatMessage(botToken, String(posted.chat.id), reply);
+      if (reply !== null) {
+        if (reply) await sendChatMessage(botToken, String(posted.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
     }
