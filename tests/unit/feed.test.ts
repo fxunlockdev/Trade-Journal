@@ -40,12 +40,14 @@ function fake(o: Partial<FeedStore> = {}, f: Feed | null = feed): Fake {
     record: async (r) => { const i = records.findIndex((x) => x.messageId === r.messageId); if (i >= 0) records[i] = r; else records.push(r); },
     tradeByMessage: async (fd, id) => { const t = byMessage.get(id); const tr = t ? trades.get(t) : null; return tr && inJournal(fd, tr) ? tr : null; },
     tradeById: async (fd, id) => { const tr = trades.get(id); return tr && inJournal(fd, tr) ? tr : null; },
-    // The real query: this journal, this instrument if named, logged inside the window, newest first, capped.
+    // The real query: this FEED's accepted signals inside the window, newest first, capped; then their trades.
     recentTrades: async (fd, instrument, since, until, limit) =>
-      [...trades.values()]
-        .filter((t) => inJournal(fd, t) && (!instrument || t.instrument === instrument) && t.entry_time >= since && t.entry_time <= until)
-        .sort((a, b) => b.entry_time.localeCompare(a.entry_time))
-        .slice(0, limit),
+      records
+        .filter((r) => r.feedId === fd.id && r.kind === "signal" && r.status === "applied" && r.tradeId && r.postedAt >= since && r.postedAt <= until)
+        .sort((a, b) => b.postedAt.localeCompare(a.postedAt))
+        .slice(0, limit)
+        .map((r) => trades.get(r.tradeId as string)!)
+        .filter((t) => inJournal(fd, t) && (!instrument || t.instrument === instrument)),
     insertTrade: async (row) => {
       n += 1;
       const id = `t${n}`;
@@ -376,6 +378,26 @@ describe("results", () => {
     const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD SL HIT ❌", messageId: 9 }));
     expect(r.action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/too many trades/);
+  });
+
+  it("finds only its own feed's trades, though two topics may share a journal", async () => {
+    const topic5: Feed = { ...feed, id: "feed-a", threadId: 5 };
+    const topic7: Feed = { ...feed, id: "feed-b", threadId: 7 };
+    const f = fake({ feedFor: async (_c, t) => (t === 5 ? topic5 : t === 7 ? topic7 : null) }, topic5);
+    await ingestFeedMessage(f.store, msg({ text: TIG, messageId: 5, threadId: 5 }));
+    const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD SL HIT ❌", messageId: 9, threadId: 7 }));
+    expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(f.trades.get("t1")?.tp1_result).toBeNull();
+  });
+
+  it("keeps an edit already waiting for a person waiting", async () => {
+    const f = await withSignal();
+    await ingestFeedMessage(f.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
+    const changed = msg({ text: "🛑 SL HIT (-10pips)", messageId: 23, replyToMessageId: 21, edited: true });
+    expect((await ingestFeedMessage(f.store, changed)).action).toBe("review");
+    expect(await ingestFeedMessage(f.store, changed)).toEqual({ action: "skipped", why: "seen" });
+    expect(f.trades.get("t1")?.tp1_result).toBe("hit");
+    expect(f.trades.get("t1")?.tp2_result).toBeNull();
   });
 
   it("looks back from the message's own time, not forever", async () => {

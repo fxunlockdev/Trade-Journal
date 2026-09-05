@@ -294,12 +294,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const outcome = await ingestFeedMessage(feedStore(admin), roomMessage);
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }
-    // In a room somebody listens to, the bot says nothing whatever is posted:
-    // not to a code, not to a command, not to a stray link code. A claim is
-    // still recorded, silently, so another topic of the room can be connected.
+    // In a room somebody listens to, the bot does nothing else at all: no
+    // reply to a code or a command, and no code consumed either, so a posters
+    // code pasted there by mistake is not burned. The room's topics are
+    // already known from the claim that connected it.
     const posted = update.message ?? update.channel_post;
     if (roomMessage && (await anyFeedIn(admin, roomMessage.chatId))) {
-      if (posted?.chat?.id && !findLinkCode(posted.text)) await claimChatIfCoded(admin, posted);
       return NextResponse.json({ ok: true });
     }
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {

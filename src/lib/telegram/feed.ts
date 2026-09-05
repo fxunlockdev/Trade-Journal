@@ -129,6 +129,8 @@ export const ATTACH_WINDOW_HOURS = 120;
  * window is not a usable guide and the result waits for a person.
  */
 export const ATTACH_CANDIDATES = 200;
+/** How much of a message the store keeps; comparisons use the same cut. */
+export const STORED_TEXT_LENGTH = 4000;
 
 type Slot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 const SLOTS: readonly Slot[] = [1, 2, 3, 4, 5, 6, 7];
@@ -225,14 +227,14 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   const tolerance = gaps.length > 0 ? Math.min(...gaps) / 4 : 0;
 
   const problems: string[] = [];
-  const facts = u.hits.length + u.hitPrices.length + u.pricedHits.length > 0 || u.stopped || u.breakeven || u.closedAt !== null;
 
   // A trade closed at a stated price, with no target results, is finished:
   // the same close again is nothing new, anything else needs a look.
-  if (trade.exit_price !== null && !hasVerdict({ ...trade, exit_price: null } as TradeRow)) {
+  const anyRecorded = SLOTS.some((i) => tpResult(trade, i) !== null);
+  if (trade.exit_price !== null && !anyRecorded) {
     const sameClose = u.closedAt !== null && Math.abs(u.closedAt - trade.exit_price) <= tolerance
       && u.hits.length + u.hitPrices.length + u.pricedHits.length === 0 && !u.stopped && !u.breakeven;
-    if (sameClose || !facts) return { reason: "nothing new in that update", review: false };
+    if (sameClose) return { reason: "nothing new in that update", review: false };
     return { reason: `already closed at ${trade.exit_price}; a later update needs a look`, review: true };
   }
   const slotByPrice = (price: number): number | null => {
@@ -488,9 +490,10 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     }
 
     // An edited result cannot be undone by a machine: unchanged text is a
-    // redelivery, changed text is a question.
-    if (msg.edited && seen?.status === "applied") {
-      if (seen.text === msg.text) return { action: "skipped", why: "seen" };
+    // redelivery, changed text is a question, and one already waiting for a
+    // person stays waiting rather than being applied the second time round.
+    if (msg.edited && !opts.force && seen && seen.kind === "result" && seen.status !== "ignored") {
+      if (seen.text === msg.text.slice(0, STORED_TEXT_LENGTH)) return { action: "skipped", why: "seen" };
       const reason = "a result was edited after it was applied; check the trade";
       await store.record(record(feed, msg, "result", "review", reason, trade.id));
       return { action: "review", reason };

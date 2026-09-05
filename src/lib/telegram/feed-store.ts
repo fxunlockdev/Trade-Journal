@@ -7,7 +7,7 @@ import type { Admin } from "@/lib/telegram/accounts";
 import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { canEditTrades } from "@/lib/journals/active-journal";
 import type { JournalRole } from "@/types/database";
-import type { Feed, FeedStore, MessageRecord, TradeRow } from "@/lib/telegram/feed";
+import { STORED_TEXT_LENGTH, type Feed, type FeedStore, type MessageRecord, type TradeRow } from "@/lib/telegram/feed";
 
 function toFeed(r: Record<string, unknown>): Feed {
   return {
@@ -76,7 +76,7 @@ export function feedStore(admin: Admin): FeedStore {
           chat_id: r.chatId, message_id: r.messageId, thread_id: r.threadId, feed_id: r.feedId,
           kind: r.kind, status: r.status, reason: r.reason, trade_id: r.tradeId,
           reply_to_message_id: r.replyToMessageId, sender: r.sender, sender_id: r.senderId,
-          text: r.text.slice(0, 4000), posted_at: r.postedAt, edited: r.edited, processed_at: new Date().toISOString(),
+          text: r.text.slice(0, STORED_TEXT_LENGTH), posted_at: r.postedAt, edited: r.edited, processed_at: new Date().toISOString(),
         },
         { onConflict: "chat_id,message_id" },
       );
@@ -103,16 +103,28 @@ export function feedStore(admin: Admin): FeedStore {
       return (data as TradeRow | null) ?? null;
     },
     recentTrades: async (feed, instrument, since, until, limit) => {
+      // This feed's trades, not the journal's: two topics of one forum can
+      // share a journal, and a result in one must not find the other's trade.
+      const { data: signals } = await admin
+        .from("telegram_feed_messages")
+        .select("trade_id")
+        .eq("feed_id", feed.id)
+        .eq("kind", "signal")
+        .eq("status", "applied")
+        .not("trade_id", "is", null)
+        .gte("posted_at", since)
+        .lte("posted_at", until)
+        .order("posted_at", { ascending: false })
+        .limit(limit);
+      const ids = (signals ?? []).map((r) => r.trade_id as string);
+      if (ids.length === 0) return [];
       let q = admin
         .from("trades")
         .select("*")
+        .in("id", ids)
         .eq("journal_id", feed.journalId)
         .eq("user_id", feed.userId)
-        .eq("source", "telegram")
-        .gte("entry_time", since)
-        .lte("entry_time", until)
-        .order("entry_time", { ascending: false })
-        .limit(limit);
+        .order("entry_time", { ascending: false });
       if (instrument) q = q.eq("instrument", instrument);
       const { data } = await q;
       return (data ?? []) as TradeRow[];
