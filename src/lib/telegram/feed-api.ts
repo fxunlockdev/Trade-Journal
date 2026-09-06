@@ -91,7 +91,7 @@ export async function feedsFor(supabase: SupabaseClient, userId: string): Promis
     .from("telegram_feed_messages")
     .select("feed_id, status")
     .in("feed_id", feeds.map((f) => f.id as string))
-    .in("status", ["applied", "review"]);
+    .in("status", ["applied", "review", "superseded"]);
   return feeds.map((f) => ({
     id: f.id as string,
     chatId: f.chat_id as string,
@@ -104,7 +104,7 @@ export async function feedsFor(supabase: SupabaseClient, userId: string): Promis
     connectedAt: f.connected_at as string,
     counts: {
       applied: (msgs ?? []).filter((m) => m.feed_id === f.id && m.status === "applied").length,
-      review: (msgs ?? []).filter((m) => m.feed_id === f.id && m.status === "review").length,
+      review: (msgs ?? []).filter((m) => m.feed_id === f.id && (m.status === "review" || m.status === "superseded")).length,
     },
   }));
 }

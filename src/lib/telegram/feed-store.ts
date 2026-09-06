@@ -58,7 +58,7 @@ export function feedStore(admin: Admin): FeedStore {
         .eq("feed_id", feed.id)
         .eq("sender_id", senderId)
         .eq("kind", "signal")
-        .eq("status", "applied")
+        .in("status", ["applied", "superseded"])
         .limit(1);
       return (data ?? []).length > 0;
     },
@@ -112,12 +112,14 @@ export function feedStore(admin: Admin): FeedStore {
         .select("trade_id")
         .eq("feed_id", feed.id)
         .eq("kind", "signal")
-        .eq("status", "applied")
+        .in("status", ["applied", "superseded"])
         .not("trade_id", "is", null)
         .gte("posted_at", since)
         .lte("posted_at", until)
         .order("posted_at", { ascending: false })
-        .limit(limit);
+        // The cap applies AFTER the instrument filter below, or a room that
+        // trades two instruments would never find the quieter one.
+        .limit(Math.min(limit * 10, 200));
       const ids = (signals ?? []).map((r) => r.trade_id as string);
       if (ids.length === 0) return [];
       let q = admin
@@ -126,7 +128,8 @@ export function feedStore(admin: Admin): FeedStore {
         .in("id", ids)
         .eq("journal_id", feed.journalId)
         .eq("user_id", feed.userId)
-        .order("entry_time", { ascending: false });
+        .order("entry_time", { ascending: false })
+        .limit(limit);
       if (instrument) q = q.eq("instrument", instrument);
       const { data } = await q;
       return (data ?? []) as TradeRow[];
