@@ -104,7 +104,7 @@ export async function feedsFor(supabase: SupabaseClient, userId: string): Promis
     connectedAt: f.connected_at as string,
     counts: {
       applied: (msgs ?? []).filter((m) => m.feed_id === f.id && m.status === "applied").length,
-      review: (msgs ?? []).filter((m) => m.feed_id === f.id && m.status === "review").length,
+      review: (msgs ?? []).filter((m) => m.feed_id === f.id && (m.status === "review" || m.status === "superseded")).length,
     },
   }));
 }

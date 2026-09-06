@@ -22,7 +22,7 @@ export async function GET(): Promise<NextResponse> {
     const { data, error: readError } = await supabase
       .from("telegram_feed_messages")
       .select("chat_id, message_id, thread_id, feed_id, kind, status, reason, trade_id, sender, text, posted_at, telegram_feeds!inner(title, chat_id, thread_id, user_id)")
-      .eq("status", "review")
+      .in("status", ["review", "superseded"])
       .eq("telegram_feeds.user_id", user.id)
       .order("posted_at", { ascending: false })
       .limit(100);
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // The same message through the listener again, for the feed it was
       // recorded against and only while it is waiting: the trade it needed
       // may have arrived since, or the write that failed may succeed now.
-      if (mine.status !== "review") {
+      if (mine.status !== "review" && mine.status !== "superseded") {
         return NextResponse.json({ error: "Only a message waiting for review can be retried." }, { status: 409 });
       }
       const { data: feedRow } = await admin

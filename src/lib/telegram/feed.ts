@@ -303,13 +303,16 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   if (newHit && u.pips !== null && u.pips < 0) {
     problems.push(`says ${u.pips} pips but reports a target hit`);
   }
-  if (newHit && u.pips !== null && u.pips > 0) {
+  if (newHit) {
     const furthestNew = Math.max(...SLOTS.map((i) => (results[i - 1] === "hit" && tpResult(trade, i) !== "hit" ? i : 0)));
     const target = prices[furthestNew - 1];
-    if (target !== null) {
+    // The figure beside that target if the line carried one; else the
+    // message's one figure, unless a runner's figure is in it too.
+    const statedPips = u.pricedHits.find((h) => h.index === furthestNew)?.pips ?? (u.running ? null : u.pips);
+    if (target !== null && statedPips !== null && statedPips > 0) {
       const expected = Math.abs(target - trade.entry_price) / getInstrumentSpec(trade.instrument).pipSize;
-      if (expected > 0 && (u.pips > expected * 3 || u.pips < expected / 3)) {
-        problems.push(`says +${u.pips} pips but TP${furthestNew} is about ${Math.round(expected)} pips from the entry`);
+      if (expected > 0 && (statedPips > expected * 3 || statedPips < expected / 3)) {
+        problems.push(`says +${statedPips} pips but TP${furthestNew} is about ${Math.round(expected)} pips from the entry`);
       }
     }
   }
@@ -416,6 +419,21 @@ export function looksLikeResult(text: string): boolean {
     || /\b(?:hit|hits|reached|smashed)\b[^\n]{0,20}\b(?:tp|target)/i.test(text);
 }
 
+/**
+ * The instruments written as a result's subject: before the target or stop
+ * word on the same line ("🎯 EURUSD TP1 HIT"). A mention after it ("TP1 hit,
+ * EURUSD next") is about something else.
+ */
+function resultSubjectInstruments(text: string): readonly string[] {
+  const out = new Set<string>();
+  for (const line of text.split("\n")) {
+    const at = line.search(/\b(?:tp\s?\d?|sl|stop(?:ped)?|be|breakeven|target)\b/i);
+    if (at <= 0) continue;
+    for (const i of findInstruments(expandAliases(line.slice(0, at)))) out.add(i);
+  }
+  return [...out];
+}
+
 /** Which instruments a result names, for attaching without a reply link. */
 function mentionedInstruments(text: string): readonly string[] {
   return findInstruments(expandAliases(text));
@@ -459,10 +477,13 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   };
 
   /* ── a signal ─────────────────────────────────────────────────────── */
+  // A refused EDIT of a signal that already became a trade is "superseded":
+  // the trade and the trader's standing stay, the edit waits for a person.
+  const refused: MessageStatus = priorTrade ? "superseded" : "review";
   const handleSignal = async (draft: TradeDraft, viaModel: boolean): Promise<IngestOutcome> => {
     const built = signalRow(feed, msg, draft, viaModel);
     if (!built.ok) {
-      await store.record(record(feed, msg, "signal", "review", built.issues.join("; "), priorTrade?.id ?? null));
+      await store.record(record(feed, msg, "signal", refused, built.issues.join("; "), priorTrade?.id ?? null));
       return { action: "review", reason: built.issues.join("; "), feedId: feed.id };
     }
     // Geometry can be right and the proportions wrong: a slipped digit. The
@@ -473,7 +494,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     const doubts = signalSanity(draft, { recentEntries: recent.filter((t) => t.id !== priorTrade?.id).map((t) => t.entry_price) });
     if (doubts.length > 0) {
       const reason = `${doubts.join("; ")}. If it is a typo, edit the message and it will be read again`;
-      await store.record(record(feed, msg, "signal", "review", reason, priorTrade?.id ?? null));
+      await store.record(record(feed, msg, "signal", refused, reason, priorTrade?.id ?? null));
       return { action: "review", reason, feedId: feed.id };
     }
     const stopped = await guard(priorTrade?.id ?? null);
@@ -483,7 +504,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       // it; once results are on it, the edit is kept for a person.
       if (hasVerdict(priorTrade)) {
         const reason = "signal edited after results were applied";
-        await store.record(record(feed, msg, "signal", "review", reason, priorTrade.id));
+        await store.record(record(feed, msg, "signal", "superseded", reason, priorTrade.id));
         return { action: "review", reason, feedId: feed.id };
       }
       const { user_id: _u, journal_id: _j, source: _s, ...plan } = built.row;
@@ -511,7 +532,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   // cancelling by editing. The trade is not removed by a machine.
   if (priorTrade) {
     const reason = "the signal was edited into something else; check the trade";
-    await store.record(record(feed, msg, "signal", "review", reason, priorTrade.id));
+    await store.record(record(feed, msg, "signal", "superseded", reason, priorTrade.id));
     return { action: "review", reason, feedId: feed.id };
   }
 
@@ -565,7 +586,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
 
     // A result that names a different instrument than the trade it answers
     // is a reply to the wrong message, or a typo; either way not this trade's.
-    const namedHere = mentionedInstruments(text);
+    const namedHere = resultSubjectInstruments(text);
     if (namedHere.length === 1 && namedHere[0] !== trade.instrument) {
       const reason = `names ${namedHere[0]} but the trade it answers is ${trade.instrument}`;
       await store.record(record(feed, msg, "result", "review", reason, trade.id));
@@ -581,18 +602,20 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     }
 
     // An edited result cannot be undone by a machine: unchanged text is a
-    // redelivery, changed text is a question, and one already waiting for a
-    // person stays waiting rather than being applied the second time round.
-    if (msg.edited && !opts.force && seen && seen.kind === "result" && seen.status !== "ignored" && (seen.status === "applied" || seen.text === msg.text.slice(0, STORED_TEXT_LENGTH))) {
+    // redelivery; a result that was applied and then changed is a question,
+    // kept as "superseded" so a further edit cannot slip past it; one that
+    // was only waiting for a person is read again.
+    if (msg.edited && !opts.force && seen && seen.kind === "result" && seen.status !== "ignored") {
       if (seen.text === msg.text.slice(0, STORED_TEXT_LENGTH)) return { action: "skipped", why: "seen" };
-      const reason = "a result was edited after it was applied; check the trade";
-      await store.record(record(feed, msg, "result", "review", reason, trade.id));
-      return { action: "review", reason, feedId: feed.id };
+      if (seen.status === "applied" || seen.status === "superseded") {
+        const reason = "a result was edited after it was applied; check the trade";
+        await store.record(record(feed, msg, "result", "superseded", reason, trade.id));
+        return { action: "review", reason, feedId: feed.id };
+      }
     }
 
     const applied = applyResult(trade, update);
     if ("reason" in applied) {
-      if (msg.edited && seen) return { action: "noise" };
       await store.record(record(feed, msg, "result", applied.review ? "review" : "ignored", applied.reason, trade.id));
       return applied.review ? { action: "review", reason: applied.reason, feedId: feed.id } : { action: "noise" };
     }

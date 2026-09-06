@@ -18,11 +18,13 @@ describe("signal sanity", () => {
 
   it("allows crypto to drift further from the room's recent entries than metals or forex", () => {
     const btc = draft("🔴 SELL: BTC/USD\n📍 ENTRY ZONE: 64300\n🎯 TP1: 64000\n🛑 SL: 65000");
-    expect(signalSanity(btc, { recentEntries: [54000] })).toEqual([]);
-    expect(signalSanity(btc, { recentEntries: [40000] })).toHaveLength(1);
+    expect(signalSanity(btc, { recentEntries: [54000, 55000, 53000] })).toEqual([]);
+    expect(signalSanity(btc, { recentEntries: [40000, 41000, 39000] })).toHaveLength(1);
     const gold = draft("buy xauusd 4374 sl 4360 tp1 4380");
-    expect(signalSanity(gold, { recentEntries: [3700] })).toHaveLength(1);
-    expect(signalSanity(gold, { recentEntries: [3900] })).toEqual([]);
+    expect(signalSanity(gold, { recentEntries: [3700, 3710, 3690] })).toHaveLength(1);
+    expect(signalSanity(gold, { recentEntries: [3900, 3910, 3890] })).toEqual([]);
+    // Two old entries are not a level.
+    expect(signalSanity(gold, { recentEntries: [3700, 3710] })).toEqual([]);
   });
 
   it("names each thing wrong, and only those", () => {

@@ -22,6 +22,8 @@ const MAX_LEVEL_DISTANCE = 0.08;
 const MAX_STOP_TO_TP1_RATIO = 10;
 /** How far an entry may sit from the room's recent entries in the same instrument. */
 const MAX_DRIFT: Record<string, number> = { crypto: 0.25, default: 0.15 };
+/** Fewer recent entries than this say nothing about where the instrument trades. */
+export const MIN_REFERENCE_ENTRIES = 3;
 
 export interface SanityReference {
   /** Entry prices of this room's recent trades in the same instrument, if any. */
@@ -71,7 +73,8 @@ export function signalSanity(d: TradeDraft, ref: SanityReference): readonly stri
     if ((cur.p - prev.p) * sign <= 0) issues.push(`targets are out of order: TP${cur.i} ${cur.p} is not beyond TP${prev.i} ${prev.p}`);
   }
 
-  if (ref.recentEntries.length > 0) {
+  // One or two old entries are not a market level; three are.
+  if (ref.recentEntries.length >= MIN_REFERENCE_ENTRIES) {
     const m = median(ref.recentEntries);
     const drift = Math.abs(entry - m) / m;
     if (drift > (MAX_DRIFT[d.asset_type] ?? MAX_DRIFT.default)) {
