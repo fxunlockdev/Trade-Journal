@@ -26,7 +26,7 @@ import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
 import { ingestFeedMessage, consumedByFeed, wantsMark } from "@/lib/telegram/feed";
 import { feedStore, anyFeedIn } from "@/lib/telegram/feed-store";
 import { mayReplyIn } from "@/lib/telegram/speak";
-import { notifyReview } from "@/lib/telegram/notify";
+import { notifyReview, notifyModelRead } from "@/lib/telegram/notify";
 import { linkAccountWithCode, linkedUser } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
@@ -315,8 +315,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (wantsMark(outcome)) await reactToMessage(botToken, roomMessage.chatId, roomMessage.messageId);
       // Something it could not use goes to the journal's people in private,
       // never to the room.
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
       if (outcome.action === "review") {
-        await notifyReview(admin, botToken, process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "", outcome.feedId, roomMessage, outcome.reason);
+        await notifyReview(admin, botToken, appUrl, outcome.feedId, roomMessage, outcome.reason);
+      }
+      // A trade the model read is a trade to glance at: said once, in private.
+      if (outcome.action === "signal_logged" && outcome.viaModel) {
+        const feedId = (await feedStore(admin).feedFor(roomMessage.chatId, roomMessage.threadId))?.id ?? (await feedStore(admin).feedFor(roomMessage.chatId, null))?.id;
+        if (feedId) await notifyModelRead(admin, botToken, appUrl, feedId, roomMessage, outcome.summary);
       }
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }

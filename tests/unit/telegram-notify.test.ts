@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reviewNotice } from "@/lib/telegram/notify";
+import { reviewNotice, modelReadNotice } from "@/lib/telegram/notify";
 
 /** The private note a room message kept for review turns into. */
 describe("the private note about a message kept for review", () => {
@@ -25,5 +25,15 @@ describe("the private note about a message kept for review", () => {
     expect(n).not.toContain("<i>");
     expect(n).toContain("x".repeat(280) + "…");
     expect(n).not.toContain("x".repeat(281));
+  });
+});
+
+describe("the private note about a signal the model read", () => {
+  it("shows the message and the reading side by side, and where to fix it", () => {
+    const n = modelReadNotice({ room: "GOLD - Chris", journal: "TTC GOLD | CHRIS", sender: "Chris", text: "Gold: sell here 4374, stop 4390", summary: "SELL XAUUSD @ 4374 · SL 4390", appUrl: "https://www.fx-apps.com" });
+    expect(n).toContain("logged by the model, please check");
+    expect(n).toContain("<i>Chris</i>: Gold: sell here 4374, stop 4390");
+    expect(n).toContain("Read as: SELL XAUUSD @ 4374 · SL 4390");
+    expect(n).toContain("https://www.fx-apps.com/journal");
   });
 });

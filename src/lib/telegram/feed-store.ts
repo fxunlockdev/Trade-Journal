@@ -6,6 +6,8 @@
 import type { Admin } from "@/lib/telegram/accounts";
 import { allowRequest, LIMITS } from "@/lib/rate-limit";
 import { canEditTrades } from "@/lib/journals/active-journal";
+import { extractTradeWithModel } from "@/lib/telegram/prose-model";
+import { readExtraction } from "@/lib/telegram/prose";
 import type { JournalRole } from "@/types/database";
 import { STORED_TEXT_LENGTH, type Feed, type FeedStore, type MessageRecord, type TradeRow } from "@/lib/telegram/feed";
 
@@ -137,6 +139,13 @@ export function feedStore(admin: Admin): FeedStore {
         return { error: error.message };
       }
       return { id: data.id as string };
+    },
+    readSignal: async (feed, text, at) => {
+      // Costs money and seconds, so it has its own allowance, per room.
+      if (!(await allowRequest(admin, LIMITS.telegramProse, `feed:${feed.id}`))) return null;
+      const raw = await extractTradeWithModel(text);
+      const reading = raw ? readExtraction(raw, text, at) : null;
+      return reading?.intent.kind === "ready" ? reading.intent.draft : null;
     },
     updateTrade: async (feed, id, patch) => {
       const { error } = await admin.from("trades").update(patch).eq("id", id).eq("journal_id", feed.journalId).eq("user_id", feed.userId);

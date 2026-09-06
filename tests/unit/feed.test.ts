@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  ingestFeedMessage, applyResult, consumedByFeed, wantsMark, stillRunning, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
+  ingestFeedMessage, applyResult, consumedByFeed, wantsMark, stillRunning, looksLikeSignal, looksLikeResult, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
   type Feed, type FeedMessage, type FeedStore, type MessageRecord, type TradeRow,
 } from "@/lib/telegram/feed";
 import { parseResultUpdate } from "@/lib/telegram/result-update";
+import { parseTradeIntent } from "@/lib/telegram/trade-intent";
 
 /**
  * The listener, end to end over a fake store, with messages taken verbatim
@@ -79,7 +80,7 @@ describe("a signal", () => {
   it("becomes an open trade in the feed's journal, sized by the feed, dated by the message", async () => {
     const f = fake();
     const r = await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
-    expect(r).toEqual({ action: "signal_logged", tradeId: "t1", react: false });
+    expect(r).toMatchObject({ action: "signal_logged", tradeId: "t1", react: false, viaModel: false });
     const t = f.trades.get("t1") as unknown as Record<string, unknown>;
     expect(t).toMatchObject({
       user_id: U, journal_id: J, source: "telegram",
@@ -417,6 +418,65 @@ describe("results", () => {
   });
 });
 
+describe("a template the rules do not know", () => {
+  const ODD = "Gold: sell here 4374, stop above 4390, take profits 4360 then 4350";
+  const modelDraft = () => {
+    const i = parseTradeIntent("sell xauusd 4374 sl 4390 tp1 4360 tp2 4350", new Date("2026-09-04T14:00:00Z"));
+    if (i.kind !== "ready") throw new Error("fixture");
+    return i.draft;
+  };
+
+  it("is shaped like a signal, and a result nobody taught the rules is shaped like one too", () => {
+    expect(looksLikeSignal(ODD)).toBe(true);
+    expect(looksLikeSignal("sell your car lol")).toBe(false);
+    expect(looksLikeSignal("nice one boss")).toBe(false);
+    expect(looksLikeResult("target one smashed, +40 pips")).toBe(true);
+    expect(looksLikeResult("Ready")).toBe(false);
+  });
+
+  it("is read by the model, logged with both readings in the note, and said to be the model's", async () => {
+    const calls: string[] = [];
+    const f = fake({ readSignal: async (_fd, text) => { calls.push(text); return modelDraft(); } });
+    expect(parseTradeIntent(ODD, new Date()).kind).not.toBe("ready");
+    const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
+    expect(r).toMatchObject({ action: "signal_logged", tradeId: "t1", viaModel: true });
+    expect(calls).toEqual([ODD]);
+    const t = f.trades.get("t1") as unknown as Record<string, unknown>;
+    expect(t).toMatchObject({ instrument: "XAUUSD", direction: "sell", entry_price: 4374, stop_loss: 4390, tp1: 4360, tp2: 4350 });
+    expect(String(t.notes)).toContain(ODD);
+    expect(String(t.notes)).toContain("Read by the model");
+  });
+
+  it("waits for a person when the model cannot read it either, saying it looked like a signal", async () => {
+    const f = fake({ readSignal: async () => null });
+    const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
+    expect(r).toMatchObject({ action: "review" });
+    expect(f.records.at(-1)?.reason).toMatch(/looked like a signal but could not be read/);
+    expect(f.trades.size).toBe(0);
+  });
+
+  it("never asks the model about chat", async () => {
+    let calls = 0;
+    const f = fake({ readSignal: async () => { calls += 1; return null; } });
+    expect((await ingestFeedMessage(f.store, msg({ text: "sell your car lol", messageId: 61 }))).action).toBe("noise");
+    expect(calls).toBe(0);
+  });
+
+  it("holds the model's reading to the same checks as a typed signal", async () => {
+    const f = fake({ readSignal: async () => ({ ...modelDraft(), stop_loss: 4360 }) });
+    const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
+    expect(r).toMatchObject({ action: "review" });
+    expect(f.trades.size).toBe(0);
+  });
+
+  it("keeps a ledger of result-shaped messages it did not understand, without alarming anyone", async () => {
+    const f = await withSignal(TIG, 5);
+    const r = await ingestFeedMessage(f.store, msg({ text: "target one smashed, +40 pips", messageId: 6, replyToMessageId: 5 }));
+    expect(r).toEqual({ action: "noise" });
+    expect(f.records.at(-1)).toMatchObject({ kind: "noise", status: "ignored", reason: "looked like a result; not understood", tradeId: "t1" });
+  });
+});
+
 describe("guards", () => {
   it("never touches a trade outside the feed's journal, even by its message id", async () => {
     const f = await withSignal();
@@ -446,7 +506,7 @@ describe("guards", () => {
   });
 
   it("only takes a message the feed actually used, so the room keeps its commands", () => {
-    expect(consumedByFeed({ action: "signal_logged", tradeId: "t", react: false })).toBe(true);
+    expect(consumedByFeed({ action: "signal_logged", tradeId: "t", react: false, viaModel: false, summary: "" })).toBe(true);
     expect(consumedByFeed({ action: "review", reason: "x", feedId: "f" })).toBe(true);
     expect(consumedByFeed({ action: "noise" })).toBe(false);
     expect(consumedByFeed({ action: "skipped", why: "disabled" })).toBe(false);
@@ -455,7 +515,7 @@ describe("guards", () => {
   it("asks for a mark only on what it logged, and only when the room wants one", async () => {
     const marking = fake({}, { ...feed, react: true });
     const logged = await ingestFeedMessage(marking.store, msg({ text: YOHAN, messageId: 21 }));
-    expect(logged).toEqual({ action: "signal_logged", tradeId: "t1", react: true });
+    expect(logged).toMatchObject({ action: "signal_logged", tradeId: "t1", react: true, viaModel: false });
     expect(wantsMark(logged)).toBe(true);
     const applied = await ingestFeedMessage(marking.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
     expect(wantsMark(applied)).toBe(true);

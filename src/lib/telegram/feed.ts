@@ -20,7 +20,7 @@
  * review of the first version is a case here.
  */
 
-import { parseTradeIntent, type TradeDraft } from "@/lib/telegram/trade-intent";
+import { parseTradeIntent, describeDraft, type TradeDraft } from "@/lib/telegram/trade-intent";
 import { parseResultUpdate, hasResult, type ResultUpdate } from "@/lib/telegram/result-update";
 import { outcomeFields } from "@/lib/trades/outcome-parser";
 import { findInstruments } from "@/lib/trades/signal-parser";
@@ -105,13 +105,19 @@ export interface FeedStore {
   insertTrade(row: Record<string, unknown>): Promise<{ id: string } | { duplicate: true } | { error: string }>;
   /** Scoped to the feed's journal as well as the id, so a wrong id cannot cross tenants. */
   updateTrade(feed: Feed, id: string, patch: Record<string, unknown>): Promise<boolean>;
+  /**
+   * A second reader for a message that looks like a signal but whose template
+   * the rules do not know: the model, held to the same grammar on the way
+   * back in. Null when it cannot read it either, or is not configured.
+   */
+  readSignal?(feed: Feed, text: string, at: Date): Promise<TradeDraft | null>;
 }
 
 export type IngestOutcome =
   | { readonly action: "skipped"; readonly why: "no_feed" | "disabled" | "seen" | "empty" }
   | { readonly action: "noise" }
-  /** `react`: the room asked for a mark on messages it logged. */
-  | { readonly action: "signal_logged"; readonly tradeId: string; readonly react: boolean }
+  /** `react`: the room asked for a mark on messages it logged. `viaModel`: the rules could not read it; the model did. */
+  | { readonly action: "signal_logged"; readonly tradeId: string; readonly react: boolean; readonly viaModel: boolean; readonly summary: string }
   | { readonly action: "signal_updated"; readonly tradeId: string }
   | { readonly action: "result_applied"; readonly tradeId: string; readonly closed: boolean; readonly react: boolean }
   | { readonly action: "review"; readonly reason: string; readonly feedId: string };
@@ -174,12 +180,13 @@ function record(feed: Feed, msg: FeedMessage, kind: MessageKind, status: Message
 }
 
 /** The row for a signal, sized by the feed's default lots, dated by the message. */
-function signalRow(feed: Feed, msg: FeedMessage, d: TradeDraft): ReturnType<typeof buildTradeRow> {
+function signalRow(feed: Feed, msg: FeedMessage, d: TradeDraft, viaModel: boolean): ReturnType<typeof buildTradeRow> {
   const { contractSize } = getInstrumentSpec(d.instrument);
   const tps = [d.tp1, d.tp2, d.tp3, d.tp4, d.tp5, d.tp6, d.tp7];
-  const mentionsSecond = /second\s+entry/i.test(d.message);
+  const mentionsSecond = /second\s+entry/i.test(msg.text);
   const notes = [
-    `From Telegram${msg.sender ? ` (${msg.sender})` : ""}: ${d.message}`,
+    `From Telegram${msg.sender ? ` (${msg.sender})` : ""}: ${msg.text.trim()}`,
+    viaModel ? `Read by the model, because the template was not recognised: ${describeDraft(d)}` : null,
     d.entry_second && !mentionsSecond ? `Second entry: ${d.entry_second}` : null,
   ].filter(Boolean).join("\n");
   return buildTradeRow(
@@ -348,6 +355,17 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   };
 }
 
+/** Whether a message is shaped like a signal: a side, a level, and a number. */
+export function looksLikeSignal(text: string): boolean {
+  return /\b(?:buy|sell|long|short)\b/i.test(text) && /\b(?:entry|sl|stop|tp\s?\d|target)/i.test(text) && /\d/.test(text);
+}
+
+/** Whether a message is shaped like a result the rules did not recognise. */
+export function looksLikeResult(text: string): boolean {
+  return /\b(?:tp\s?\d?|sl|stop(?:ped)?|be|breakeven|target)\b[^\n]{0,40}\b(?:hit|hits|reached|done|smashed|running|closed)\b/i.test(text)
+    || /\b(?:hit|hits|reached|smashed)\b[^\n]{0,20}\b(?:tp|target)/i.test(text);
+}
+
 /** Which instruments a result names, for attaching without a reply link. */
 function mentionedInstruments(text: string): readonly string[] {
   return findInstruments(expandAliases(text));
@@ -391,8 +409,8 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   };
 
   /* ── a signal ─────────────────────────────────────────────────────── */
-  if (intent.kind === "ready") {
-    const built = signalRow(feed, msg, intent.draft);
+  const handleSignal = async (draft: TradeDraft, viaModel: boolean): Promise<IngestOutcome> => {
+    const built = signalRow(feed, msg, draft, viaModel);
     if (!built.ok) {
       await store.record(record(feed, msg, "signal", "review", built.issues.join("; "), priorTrade?.id ?? null));
       return { action: "review", reason: built.issues.join("; "), feedId: feed.id };
@@ -424,8 +442,9 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       return { action: "review", reason: inserted.error, feedId: feed.id };
     }
     await store.record(record(feed, msg, "signal", "applied", null, inserted.id));
-    return { action: "signal_logged", tradeId: inserted.id, react: feed.react };
-  }
+    return { action: "signal_logged", tradeId: inserted.id, react: feed.react, viaModel, summary: describeDraft(draft) };
+  };
+  if (intent.kind === "ready") return handleSignal(intent.draft, false);
 
   // The message used to be a signal and is not one any more: a trader
   // cancelling by editing. The trade is not removed by a machine.
@@ -518,16 +537,37 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   }
 
   /* ── a broken signal, or chat ─────────────────────────────────────── */
+  /* ── a signal in a shape the rules do not know ────────────────────── */
+  // Whether the rules found it incomplete or not a trade at all, a message
+  // shaped like a signal gets a second reader. The model's reading goes
+  // through the same grammar and the same checks, so it can only log what a
+  // typed signal could; anything less waits for a person, and says so.
+  if (looksLikeSignal(text)) {
+    if (store.readSignal) {
+      const draft = await store.readSignal(feed, text, new Date(msg.postedAt));
+      if (draft) return handleSignal(draft, true);
+    }
+    const why = intent.kind === "incomplete" ? intent.missing.join("; ") : "not in a template the rules know";
+    const reason = `looked like a signal but could not be read: ${why}`;
+    await store.record(record(feed, msg, "unreadable", "review", reason, null));
+    return { action: "review", reason, feedId: feed.id };
+  }
+
   if (intent.kind === "incomplete") {
     await store.record(record(feed, msg, "unreadable", "review", intent.missing.join("; "), null));
     return { action: "review", reason: intent.missing.join("; "), feedId: feed.id };
   }
 
   // Chat that replies into a trade's thread is remembered, so a reply to it
-  // ("TP2 hit" under "nice one boss") still finds the trade.
-  if (msg.replyToMessageId !== null) {
-    const parent = (await store.tradeByMessage(feed, msg.replyToMessageId))?.id ?? (await store.seen(msg.chatId, msg.replyToMessageId))?.tradeId ?? null;
-    if (parent) await store.record(record(feed, msg, "noise", "ignored", null, parent));
+  // ("TP2 hit" under "nice one boss") still finds the trade. So is anything
+  // shaped like a result the rules did not recognise: not for review, which
+  // would be noise to a person, but as the ledger of what to teach next.
+  const parent = msg.replyToMessageId !== null
+    ? (await store.tradeByMessage(feed, msg.replyToMessageId))?.id ?? (await store.seen(msg.chatId, msg.replyToMessageId))?.tradeId ?? null
+    : null;
+  const resultShaped = looksLikeResult(text);
+  if (parent || resultShaped) {
+    await store.record(record(feed, msg, "noise", "ignored", resultShaped ? "looked like a result; not understood" : null, parent));
   }
   return { action: "noise" };
 }
