@@ -25,6 +25,7 @@ import { topicOf } from "@/lib/telegram/topics";
 import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
 import { ingestFeedMessage, consumedByFeed, wantsMark } from "@/lib/telegram/feed";
 import { feedStore, anyFeedIn } from "@/lib/telegram/feed-store";
+import { mayReplyIn } from "@/lib/telegram/speak";
 import { linkAccountWithCode } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
@@ -267,6 +268,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const admin = createAdminClient();
 
+  // The only way this handler sends a message. A group hears the bot only
+  // when it is a connected posters destination; a private chat always. One
+  // lookup per chat per update, so a burst of replies costs one query.
+  const speakable = new Map<string, boolean>();
+  const say = async (chatId: string, text: string, buttons?: readonly InlineButton[], perRow?: number): Promise<void> => {
+    let ok = speakable.get(chatId);
+    if (ok === undefined) {
+      ok = mayReplyIn(chatId, (await resolveChat(admin, chatId)) !== null);
+      speakable.set(chatId, ok);
+    }
+    if (ok) await sendChatMessage(botToken, chatId, text, buttons, perRow);
+  };
+
     // Recorded for EVERY update, before any command handling, so a group the
     // bot was merely added to still shows up in the connect picker.
     await rememberChat(
@@ -310,13 +324,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
       // Two different grants in one message. Branch order would silently pick
       // one; saying so is better than guessing which was meant.
-      await sendChatMessage(botToken, String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
+      await say(String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
       return NextResponse.json({ ok: true });
     }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply !== null) {
-        if (reply) await sendChatMessage(botToken, String(posted.chat.id), reply);
+        if (reply) await say(String(posted.chat.id), reply);
         return NextResponse.json({ ok: true });
       }
     }
@@ -330,7 +344,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const msg = update.message;
       const chatId = String(msg.chat!.id);
       if (msg.chat!.type !== "private" || !msg.from?.id || msg.sender_chat) {
-        await sendChatMessage(botToken, chatId, "Send your link code to me in a private chat, not in a group.");
+        await say(chatId, "Send your link code to me in a private chat, not in a group.");
         return NextResponse.json({ ok: true });
       }
       // Guessing is the unmitigated half of a six-character code; this is the
@@ -347,7 +361,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // would tell someone probing codes which ones exist.
             ? "That code is not valid any more. Open <b>Settings → Telegram</b> in Trade Journal for a fresh one."
             : "Couldn't finish linking. Try again in a moment.";
-      await sendChatMessage(botToken, chatId, reply);
+      await say(chatId, reply);
       return NextResponse.json({ ok: true });
     }
 
@@ -369,7 +383,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { text: msg.text ?? msg.caption ?? "", telegramUserId: msg.from!.id!, chatId },
         new Date(),
       );
-      if (reply) await sendChatMessage(botToken, chatId, reply.text, reply.buttons, reply.perRow);
+      if (reply) await say(chatId, reply.text, reply.buttons, reply.perRow);
       return NextResponse.json({ ok: true });
     }
 
@@ -380,9 +394,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // its "turn off Remain anonymous" advice, which is not a setting channels
     // have, say what actually works.
     if (update.channel_post?.chat?.id && parseCommand(update.channel_post.text)) {
-      await sendChatMessage(
-        botToken,
-        String(update.channel_post.chat.id),
+      await say(String(update.channel_post.chat.id),
         "Commands don't work in a channel, because a channel post doesn't say who wrote it. Use <b>Post to Telegram</b> on the Posters page instead. Scheduled reports still publish here automatically.",
       );
       return NextResponse.json({ ok: true });
@@ -398,9 +410,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Posting as the group hides who is asking, so the admin check cannot be
       // run at all. Refused with the reason rather than guessed at.
       if (msg.sender_chat || !msg.from?.id) {
-        await sendChatMessage(
-          botToken,
-          chatId,
+        await say(chatId,
           "I can't tell who sent that, because it was posted anonymously. Turn off <b>Remain anonymous</b> in your admin settings and try again.",
         );
         return NextResponse.json({ ok: true });
@@ -408,9 +418,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const destination = await resolveChat(admin, chatId);
       if (!destination) {
-        await sendChatMessage(
-          botToken,
-          chatId,
+        await say(chatId,
           "This group isn't connected to a Trade Journal account yet. Connect it from the Posters page first.",
         );
         return NextResponse.json({ ok: true });
@@ -433,9 +441,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const list = (desks ?? []) as Pick<ReportDesk, "id" | "name">[];
       if (list.length === 0) {
-        await sendChatMessage(
-          botToken,
-          chatId,
+        await say(chatId,
           "No desks are set up for this account yet. Create one on the Posters page.",
         );
         return NextResponse.json({ ok: true });
@@ -445,9 +451,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         text: d.name,
         callback_data: encodePublish(cadence, d.id),
       }));
-      await sendChatMessage(
-        botToken,
-        chatId,
+      await say(chatId,
         CADENCE_PROMPT[cadence],
         buttons,
       );
@@ -473,7 +477,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await clearButtons(botToken, chatId, cb.message.message_id);
       }
       if (result.reply) {
-        await sendChatMessage(botToken, chatId, result.reply.text, result.reply.buttons, result.reply.perRow);
+        await say(chatId, result.reply.text, result.reply.buttons, result.reply.perRow);
       }
       return NextResponse.json({ ok: true });
     }
@@ -500,7 +504,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (result.clearPicker && cb.message?.message_id) {
         await clearButtons(botToken, chatId, cb.message.message_id);
       }
-      if (result.message) await sendChatMessage(botToken, chatId, result.message);
+      if (result.message) await say(chatId, result.message);
       return NextResponse.json({ ok: true });
     }
 
@@ -570,15 +574,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
 
           if (ensured.kind === "empty") {
-            await sendChatMessage(
-              botToken,
-              chatId,
+            await say(chatId,
               `<b>${escapeHtml(desk.name)}</b> had no closed trades in that period, so there's nothing to post.`,
             );
             return;
           }
           if (ensured.kind === "error") {
-            await sendChatMessage(botToken, chatId, ensured.message);
+            await say(chatId, ensured.message);
             return;
           }
 
@@ -594,21 +596,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
 
           if (outcome.status === "already") {
-            await sendChatMessage(
-              botToken,
-              chatId,
+            await say(chatId,
               `That report has already been posted here. Scroll up to find it.`,
             );
           } else if (outcome.status === "in_doubt") {
-            await sendChatMessage(
-              botToken,
-              chatId,
+            await say(chatId,
               "That send didn't finish cleanly and may have posted. Check above before trying again.",
             );
           } else if (outcome.status === "failed") {
-            await sendChatMessage(
-              botToken,
-              chatId,
+            await say(chatId,
               "Couldn't draw that report. Nothing was posted.",
             );
           }
