@@ -31,7 +31,8 @@ export function reviewNotice(n: ReviewNoticeInput): string {
     `${n.sender ? `<i>${escapeHtml(n.sender)}</i>: ` : ""}${escapeHtml(excerpt)}`,
     "",
     `Why: ${escapeHtml(n.reason)}`,
-    `Retry or ignore it on the Posters page: ${n.appUrl}/posters`,
+    "A typo? Edit the message in the room and the bot reads it again. Otherwise retry or ignore it on the Posters page:",
+    `${n.appUrl}/posters`,
   ].join("\n");
 }
 
