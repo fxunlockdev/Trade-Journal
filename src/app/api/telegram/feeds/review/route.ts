@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestFeedMessage, wantsMark, type Feed } from "@/lib/telegram/feed";
 import { reactToMessage } from "@/lib/telegram/chat";
-import { telegramBotToken, telegramWebhookSecret } from "@/lib/telegram/config";
+import { notifyModelRead } from "@/lib/telegram/notify";
+import { telegramBotToken } from "@/lib/telegram/config";
 import { feedStore } from "@/lib/telegram/feed-store";
 
 /**
@@ -91,6 +92,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // A retry that landed gets the same mark a first pass would have.
       const botToken = telegramBotToken();
       if (botToken && wantsMark(outcome)) await reactToMessage(botToken, chatId, messageId);
+      if (botToken && outcome.action === "signal_logged" && outcome.viaModel) {
+        await notifyModelRead(admin, botToken, process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "", outcome.feedId, { sender: (mine.sender as string | null) ?? null, text: (mine.text as string | null) ?? "" }, outcome.summary);
+      }
       return NextResponse.json({ data: { chatId, messageId, outcome } });
     }
     const { error: updateError } = await admin
