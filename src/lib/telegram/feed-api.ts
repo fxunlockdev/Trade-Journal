@@ -91,7 +91,7 @@ export async function feedsFor(supabase: SupabaseClient, userId: string): Promis
     .from("telegram_feed_messages")
     .select("feed_id, status")
     .in("feed_id", feeds.map((f) => f.id as string))
-    .in("status", ["applied", "review"]);
+    .in("status", ["applied", "review", "superseded"]);
   return feeds.map((f) => ({
     id: f.id as string,
     chatId: f.chat_id as string,
