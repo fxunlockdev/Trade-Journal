@@ -142,10 +142,11 @@ export function feedStore(admin: Admin): FeedStore {
     },
     readSignal: async (feed, text, at) => {
       // Costs money and seconds, so it has its own allowance, per room.
-      if (!(await allowRequest(admin, LIMITS.telegramProse, `feed:${feed.id}`))) return null;
+      if (!(await allowRequest(admin, LIMITS.telegramProse, `feed:${feed.id}`))) return { reason: "over_allowance" };
+      if (!process.env.OPENAI_API_KEY?.trim()) return { reason: "not_configured" };
       const raw = await extractTradeWithModel(text);
       const reading = raw ? readExtraction(raw, text, at) : null;
-      return reading?.intent.kind === "ready" ? reading.intent.draft : null;
+      return reading?.intent.kind === "ready" ? { draft: reading.intent.draft } : { reason: "unreadable" };
     },
     updateTrade: async (feed, id, patch) => {
       const { error } = await admin.from("trades").update(patch).eq("id", id).eq("journal_id", feed.journalId).eq("user_id", feed.userId);

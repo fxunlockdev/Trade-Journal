@@ -321,8 +321,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       // A trade the model read is a trade to glance at: said once, in private.
       if (outcome.action === "signal_logged" && outcome.viaModel) {
-        const feedId = (await feedStore(admin).feedFor(roomMessage.chatId, roomMessage.threadId))?.id ?? (await feedStore(admin).feedFor(roomMessage.chatId, null))?.id;
-        if (feedId) await notifyModelRead(admin, botToken, appUrl, feedId, roomMessage, outcome.summary);
+        await notifyModelRead(admin, botToken, appUrl, outcome.feedId, roomMessage, outcome.summary);
       }
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }

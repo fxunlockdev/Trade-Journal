@@ -87,11 +87,11 @@ async function feedPeople(admin: Admin, feedId: string): Promise<FeedPeople | nu
  * hour; a missed note is an item still on the Posters page, a thrown one
  * would fail the webhook and lose the message entirely.
  */
-async function tellFeedPeople(admin: Admin, botToken: string, feedId: string, compose: (f: FeedPeople) => string): Promise<void> {
+async function tellFeedPeople(admin: Admin, botToken: string, feedId: string, limit: (typeof LIMITS)[keyof typeof LIMITS], compose: (f: FeedPeople) => string): Promise<void> {
   try {
     const f = await feedPeople(admin, feedId);
     if (!f) return;
-    if (!(await allowRequest(admin, LIMITS.telegramFeedNotify, feedId))) return;
+    if (!(await allowRequest(admin, limit, feedId))) return;
     const text = compose(f);
     const people = await recipientsForFeed(admin, f);
     await Promise.all(people.map((id) => sendChatMessage(botToken, String(id), text)));
@@ -102,10 +102,10 @@ async function tellFeedPeople(admin: Admin, botToken: string, feedId: string, co
 
 /** A room message kept for review. */
 export function notifyReview(admin: Admin, botToken: string, appUrl: string, feedId: string, msg: { readonly sender: string | null; readonly text: string }, reason: string): Promise<void> {
-  return tellFeedPeople(admin, botToken, feedId, (f) => reviewNotice({ room: f.room, journal: f.journal, sender: msg.sender, text: msg.text, reason, appUrl }));
+  return tellFeedPeople(admin, botToken, feedId, LIMITS.telegramFeedNotify, (f) => reviewNotice({ room: f.room, journal: f.journal, sender: msg.sender, text: msg.text, reason, appUrl }));
 }
 
 /** A signal the rules could not read and the model logged. */
 export function notifyModelRead(admin: Admin, botToken: string, appUrl: string, feedId: string, msg: { readonly sender: string | null; readonly text: string }, summary: string): Promise<void> {
-  return tellFeedPeople(admin, botToken, feedId, (f) => modelReadNotice({ room: f.room, journal: f.journal, sender: msg.sender, text: msg.text, summary, appUrl }));
+  return tellFeedPeople(admin, botToken, feedId, LIMITS.telegramFeedModelNotify, (f) => modelReadNotice({ room: f.room, journal: f.journal, sender: msg.sender, text: msg.text, summary, appUrl }));
 }

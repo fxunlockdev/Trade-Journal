@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ingestFeedMessage, applyResult, consumedByFeed, wantsMark, stillRunning, looksLikeSignal, looksLikeResult, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
+  ingestFeedMessage, applyResult, consumedByFeed, wantsMark, stillRunning, looksLikeSignal, looksLikeResult, unstatedNumbers, ATTACH_WINDOW_HOURS, ATTACH_CANDIDATES,
   type Feed, type FeedMessage, type FeedStore, type MessageRecord, type TradeRow,
 } from "@/lib/telegram/feed";
 import { parseResultUpdate } from "@/lib/telegram/result-update";
@@ -425,55 +425,95 @@ describe("a template the rules do not know", () => {
     if (i.kind !== "ready") throw new Error("fixture");
     return i.draft;
   };
+  /** A room where sender 1 is a trader: one accepted signal already. */
+  const roomWithTrader = async (o: Partial<FeedStore>) => { const f = fake(o); await ingestFeedMessage(f.store, msg({ text: TIG, messageId: 5 })); return f; };
 
-  it("is shaped like a signal, and a result nobody taught the rules is shaped like one too", () => {
+  it("is shaped like a signal; a question, a one-number remark, or a message with no instrument is not", () => {
     expect(looksLikeSignal(ODD)).toBe(true);
+    expect(looksLikeSignal("im long gold from 4374, stop 4390 lol")).toBe(true);
+    expect(looksLikeSignal("should i sell gold here, stop above 4390?")).toBe(false);
+    expect(looksLikeSignal("he got stopped out on his short at 4390, brutal")).toBe(false);
+    expect(looksLikeSignal("sell 4374 stop 4390 target 4360")).toBe(false);
     expect(looksLikeSignal("sell your car lol")).toBe(false);
-    expect(looksLikeSignal("nice one boss")).toBe(false);
     expect(looksLikeResult("target one smashed, +40 pips")).toBe(true);
     expect(looksLikeResult("Ready")).toBe(false);
   });
 
-  it("is read by the model, logged with both readings in the note, and said to be the model's", async () => {
+  it("is read by the model, logged open with both readings in the note, and said to be the model's", async () => {
     const calls: string[] = [];
-    const f = fake({ readSignal: async (_fd, text) => { calls.push(text); return modelDraft(); } });
+    const f = await roomWithTrader({ readSignal: async (_fd, text) => { calls.push(text); return { draft: modelDraft() }; } });
     expect(parseTradeIntent(ODD, new Date()).kind).not.toBe("ready");
     const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
-    expect(r).toMatchObject({ action: "signal_logged", tradeId: "t1", viaModel: true });
+    expect(r).toMatchObject({ action: "signal_logged", tradeId: "t2", feedId: "feed-1", viaModel: true });
     expect(calls).toEqual([ODD]);
-    const t = f.trades.get("t1") as unknown as Record<string, unknown>;
-    expect(t).toMatchObject({ instrument: "XAUUSD", direction: "sell", entry_price: 4374, stop_loss: 4390, tp1: 4360, tp2: 4350 });
+    const t = f.trades.get("t2") as unknown as Record<string, unknown>;
+    expect(t).toMatchObject({ instrument: "XAUUSD", direction: "sell", entry_price: 4374, stop_loss: 4390, tp1: 4360, tp2: 4350, exit_price: null });
     expect(String(t.notes)).toContain(ODD);
     expect(String(t.notes)).toContain("Read by the model");
   });
 
-  it("waits for a person when the model cannot read it either, saying it looked like a signal", async () => {
-    const f = fake({ readSignal: async () => null });
+  it("refuses a number the message never wrote, however plausible", async () => {
+    const f = await roomWithTrader({ readSignal: async () => ({ draft: { ...modelDraft(), tp2: 4355 } }) });
     const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
     expect(r).toMatchObject({ action: "review" });
+    expect(f.records.at(-1)?.reason).toMatch(/numbers the message does not contain \(4355\)/);
+    expect(f.trades.size).toBe(1);
+    expect(unstatedNumbers(modelDraft(), ODD)).toEqual([]);
+    expect(unstatedNumbers(modelDraft(), "sell 4,374 stop 4390 tp 4360 and 4350 gold")).toEqual([]);
+  });
+
+  it("opens the trade whatever the model made of the outcome", async () => {
+    const f = await roomWithTrader({ readSignal: async () => ({ draft: { ...modelDraft(), outcome: { kind: "closed_at", exit_price: 4360 } } }) });
+    await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
+    expect(f.trades.get("t2")?.exit_price).toBeNull();
+    expect(f.trades.get("t2")?.tp1_result).toBeNull();
+  });
+
+  it("does not read a member's message this way, and does not ask the model about it", async () => {
+    let calls = 0;
+    const f = await roomWithTrader({ readSignal: async () => { calls += 1; return { draft: modelDraft() }; } });
+    const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60, sender: "Random Member", senderId: 777 }));
+    expect(r).toMatchObject({ action: "review" });
+    expect(f.records.at(-1)?.reason).toMatch(/has not posted one in this room/);
+    expect(calls).toBe(0);
+    expect(f.trades.size).toBe(1);
+    const channel = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 61, sender: "TIG master channel", senderId: null }));
+    expect(channel).toMatchObject({ action: "signal_logged", viaModel: true });
+  });
+
+  it("waits for a person when the model cannot read it either, or has no allowance left, saying which", async () => {
+    const f = await roomWithTrader({ readSignal: async () => ({ reason: "unreadable" }) });
+    expect((await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }))).action).toBe("review");
     expect(f.records.at(-1)?.reason).toMatch(/looked like a signal but could not be read/);
-    expect(f.trades.size).toBe(0);
+    const g = await roomWithTrader({ readSignal: async () => ({ reason: "over_allowance" }) });
+    expect((await ingestFeedMessage(g.store, msg({ text: ODD, messageId: 60 }))).action).toBe("review");
+    expect(g.records.at(-1)?.reason).toMatch(/allowance/);
+    expect(f.trades.size + g.trades.size).toBe(2);
   });
 
   it("never asks the model about chat", async () => {
     let calls = 0;
-    const f = fake({ readSignal: async () => { calls += 1; return null; } });
-    expect((await ingestFeedMessage(f.store, msg({ text: "sell your car lol", messageId: 61 }))).action).toBe("noise");
+    const f = await roomWithTrader({ readSignal: async () => { calls += 1; return { reason: "unreadable" }; } });
+    expect((await ingestFeedMessage(f.store, msg({ text: "should i sell gold here, stop above 4390?", messageId: 61 }))).action).toBe("noise");
     expect(calls).toBe(0);
   });
 
   it("holds the model's reading to the same checks as a typed signal", async () => {
-    const f = fake({ readSignal: async () => ({ ...modelDraft(), stop_loss: 4360 }) });
-    const r = await ingestFeedMessage(f.store, msg({ text: ODD, messageId: 60 }));
+    const f = await roomWithTrader({ readSignal: async () => ({ draft: { ...modelDraft(), stop_loss: 4360 } }) });
+    const r = await ingestFeedMessage(f.store, msg({ text: ODD.replace("4390", "4360"), messageId: 60 }));
     expect(r).toMatchObject({ action: "review" });
-    expect(f.trades.size).toBe(0);
+    expect(f.trades.size).toBe(1);
   });
 
-  it("keeps a ledger of result-shaped messages it did not understand, without alarming anyone", async () => {
+  it("keeps a ledger of result-shaped messages from traders it did not understand, without alarming anyone", async () => {
     const f = await withSignal(TIG, 5);
-    const r = await ingestFeedMessage(f.store, msg({ text: "target one smashed, +40 pips", messageId: 6, replyToMessageId: 5 }));
-    expect(r).toEqual({ action: "noise" });
+    expect(await ingestFeedMessage(f.store, msg({ text: "target one smashed, +40 pips", messageId: 6, replyToMessageId: 5 }))).toEqual({ action: "noise" });
     expect(f.records.at(-1)).toMatchObject({ kind: "noise", status: "ignored", reason: "looked like a result; not understood", tradeId: "t1" });
+    expect(await ingestFeedMessage(f.store, msg({ text: "target one smashed, +40 pips", messageId: 7 }))).toEqual({ action: "noise" });
+    expect(f.records.at(-1)).toMatchObject({ messageId: 7, kind: "noise", reason: "looked like a result; not understood", tradeId: null });
+    const before = f.records.length;
+    await ingestFeedMessage(f.store, msg({ text: "target one smashed lol", messageId: 8, sender: "Member", senderId: 777 }));
+    expect(f.records.length).toBe(before);
   });
 });
 
@@ -506,7 +546,7 @@ describe("guards", () => {
   });
 
   it("only takes a message the feed actually used, so the room keeps its commands", () => {
-    expect(consumedByFeed({ action: "signal_logged", tradeId: "t", react: false, viaModel: false, summary: "" })).toBe(true);
+    expect(consumedByFeed({ action: "signal_logged", tradeId: "t", feedId: "f", react: false, viaModel: false, summary: "" })).toBe(true);
     expect(consumedByFeed({ action: "review", reason: "x", feedId: "f" })).toBe(true);
     expect(consumedByFeed({ action: "noise" })).toBe(false);
     expect(consumedByFeed({ action: "skipped", why: "disabled" })).toBe(false);

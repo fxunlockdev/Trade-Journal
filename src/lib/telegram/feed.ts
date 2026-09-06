@@ -24,7 +24,7 @@ import { parseTradeIntent, describeDraft, type TradeDraft } from "@/lib/telegram
 import { parseResultUpdate, hasResult, type ResultUpdate } from "@/lib/telegram/result-update";
 import { outcomeFields } from "@/lib/trades/outcome-parser";
 import { findInstruments } from "@/lib/trades/signal-parser";
-import { expandAliases } from "@/lib/trades/instrument-aliases";
+import { expandAliases, mentionsAlias } from "@/lib/trades/instrument-aliases";
 import { buildTradeRow } from "@/lib/trades/build-trade";
 import { computeTradeFields } from "@/lib/trades/computations";
 import { getInstrumentSpec } from "@/lib/trading/instrument-specs";
@@ -110,14 +110,18 @@ export interface FeedStore {
    * the rules do not know: the model, held to the same grammar on the way
    * back in. Null when it cannot read it either, or is not configured.
    */
-  readSignal?(feed: Feed, text: string, at: Date): Promise<TradeDraft | null>;
+  readSignal?(feed: Feed, text: string, at: Date): Promise<ModelReading>;
 }
+
+export type ModelReading =
+  | { readonly draft: TradeDraft }
+  | { readonly reason: "unreadable" | "over_allowance" | "not_configured" };
 
 export type IngestOutcome =
   | { readonly action: "skipped"; readonly why: "no_feed" | "disabled" | "seen" | "empty" }
   | { readonly action: "noise" }
   /** `react`: the room asked for a mark on messages it logged. `viaModel`: the rules could not read it; the model did. */
-  | { readonly action: "signal_logged"; readonly tradeId: string; readonly react: boolean; readonly viaModel: boolean; readonly summary: string }
+  | { readonly action: "signal_logged"; readonly tradeId: string; readonly feedId: string; readonly react: boolean; readonly viaModel: boolean; readonly summary: string }
   | { readonly action: "signal_updated"; readonly tradeId: string }
   | { readonly action: "result_applied"; readonly tradeId: string; readonly closed: boolean; readonly react: boolean }
   | { readonly action: "review"; readonly reason: string; readonly feedId: string };
@@ -355,9 +359,40 @@ export function applyResult(trade: TradeRow, u: ResultUpdate): Applied {
   };
 }
 
-/** Whether a message is shaped like a signal: a side, a level, and a number. */
+/**
+ * Whether a message is shaped like a signal: a side, a level word, an
+ * instrument the catalogue knows, at least two numbers, and no question
+ * mark. Chat about a trade ("should I sell gold here, stop above 4390?")
+ * fails on the last two; a stated trade passes.
+ */
 export function looksLikeSignal(text: string): boolean {
-  return /\b(?:buy|sell|long|short)\b/i.test(text) && /\b(?:entry|sl|stop|tp\s?\d|target)/i.test(text) && /\d/.test(text);
+  if (/\?/.test(text)) return false;
+  if (!/\b(?:buy|sell|long|short)\b/i.test(text)) return false;
+  if (!/\b(?:entry|sl|stop|tp\s?\d|target)/i.test(text)) return false;
+  if ((text.match(/\d[\d.,]*/g) ?? []).length < 2) return false;
+  return mentionsAlias(text) || findInstruments(expandAliases(text)).length > 0;
+}
+
+/** Every number the text can be read as: "4,374.5" both ways, "163.730" as is. */
+function numbersIn(text: string): readonly number[] {
+  const out: number[] = [];
+  for (const tok of text.match(/\d[\d.,]*/g) ?? []) {
+    const cleaned = tok.replace(/[.,]+$/, "");
+    for (const v of [Number(cleaned.replace(/,/g, "")), Number(cleaned.replace(/\./g, "").replace(",", "."))]) {
+      if (Number.isFinite(v)) out.push(v);
+    }
+  }
+  return out;
+}
+
+/**
+ * The prices in a model's reading that the message never wrote. A model may
+ * be talked into a number; the text cannot. Anything here is a refusal.
+ */
+export function unstatedNumbers(d: TradeDraft, text: string): readonly number[] {
+  const stated = numbersIn(text);
+  const prices = [d.entry_price, d.entry_price_high, d.stop_loss, d.tp1, d.tp2, d.tp3, d.tp4, d.tp5, d.tp6, d.tp7].filter((x): x is number => x !== null);
+  return prices.filter((p) => !stated.some((v) => Math.abs(v - p) <= Math.abs(p) * 1e-9));
 }
 
 /** Whether a message is shaped like a result the rules did not recognise. */
@@ -442,7 +477,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       return { action: "review", reason: inserted.error, feedId: feed.id };
     }
     await store.record(record(feed, msg, "signal", "applied", null, inserted.id));
-    return { action: "signal_logged", tradeId: inserted.id, react: feed.react, viaModel, summary: describeDraft(draft) };
+    return { action: "signal_logged", tradeId: inserted.id, feedId: feed.id, react: feed.react, viaModel, summary: describeDraft(draft) };
   };
   if (intent.kind === "ready") return handleSignal(intent.draft, false);
 
@@ -543,14 +578,29 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   // through the same grammar and the same checks, so it can only log what a
   // typed signal could; anything less waits for a person, and says so.
   if (looksLikeSignal(text)) {
+    const keep = async (reason: string): Promise<IngestOutcome> => {
+      await store.record(record(feed, msg, "unreadable", "review", reason, null));
+      return { action: "review", reason, feedId: feed.id };
+    };
+    // Only a trader's word is read this generously: someone whose signal the
+    // rules have already accepted, or the channel itself. A member's message
+    // in the shape of a trade is a question for a person, and no model call.
+    if (msg.senderId !== null && !(await store.isKnownSender(feed, msg.senderId))) {
+      return keep(`looked like a signal, from ${msg.sender ?? "someone"} who has not posted one in this room`);
+    }
     if (store.readSignal) {
-      const draft = await store.readSignal(feed, text, new Date(msg.postedAt));
-      if (draft) return handleSignal(draft, true);
+      const read = await store.readSignal(feed, text, new Date(msg.postedAt));
+      if ("draft" in read) {
+        const invented = unstatedNumbers(read.draft, text);
+        if (invented.length > 0) return keep(`the model read numbers the message does not contain (${invented.join(", ")})`);
+        // A signal is a plan. Whatever the model made of the outcome, the
+        // trade opens open; results arrive as replies and are read by rules.
+        return handleSignal({ ...read.draft, outcome: { kind: "unknown" } }, true);
+      }
+      if (read.reason === "over_allowance") return keep("looked like a signal; the model's allowance for this room is used up this hour, retry later");
     }
     const why = intent.kind === "incomplete" ? intent.missing.join("; ") : "not in a template the rules know";
-    const reason = `looked like a signal but could not be read: ${why}`;
-    await store.record(record(feed, msg, "unreadable", "review", reason, null));
-    return { action: "review", reason, feedId: feed.id };
+    return keep(`looked like a signal but could not be read: ${why}`);
   }
 
   if (intent.kind === "incomplete") {
@@ -565,7 +615,8 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   const parent = msg.replyToMessageId !== null
     ? (await store.tradeByMessage(feed, msg.replyToMessageId))?.id ?? (await store.seen(msg.chatId, msg.replyToMessageId))?.tradeId ?? null
     : null;
-  const resultShaped = looksLikeResult(text);
+  // Only what a trader (or the channel) wrote is worth teaching from.
+  const resultShaped = looksLikeResult(text) && (msg.senderId === null || (await store.isKnownSender(feed, msg.senderId)));
   if (parent || resultShaped) {
     await store.record(record(feed, msg, "noise", "ignored", resultShaped ? "looked like a result; not understood" : null, parent));
   }
