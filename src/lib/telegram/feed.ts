@@ -114,7 +114,7 @@ export type IngestOutcome =
   | { readonly action: "signal_logged"; readonly tradeId: string; readonly react: boolean }
   | { readonly action: "signal_updated"; readonly tradeId: string }
   | { readonly action: "result_applied"; readonly tradeId: string; readonly closed: boolean; readonly react: boolean }
-  | { readonly action: "review"; readonly reason: string };
+  | { readonly action: "review"; readonly reason: string; readonly feedId: string };
 
 export interface IngestOptions {
   /** Process again even though the message was seen: a person asked for a retry. */
@@ -375,17 +375,17 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     if (may === null) {
       const reason = "couldn't check access to the journal; retry";
       await store.record(record(feed, msg, "unreadable", "review", reason, tradeId));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
     if (!may) {
       const reason = "the person who connected this room can no longer write to that journal";
       await store.record(record(feed, msg, "unreadable", "review", reason, tradeId));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
     if (!(await store.allowWrite(feed))) {
       const reason = "too many trades from this room this hour; retry later";
       await store.record(record(feed, msg, "unreadable", "review", reason, tradeId));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
     return null;
   };
@@ -395,7 +395,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     const built = signalRow(feed, msg, intent.draft);
     if (!built.ok) {
       await store.record(record(feed, msg, "signal", "review", built.issues.join("; "), priorTrade?.id ?? null));
-      return { action: "review", reason: built.issues.join("; ") };
+      return { action: "review", reason: built.issues.join("; "), feedId: feed.id };
     }
     const stopped = await guard(priorTrade?.id ?? null);
     if (stopped) return stopped;
@@ -405,13 +405,13 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       if (hasVerdict(priorTrade)) {
         const reason = "signal edited after results were applied";
         await store.record(record(feed, msg, "signal", "review", reason, priorTrade.id));
-        return { action: "review", reason };
+        return { action: "review", reason, feedId: feed.id };
       }
       const { user_id: _u, journal_id: _j, source: _s, ...plan } = built.row;
       void _u; void _j; void _s;
       const ok = await store.updateTrade(feed, priorTrade.id, plan);
       await store.record(record(feed, msg, "signal", ok ? "applied" : "review", ok ? null : "could not update the trade", priorTrade.id));
-      return ok ? { action: "signal_updated", tradeId: priorTrade.id } : { action: "review", reason: "could not update the trade" };
+      return ok ? { action: "signal_updated", tradeId: priorTrade.id } : { action: "review", reason: "could not update the trade", feedId: feed.id };
     }
     const inserted = await store.insertTrade({
       ...built.row,
@@ -421,7 +421,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     if ("duplicate" in inserted) return { action: "skipped", why: "seen" };
     if ("error" in inserted) {
       await store.record(record(feed, msg, "signal", "review", inserted.error, null));
-      return { action: "review", reason: inserted.error };
+      return { action: "review", reason: inserted.error, feedId: feed.id };
     }
     await store.record(record(feed, msg, "signal", "applied", null, inserted.id));
     return { action: "signal_logged", tradeId: inserted.id, react: feed.react };
@@ -432,7 +432,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
   if (priorTrade) {
     const reason = "the signal was edited into something else; check the trade";
     await store.record(record(feed, msg, "signal", "review", reason, priorTrade.id));
-    return { action: "review", reason };
+    return { action: "review", reason, feedId: feed.id };
   }
 
   /* ── a result ─────────────────────────────────────────────────────── */
@@ -458,14 +458,14 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       if (named.length > 1) {
         const reason = `more than one instrument named (${named.join(", ")})`;
         await store.record(record(feed, msg, "result", "review", reason, null));
-        return { action: "review", reason };
+        return { action: "review", reason, feedId: feed.id };
       }
       const instrument = named[0] ?? null;
       const recent = await store.recentTrades(feed, instrument, since, msg.postedAt, ATTACH_CANDIDATES);
       if (recent.length >= ATTACH_CANDIDATES) {
         const reason = "too many trades in the window to pick one";
         await store.record(record(feed, msg, "result", "review", reason, null));
-        return { action: "review", reason };
+        return { action: "review", reason, feedId: feed.id };
       }
       const running = recent.filter(stillRunning);
       if (running.length === 1) trade = running[0];
@@ -474,13 +474,13 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
           ? `more than one ${instrument} trade is running; which one?`
           : "no instrument named and more than one trade is running";
         await store.record(record(feed, msg, "result", "review", reason, null));
-        return { action: "review", reason };
+        return { action: "review", reason, feedId: feed.id };
       }
     }
     if (!trade) {
       const reason = "a result with no open trade to attach to";
       await store.record(record(feed, msg, "result", "review", reason, null));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
 
     // Only a trader's word counts: someone who has posted a signal the feed
@@ -488,7 +488,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
     if (msg.senderId !== null && !(await store.isKnownSender(feed, msg.senderId))) {
       const reason = `posted by ${msg.sender ?? "someone"} who has not posted a signal in this room`;
       await store.record(record(feed, msg, "result", "review", reason, trade.id));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
 
     // An edited result cannot be undone by a machine: unchanged text is a
@@ -498,14 +498,14 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       if (seen.text === msg.text.slice(0, STORED_TEXT_LENGTH)) return { action: "skipped", why: "seen" };
       const reason = "a result was edited after it was applied; check the trade";
       await store.record(record(feed, msg, "result", "review", reason, trade.id));
-      return { action: "review", reason };
+      return { action: "review", reason, feedId: feed.id };
     }
 
     const applied = applyResult(trade, update);
     if ("reason" in applied) {
       if (msg.edited && seen) return { action: "noise" };
       await store.record(record(feed, msg, "result", applied.review ? "review" : "ignored", applied.reason, trade.id));
-      return applied.review ? { action: "review", reason: applied.reason } : { action: "noise" };
+      return applied.review ? { action: "review", reason: applied.reason, feedId: feed.id } : { action: "noise" };
     }
     const stopped = await guard(trade.id);
     if (stopped) return stopped;
@@ -514,13 +514,13 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       ...(applied.closed ? { exit_time: msg.postedAt } : {}),
     });
     await store.record(record(feed, msg, "result", ok ? "applied" : "review", ok ? null : "could not update the trade", trade.id));
-    return ok ? { action: "result_applied", tradeId: trade.id, closed: applied.closed, react: feed.react } : { action: "review", reason: "could not update the trade" };
+    return ok ? { action: "result_applied", tradeId: trade.id, closed: applied.closed, react: feed.react } : { action: "review", reason: "could not update the trade", feedId: feed.id };
   }
 
   /* ── a broken signal, or chat ─────────────────────────────────────── */
   if (intent.kind === "incomplete") {
     await store.record(record(feed, msg, "unreadable", "review", intent.missing.join("; "), null));
-    return { action: "review", reason: intent.missing.join("; ") };
+    return { action: "review", reason: intent.missing.join("; "), feedId: feed.id };
   }
 
   // Chat that replies into a trade's thread is remembered, so a reply to it

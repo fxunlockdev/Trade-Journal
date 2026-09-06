@@ -74,6 +74,8 @@ export const LIMITS = {
   telegramProse: { name: "telegram_prose", max: 40, windowSeconds: 3600 },
   /** Minting a code to listen to a room. */
   telegramFeedCode: { name: "telegram_feed_code", max: 10, windowSeconds: 3600 },
+  /** Private notes about one room's messages kept for review. */
+  telegramFeedNotify: { name: "telegram_feed_notify", max: 60, windowSeconds: 3600 },
   /** Trades written from one listened room. A busy day is tens an hour; a
    *  flood is hundreds. Over it, messages are kept for review, not applied. */
   telegramFeedWrite: { name: "telegram_feed_write", max: 200, windowSeconds: 3600 },

@@ -110,7 +110,7 @@ describe("a signal", () => {
     const broken = "🔴 SELL: BTC/USD\n\n📍 ENTRY ZONE: 64500-64600\n\n🎯 TP1: 64200 (+400)\n🎯 TP2: 63800 (+800)\n🎯 TP3: 63500 (+1100)\n🎯 FINAL TP: Open\n\n🛑 SL: 64100 (-500)";
     const f = fake();
     const r = await ingestFeedMessage(f.store, msg({ text: broken, messageId: 9 }));
-    expect(r.action).toBe("review");
+    expect(r).toMatchObject({ action: "review", feedId: "feed-1" });
     expect(f.records[0]).toMatchObject({ kind: "unreadable", status: "review" });
     expect(f.trades.size).toBe(0);
   });
@@ -328,7 +328,7 @@ describe("results", () => {
   it("keeps a result with nothing open for a person, and retries it once the signal is there", async () => {
     const f = fake();
     const early = msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 });
-    expect(await ingestFeedMessage(f.store, early)).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(await ingestFeedMessage(f.store, early)).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
     await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
     expect(await ingestFeedMessage(f.store, early)).toEqual({ action: "skipped", why: "seen" });
     expect((await ingestFeedMessage(f.store, early, { force: true })).action).toBe("result_applied");
@@ -386,7 +386,7 @@ describe("results", () => {
     const f = fake({ feedFor: async (_c, t) => (t === 5 ? topic5 : t === 7 ? topic7 : null) }, topic5);
     await ingestFeedMessage(f.store, msg({ text: TIG, messageId: 5, threadId: 5 }));
     const r = await ingestFeedMessage(f.store, msg({ text: "XAUUSD SL HIT ❌", messageId: 9, threadId: 7 }));
-    expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(r).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
     expect(f.trades.get("t1")?.tp1_result).toBeNull();
   });
 
@@ -404,7 +404,7 @@ describe("results", () => {
     const f = fake();
     await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21, postedAt: "2026-08-28T14:00:00.000Z" }));
     const r = await ingestFeedMessage(f.store, msg({ text: "USDJPY 🛑 SL HIT", messageId: 30, postedAt: "2026-09-04T14:00:00.000Z" }));
-    expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(r).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
     const g = fake();
     await ingestFeedMessage(g.store, msg({ text: YOHAN, messageId: 21, postedAt: "2026-09-01T14:00:00.000Z" }));
     expect((await ingestFeedMessage(g.store, msg({ text: "USDJPY 🛑 SL HIT", messageId: 30, postedAt: "2026-09-04T14:00:00.000Z" }))).action).toBe("result_applied");
@@ -425,7 +425,7 @@ describe("guards", () => {
     g.trades.set("t1", f.trades.get("t1")!);
     g.byMessage.set(21, "t1");
     const r = await ingestFeedMessage(g.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
-    expect(r).toEqual({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(r).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
     expect(g.updates).toHaveLength(0);
   });
 
@@ -447,7 +447,7 @@ describe("guards", () => {
 
   it("only takes a message the feed actually used, so the room keeps its commands", () => {
     expect(consumedByFeed({ action: "signal_logged", tradeId: "t", react: false })).toBe(true);
-    expect(consumedByFeed({ action: "review", reason: "x" })).toBe(true);
+    expect(consumedByFeed({ action: "review", reason: "x", feedId: "f" })).toBe(true);
     expect(consumedByFeed({ action: "noise" })).toBe(false);
     expect(consumedByFeed({ action: "skipped", why: "disabled" })).toBe(false);
   });
