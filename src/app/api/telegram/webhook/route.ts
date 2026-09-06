@@ -26,7 +26,8 @@ import { feedMessageFromUpdate } from "@/lib/telegram/feed-message";
 import { ingestFeedMessage, consumedByFeed, wantsMark } from "@/lib/telegram/feed";
 import { feedStore, anyFeedIn } from "@/lib/telegram/feed-store";
 import { mayReplyIn } from "@/lib/telegram/speak";
-import { linkAccountWithCode } from "@/lib/telegram/accounts";
+import { notifyReview } from "@/lib/telegram/notify";
+import { linkAccountWithCode, linkedUser } from "@/lib/telegram/accounts";
 import { handleTradeMessage } from "@/lib/telegram/trade-dm";
 import { handleTradeTap } from "@/lib/telegram/trade-tap";
 import { handleTradeAnswer } from "@/lib/telegram/trade-answer";
@@ -207,9 +208,10 @@ async function claimChatIfCoded(
     // tell someone probing codes which ones exist.
     return "That code is not valid any more. Open the Posters page again for a fresh one.";
   }
-  // A code minted to LISTEN to a room is confirmed silently: the bot must
-  // never announce itself in a signals room. The Posters page shows the result.
-  const silent = claim.purpose === "feed";
+  // Whatever the code was for, the room never hears the answer: `say`
+  // refuses any group that is not a posters destination, and the person who
+  // posted it is told in private if their account is linked.
+  const room = claim.purpose === "feed" ? "This room" : "This group";
 
   // Conditional on still being unclaimed, so two messages racing the same code
   // cannot both win.
@@ -225,8 +227,8 @@ async function claimChatIfCoded(
     .select("code")
     .maybeSingle();
 
-  if (!updated) return silent ? "" : "That code has already been used.";
-  return silent ? "" : "Confirmed. This group is now available to connect on the Posters page.";
+  if (!updated) return "That code has already been used.";
+  return `Confirmed. ${room} is now available to connect on the Posters page.`;
 }
 
 /** The chat's owner and their connected destination, or null. */
@@ -311,8 +313,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // message it logged, if the room asked for one. Best effort; a chat
       // with reactions off simply shows nothing.
       if (wantsMark(outcome)) await reactToMessage(botToken, roomMessage.chatId, roomMessage.messageId);
+      // Something it could not use goes to the journal's people in private,
+      // never to the room.
+      if (outcome.action === "review") {
+        await notifyReview(admin, botToken, process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "", outcome.feedId, roomMessage, outcome.reason);
+      }
       if (consumedByFeed(outcome)) return NextResponse.json({ ok: true });
     }
+
+    // A word to whoever posted something in a group that deserves an answer
+    // (a code, mostly): in THEIR private chat, and only if their account is
+    // linked, so the group never hears it. Unlinked posters get nothing; the
+    // Posters page shows the result either way.
+    const tellPoster = async (m: TgMessage, text: string): Promise<void> => {
+      const uid = m.from?.id;
+      if (!uid || m.sender_chat || m.chat?.type === "private") return;
+      if (await linkedUser(admin, uid)) await say(String(uid), text);
+    };
     // In a room somebody listens to, the bot does nothing else at all: no
     // reply to a code or a command, and no code consumed either, so a posters
     // code pasted there by mistake is not burned. The room's topics are
@@ -324,13 +341,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (posted?.chat?.id && findClaimCode(posted.text) && findLinkCode(posted.text)) {
       // Two different grants in one message. Branch order would silently pick
       // one; saying so is better than guessing which was meant.
-      await say(String(posted.chat.id), "That message has a group code and an account code in it. Send one at a time.");
+      const text = "That message has a group code and an account code in it. Send one at a time.";
+      await say(String(posted.chat.id), text);
+      await tellPoster(posted, text);
       return NextResponse.json({ ok: true });
     }
     if (posted?.chat?.id) {
       const reply = await claimChatIfCoded(admin, posted);
       if (reply !== null) {
-        if (reply) await say(String(posted.chat.id), reply);
+        await say(String(posted.chat.id), reply);
+        await tellPoster(posted, reply);
         return NextResponse.json({ ok: true });
       }
     }
