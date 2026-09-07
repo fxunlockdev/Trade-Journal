@@ -640,11 +640,15 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       await store.record(record(feed, msg, "unreadable", "review", reason, null));
       return { action: "review", reason, feedId: feed.id };
     };
-    // Only a trader's word is read this generously: someone whose signal the
+    // What the rules themselves found wrong comes first: a stop on the wrong
+    // side is what the trader needs to hear, whoever they are.
+    const why = intent.kind === "incomplete" ? intent.missing.join("; ") : null;
+    // Only a trader's word is read by the model: someone whose signal the
     // rules have already accepted, or the channel itself. A member's message
     // in the shape of a trade is a question for a person, and no model call.
     if (msg.senderId !== null && !(await store.isKnownSender(feed, msg.senderId))) {
-      return keep(`looked like a signal, from ${msg.sender ?? "someone"} who has not posted one in this room`);
+      const who = `${msg.sender ?? "someone"} has not had a signal accepted in this room yet`;
+      return keep(why ? `${why} (${who}, so the model was not asked)` : `looked like a signal, from ${msg.sender ?? "someone"} who has not posted one in this room`);
     }
     if (store.readSignal) {
       const read = await store.readSignal(feed, text, new Date(msg.postedAt));
@@ -657,8 +661,7 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       }
       if (read.reason === "over_allowance") return keep("looked like a signal; the model's allowance for this room is used up this hour, retry later");
     }
-    const why = intent.kind === "incomplete" ? intent.missing.join("; ") : "not in a template the rules know";
-    return keep(`looked like a signal but could not be read: ${why}`);
+    return keep(`looked like a signal but could not be read: ${why ?? "not in a template the rules know"}`);
   }
 
   if (intent.kind === "incomplete") {
