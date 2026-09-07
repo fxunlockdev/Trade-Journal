@@ -628,6 +628,26 @@ describe("a typo", () => {
   });
 });
 
+describe("what the note says", () => {
+  it("names the rules' own finding first, whoever posted it: Chris's Monday signal", async () => {
+    // Verbatim from GOLD - Chris, 7 Sep 06:48: every target mistyped 44xx for 43xx.
+    const CHRIS_TYPO = "🔴 SELL: XAU/USD\n\n📍 ENTRY ZONE: 4404-4407\n\n🎯 TP1: 4494 (+130 pips)\n🎯 TP2: 4484 (+230 pips)\n🎯 TP3: 4474 (+330 pips)\n🎯 FINAL TP: Open\n\n🛑 SL: 4414 (-80 pips)";
+    const f = fake();
+    const r = await ingestFeedMessage(f.store, msg({ text: CHRIS_TYPO, messageId: 347, sender: "CHRI$", senderId: 1576751261 }));
+    expect(r).toMatchObject({ action: "review" });
+    const reason = f.records.at(-1)?.reason ?? "";
+    expect(reason).toMatch(/^for a SELL TP1 should be below the entry \(TP1 4494, entry 4404\)/);
+    expect(reason).toMatch(/CHRI\$ has not had a signal accepted in this room yet, so the model was not asked/);
+    expect(f.trades.size).toBe(0);
+    // The trader's edit, targets corrected, logs it; the results that replied to it then attach on retry.
+    const fixed = await ingestFeedMessage(f.store, msg({ text: CHRIS_TYPO.replace("4494", "4394").replace("4484", "4384").replace("4474", "4374"), messageId: 347, sender: "CHRI$", senderId: 1576751261, edited: true }));
+    expect(fixed).toMatchObject({ action: "signal_logged", tradeId: "t1" });
+    const early = msg({ text: "🎯 TP1 HIT +130 pips", messageId: 349, replyToMessageId: 347, sender: "CHRI$", senderId: 1576751261 });
+    expect((await ingestFeedMessage(f.store, early, { force: true })).action).toBe("result_applied");
+    expect(f.trades.get("t1")?.tp1_result).toBe("hit");
+  });
+});
+
 describe("guards", () => {
   it("never touches a trade outside the feed's journal, even by its message id", async () => {
     const f = await withSignal();
