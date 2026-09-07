@@ -41,6 +41,8 @@ export interface Feed {
   readonly enabled: boolean;
   /** Leave a reaction on each message logged, so the room can see it landed. */
   readonly react: boolean;
+  /** ISO. Messages posted before this were never heard. */
+  readonly connectedAt: string;
 }
 
 export interface FeedMessage {
@@ -103,6 +105,13 @@ export interface FeedStore {
   tradeById(feed: Feed, id: string): Promise<TradeRow | null>;
   /** Trades this feed logged between two instants, newest first, for this instrument if given. */
   recentTrades(feed: Feed, instrument: string | null, since: string, until: string, limit: number): Promise<readonly TradeRow[]>;
+  /**
+   * Trades a person logged by hand into this feed's journal, not from any
+   * room message, entered between two instants and still running in the
+   * sense of `stillRunning`. What a result can adopt when the signal it
+   * answers was posted before the room was connected.
+   */
+  openManualTrades(feed: Feed, instrument: string | null, since: string, until: string): Promise<readonly TradeRow[]>;
   insertTrade(row: Record<string, unknown>): Promise<{ id: string } | { duplicate: true } | { error: string }>;
   /** Scoped to the feed's journal as well as the id, so a wrong id cannot cross tenants. */
   updateTrade(feed: Feed, id: string, patch: Record<string, unknown>): Promise<boolean>;
@@ -434,6 +443,13 @@ function resultSubjectInstruments(text: string): readonly string[] {
   return [...out];
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "7 Sep", from an ISO instant, the same on every machine. */
+function dayOf(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "an unknown day" : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
 /** Which instruments a result names, for attaching without a reply link. */
 function mentionedInstruments(text: string): readonly string[] {
   return findInstruments(expandAliases(text));
@@ -579,7 +595,33 @@ export async function ingestFeedMessage(store: FeedStore, msg: FeedMessage, opts
       }
     }
     if (!trade) {
-      const reason = "a result with no open trade to attach to";
+      // The signal may have been posted before the room was connected, and
+      // logged by hand since: the one open hand-logged trade in the journal
+      // for the instrument, entered within the window either side, is it.
+      // It is linked to the message the result answers, so the next result
+      // finds it directly.
+      const posted = new Date(msg.postedAt);
+      const named = mentionedInstruments(text);
+      const instrument = named.length === 1 ? named[0] : null;
+      const since = new Date(posted.getTime() - ATTACH_WINDOW_HOURS * 3600_000).toISOString();
+      const until = new Date(posted.getTime() + ATTACH_WINDOW_HOURS * 3600_000).toISOString();
+      const manual = named.length > 1 ? [] : await store.openManualTrades(feed, instrument, since, until);
+      if (manual.length > 1) {
+        const reason = `more than one hand-logged ${instrument ?? ""} trade is open in the journal; which one?`.replace("  ", " ");
+        await store.record(record(feed, msg, "result", "review", reason, null));
+        return { action: "review", reason, feedId: feed.id };
+      }
+      if (manual.length === 1) {
+        trade = manual[0];
+        if (msg.replyToMessageId !== null) {
+          await store.updateTrade(feed, trade.id, { telegram_chat_id: msg.chatId, telegram_message_id: msg.replyToMessageId });
+        }
+      }
+    }
+    if (!trade) {
+      const reason = msg.replyToMessageId !== null
+        ? `replies to a message the bot never logged: posted before the room was connected on ${dayOf(feed.connectedAt)}, or not a signal. Log that trade by hand and the next result will find it`
+        : "a result with no open trade to attach to";
       await store.record(record(feed, msg, "result", "review", reason, null));
       return { action: "review", reason, feedId: feed.id };
     }

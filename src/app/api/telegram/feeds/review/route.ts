@@ -77,7 +77,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const feed: Feed = {
         id: feedRow.id as string, chatId: feedRow.chat_id as string, threadId: (feedRow.thread_id as number | null) ?? null,
         journalId: feedRow.journal_id as string, userId: feedRow.user_id as string, defaultLots: Number(feedRow.default_lots),
-        enabled: feedRow.enabled === true, react: feedRow.react === true,
+        enabled: feedRow.enabled === true, react: feedRow.react === true, connectedAt: String(feedRow.connected_at ?? ""),
       };
       const outcome = await ingestFeedMessage(
         feedStore(admin),

@@ -16,7 +16,7 @@ import { parseTradeIntent } from "@/lib/telegram/trade-intent";
 const U = "11111111-2222-4333-8444-555555555555";
 const J = "aaaaaaaa-0000-4000-8000-000000000001";
 
-const feed: Feed = { id: "feed-1", chatId: "-100999", threadId: null, journalId: J, userId: U, defaultLots: 0.5, enabled: true, react: false };
+const feed: Feed = { id: "feed-1", chatId: "-100999", threadId: null, journalId: J, userId: U, defaultLots: 0.5, enabled: true, react: false, connectedAt: "2026-09-04T10:00:00.000Z" };
 
 function msg(o: Partial<FeedMessage> & { text: string }): FeedMessage {
   return { chatId: "-100999", messageId: 1, threadId: null, replyToMessageId: null, sender: "Yohan Morel", senderId: 1, postedAt: "2026-09-04T14:00:00.000Z", edited: false, ...o };
@@ -60,8 +60,16 @@ function fake(o: Partial<FeedStore> = {}, f: Feed | null = feed): Fake {
       updates.push([id, patch]);
       const t = trades.get(id);
       if (t) trades.set(id, { ...t, ...patch } as TradeRow);
+      if (typeof patch.telegram_message_id === "number") byMessage.set(patch.telegram_message_id, id);
       return true;
     },
+    // Open trades a person typed in: not from a room, no message behind them, entered inside the window.
+    openManualTrades: async (fd, instrument, since, until) =>
+      [...trades.values()].filter((t) => {
+        const r = t as unknown as Record<string, unknown>;
+        return inJournal(fd, t) && r.source !== "telegram" && stillRunning(t) && r.telegram_message_id == null
+          && (!instrument || t.instrument === instrument) && t.entry_time >= since && t.entry_time <= until;
+      }),
     ...o,
   };
   return { store, trades, byMessage, records, updates };
@@ -329,7 +337,8 @@ describe("results", () => {
   it("keeps a result with nothing open for a person, and retries it once the signal is there", async () => {
     const f = fake();
     const early = msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 });
-    expect(await ingestFeedMessage(f.store, early)).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(await ingestFeedMessage(f.store, early)).toMatchObject({ action: "review" });
+    expect(f.records.at(-1)?.reason).toMatch(/never logged/);
     await ingestFeedMessage(f.store, msg({ text: YOHAN, messageId: 21 }));
     expect(await ingestFeedMessage(f.store, early)).toEqual({ action: "skipped", why: "seen" });
     expect((await ingestFeedMessage(f.store, early, { force: true })).action).toBe("result_applied");
@@ -648,6 +657,60 @@ describe("what the note says", () => {
   });
 });
 
+describe("a signal posted before the room was connected", () => {
+  /** Pierre typing the TIG signal into his chat with the bot, as on 7 Sep. */
+  const handLogged = (f: Fake, id: string, entryTime: string, instrument = "XAUUSD") => {
+    f.trades.set(id, { id, journal_id: J, user_id: U, source: "manual", instrument, direction: "buy", entry_price: 4390, stop_loss: 4376, tp1: 4396, tp2: 4401, tp3: 4406, tp4: null, tp5: null, tp6: null, tp7: null, tp4_trailing: true, tp1_result: null, tp2_result: null, tp3_result: null, tp4_result: null, tp5_result: null, tp6_result: null, tp7_result: null, exit_price: null, exit_time: null, quantity: 100, entry_time: entryTime, telegram_chat_id: null, telegram_message_id: null } as unknown as TradeRow);
+  };
+  const tigResult = (id: number, text = "TP3 HIT, +160 PIPS ✅🤑") => msg({ text, messageId: id, replyToMessageId: 6426, sender: "TIG master channel", senderId: null, postedAt: "2026-09-07T13:34:00.000Z" });
+
+  it("leaves its result for a person, saying why and what to do", async () => {
+    const f = fake();
+    const r = await ingestFeedMessage(f.store, tigResult(6431));
+    expect(r).toMatchObject({ action: "review" });
+    expect(f.records.at(-1)?.reason).toMatch(/never logged: posted before the room was connected on 4 Sep/);
+    expect(f.records.at(-1)?.reason).toMatch(/Log that trade by hand/);
+  });
+
+  it("is adopted once logged by hand: the result attaches, and the trade is linked for the next one", async () => {
+    const f = fake();
+    handLogged(f, "m1", "2026-09-07T15:39:00.000Z");
+    const r = await ingestFeedMessage(f.store, tigResult(6431));
+    expect(r).toMatchObject({ action: "result_applied", tradeId: "m1" });
+    const t = f.trades.get("m1") as unknown as Record<string, unknown>;
+    expect(t).toMatchObject({ telegram_chat_id: "-100999", telegram_message_id: 6426, tp3_result: "hit" });
+    // The next reply finds the trade through the link, not through a search:
+    // a stop after the last priced target leaves the banked exit as it is.
+    const next = await ingestFeedMessage(f.store, tigResult(6440, "SL HIT ❌"));
+    expect(next).toEqual({ action: "noise" });
+    expect(f.records.at(-1)).toMatchObject({ messageId: 6440, tradeId: "m1", status: "ignored" });
+    expect(f.records.at(-1)?.reason).toMatch(/runner closed after the last priced target/);
+    expect(f.trades.get("m1")?.exit_price).toBe(4406);
+  });
+
+  it("is adopted on retry too, and a result already recorded by hand is nothing new", async () => {
+    const f = fake();
+    const early = tigResult(6431);
+    expect((await ingestFeedMessage(f.store, early)).action).toBe("review");
+    handLogged(f, "m1", "2026-09-07T15:39:00.000Z");
+    f.trades.set("m1", { ...f.trades.get("m1")!, tp1_result: "hit", tp2_result: "hit", tp3_result: "hit", exit_price: 4406 } as TradeRow);
+    expect((await ingestFeedMessage(f.store, early, { force: true })).action).toBe("noise");
+    expect((f.trades.get("m1") as unknown as Record<string, unknown>).telegram_message_id).toBe(6426);
+  });
+
+  it("asks when two hand-logged trades are open, or when the hand-logged one is another instrument", async () => {
+    const f = fake();
+    handLogged(f, "m1", "2026-09-07T15:39:00.000Z");
+    handLogged(f, "m2", "2026-09-07T15:40:00.000Z");
+    expect((await ingestFeedMessage(f.store, tigResult(6431))).action).toBe("review");
+    expect(f.records.at(-1)?.reason).toMatch(/more than one hand-logged trade is open/);
+    const g = fake();
+    handLogged(g, "m1", "2026-09-07T15:39:00.000Z", "EURUSD");
+    expect((await ingestFeedMessage(g.store, tigResult(6431, "XAUUSD TP3 HIT, +160 PIPS"))).action).toBe("review");
+    expect(g.records.at(-1)?.reason).toMatch(/never logged/);
+  });
+});
+
 describe("guards", () => {
   it("never touches a trade outside the feed's journal, even by its message id", async () => {
     const f = await withSignal();
@@ -656,7 +719,8 @@ describe("guards", () => {
     g.trades.set("t1", f.trades.get("t1")!);
     g.byMessage.set(21, "t1");
     const r = await ingestFeedMessage(g.store, msg({ text: "🎯 TP1 HIT +10 pips", messageId: 23, replyToMessageId: 21 }));
-    expect(r).toMatchObject({ action: "review", reason: "a result with no open trade to attach to" });
+    expect(r).toMatchObject({ action: "review" });
+    expect(g.records.at(-1)?.reason).toMatch(/never logged/);
     expect(g.updates).toHaveLength(0);
   });
 
