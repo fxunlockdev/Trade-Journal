@@ -9,7 +9,7 @@ import { canEditTrades } from "@/lib/journals/active-journal";
 import { extractTradeWithModel } from "@/lib/telegram/prose-model";
 import { readExtraction } from "@/lib/telegram/prose";
 import type { JournalRole } from "@/types/database";
-import { STORED_TEXT_LENGTH, type Feed, type FeedStore, type MessageRecord, type TradeRow } from "@/lib/telegram/feed";
+import { STORED_TEXT_LENGTH, stillRunning, type Feed, type FeedStore, type MessageRecord, type TradeRow } from "@/lib/telegram/feed";
 
 function toFeed(r: Record<string, unknown>): Feed {
   return {
@@ -21,6 +21,7 @@ function toFeed(r: Record<string, unknown>): Feed {
     defaultLots: Number(r.default_lots),
     enabled: r.enabled === true,
     react: r.react === true,
+    connectedAt: String(r.connected_at ?? ""),
   };
 }
 
@@ -142,6 +143,25 @@ export function feedStore(admin: Admin): FeedStore {
         return { error: error.message };
       }
       return { id: data.id as string };
+    },
+    openManualTrades: async (feed, instrument, since, until) => {
+      let q = admin
+        .from("trades")
+        .select("*")
+        .eq("journal_id", feed.journalId)
+        .eq("user_id", feed.userId)
+        .is("telegram_message_id", null)
+        .neq("source", "telegram")
+        .gte("entry_time", since)
+        .lte("entry_time", until)
+        .order("entry_time", { ascending: false })
+        .limit(10);
+      if (instrument) q = q.eq("instrument", instrument);
+      const { data } = await q;
+      // "Open" the way a room trade is: nothing recorded, or targets banked
+      // with the runner alive. A trade typed in as "TP3 hit" with TP4 open
+      // is still waiting for its last word.
+      return ((data ?? []) as TradeRow[]).filter(stillRunning);
     },
     readSignal: async (feed, text, at) => {
       // Costs money and seconds, so it has its own allowance, per room.
