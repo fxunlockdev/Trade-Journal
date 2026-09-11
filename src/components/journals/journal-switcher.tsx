@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, Plus, LinkIcon, Settings2 } from "lucide-react";
+import { ArchiveRestore, Check, ChevronsUpDown, Plus, LinkIcon, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 import type { JournalWithRole, JournalColor } from "@/types/database";
@@ -30,6 +30,8 @@ import { CreateJournalDialog } from "@/components/journals/create-journal-dialog
  *   - Switch to any journal they're a member of (with their role shown)
  *   - Create a new journal (opens CreateJournalDialog)
  *   - Jump to the active journal's settings page
+ *   - Find an archived journal and, as its owner, restore it. Archiving hides
+ *     a journal from every other list, so this is the only way back to it.
  *
  * Switching POSTs to `/api/journals/[id]/activate` which verifies membership
  * server-side and writes the `trdr_active_journal` cookie. A router.refresh()
@@ -51,17 +53,49 @@ export const COLOR_CLASS: Record<JournalColor, string> = {
 
 interface JournalSwitcherProps {
   readonly journals: readonly JournalWithRole[];
+  readonly archivedJournals?: readonly JournalWithRole[];
   readonly activeJournalId: string;
 }
 
 export function JournalSwitcher({
   journals,
+  archivedJournals = [],
   activeJournalId,
 }: JournalSwitcherProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+
+  // Restoring is the owner's call; anyone else who finds it here is told whom to ask.
+  const handleRestore = async (j: JournalWithRole): Promise<void> => {
+    if (j.my_role !== "owner") {
+      toast.info(`Only the owner of ${j.name} can restore it.`);
+      return;
+    }
+    if (restoring) return;
+    setRestoring(j.id);
+    try {
+      const res = await fetch(`/api/journals/${j.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_archived: false }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(body.error ?? "Couldn't restore the journal");
+        return;
+      }
+      toast.success(`${j.name} restored`);
+      setOpen(false);
+      router.refresh();
+    } catch {
+      toast.error("Network error restoring the journal");
+    } finally {
+      setRestoring(null);
+    }
+  };
 
   const active =
     journals.find((j) => j.id === activeJournalId) ?? journals[0] ?? null;
@@ -148,6 +182,39 @@ export function JournalSwitcher({
                   </CommandItem>
                 ))}
               </CommandGroup>
+              {archivedJournals.length > 0 && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup heading="Archived">
+                    {archivedJournals.map((j) => (
+                      <CommandItem
+                        key={j.id}
+                        value={`archived ${j.name}`}
+                        onSelect={() => void handleRestore(j)}
+                        disabled={restoring === j.id}
+                        className="gap-2 text-muted-foreground"
+                        data-testid="archived-journal"
+                      >
+                        <span
+                          className={cn(
+                            "size-2 shrink-0 rounded-full opacity-50",
+                            COLOR_CLASS[j.color],
+                          )}
+                        />
+                        <span className="flex-1 truncate">{j.name}</span>
+                        {j.my_role === "owner" ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide">
+                            <ArchiveRestore className="size-3" />
+                            {restoring === j.id ? "Restoring" : "Restore"}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase tracking-wide">{j.my_role}</span>
+                        )}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </>
+              )}
               <CommandSeparator />
               <CommandGroup>
                 <CommandItem
