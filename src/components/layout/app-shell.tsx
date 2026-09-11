@@ -18,6 +18,8 @@ interface UserProfile {
 interface AppShellProps {
   profile: UserProfile;
   journals: readonly JournalWithRole[];
+  /** Hidden from every list; shown in the switcher's own Archived section. */
+  archivedJournals?: readonly JournalWithRole[];
   activeJournalId: string;
   /** True for an established user — suppresses the first-run tour. */
   alreadyOnboarded?: boolean;
@@ -27,6 +29,7 @@ interface AppShellProps {
 export function AppShell({
   profile,
   journals,
+  archivedJournals,
   activeJournalId,
   alreadyOnboarded = true,
   children,
@@ -48,6 +51,7 @@ export function AppShell({
         <Topbar
           profile={profile}
           journals={journals}
+          archivedJournals={archivedJournals}
           activeJournalId={activeJournalId}
           onMenuClick={() => setSidebarOpen(true)}
         />

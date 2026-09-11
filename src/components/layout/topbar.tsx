@@ -28,6 +28,7 @@ interface UserProfile {
 interface TopbarProps {
   profile: UserProfile;
   journals: readonly JournalWithRole[];
+  archivedJournals?: readonly JournalWithRole[];
   activeJournalId: string;
   onMenuClick: () => void;
 }
@@ -68,6 +69,7 @@ function getInitials(name: string | null, email: string): string {
 export function Topbar({
   profile,
   journals,
+  archivedJournals,
   activeJournalId,
   onMenuClick,
 }: TopbarProps) {
@@ -103,6 +105,7 @@ export function Topbar({
         </Button>
         <JournalSwitcher
           journals={journals}
+          archivedJournals={archivedJournals}
           activeJournalId={activeJournalId}
         />
         <span className="mx-1 hidden h-4 w-px bg-border sm:inline-block" />

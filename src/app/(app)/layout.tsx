@@ -6,8 +6,8 @@ import { ActivityPing } from "@/components/activity-ping";
 import type {
   Journal,
   JournalRole,
-  JournalWithRole,
-} from "@/types/database";
+  } from "@/types/database";
+import { splitJournals } from "@/lib/journals/split-journals";
 
 export default async function AppLayout({
   children,
@@ -74,15 +74,9 @@ export default async function AppLayout({
       ? ((journalsResult.value.data as unknown as MembershipRow[]) ?? [])
       : [];
 
-  // Hide archived journals from the switcher list by default.
-  const journals: JournalWithRole[] = membershipRows
-    .filter((r) => r.journals && !r.journals.is_archived)
-    .map((r) => ({ ...r.journals, my_role: r.role }))
-    .sort(
-      (a, b) =>
-        a.sort_order - b.sort_order ||
-        a.created_at.localeCompare(b.created_at),
-    );
+  // The working set drives the switcher; the archived ones sit behind it,
+  // where they can be found again and restored.
+  const { journals, archived } = splitJournals(membershipRows);
 
   const activeJournalId =
     activeJournalResult.status === "fulfilled"
@@ -101,6 +95,7 @@ export default async function AppLayout({
       <AppShell
         profile={userProfile}
         journals={journals}
+        archivedJournals={archived}
         activeJournalId={activeJournalId}
         // Suppresses the first-run tour for anyone already established. Falls
         // back to `true` when the profile row didn't load: better to skip the
